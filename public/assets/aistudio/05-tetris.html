@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prism Stack</title>
+</head>
+<body>
+<script src="arcade-core.js"></script>
+<script>
+/* Prism Stack — falling-block puzzle: 7-bag, rotation kicks, hold, ghost, lock delay, combos. */
+const A = Arcade;
+const W = 560, H = 620, COLS = 10, ROWS = 20, CELL = 28, BX = 140, BY = 44, WIN_LINES = 150;
+const COLORS = ['#22d3ee', '#6366f1', '#fb923c', '#facc15', '#4ade80', '#c084fc', '#f87171']; // I J L O S T Z
+const BASE = [
+  [[0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]],
+  [[1, 0, 0], [1, 1, 1], [0, 0, 0]],
+  [[0, 0, 1], [1, 1, 1], [0, 0, 0]],
+  [[0, 1, 1, 0], [0, 1, 1, 0], [0, 0, 0, 0], [0, 0, 0, 0]],
+  [[0, 1, 1], [1, 1, 0], [0, 0, 0]],
+  [[0, 1, 0], [1, 1, 1], [0, 0, 0]],
+  [[1, 1, 0], [0, 1, 1], [0, 0, 0]],
+];
+const rotCW = (m) => m.map((_, r) => m.map((__, c) => m[m.length - 1 - c][r]));
+const SH = BASE.map((m, t) => { const s = [m]; for (let i = 1; i < 4; i++) s.push(t === 3 ? m : rotCW(s[i - 1])); return s; });
+// SRS wall-kick offsets as [dx, dy] with y pointing up; key = from + '>' + to
+const KJ = { '0>1': [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]], '1>0': [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]], '1>2': [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]], '2>1': [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]], '2>3': [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]], '3>2': [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]], '3>0': [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]], '0>3': [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]] };
+const KI = { '0>1': [[0, 0], [-2, 0], [1, 0], [-2, -1], [1, 2]], '1>0': [[0, 0], [2, 0], [-1, 0], [2, 1], [-1, -2]], '1>2': [[0, 0], [-1, 0], [2, 0], [-1, 2], [2, -1]], '2>1': [[0, 0], [1, 0], [-2, 0], [1, -2], [-2, 1]], '2>3': [[0, 0], [2, 0], [-1, 0], [2, 1], [-1, -2]], '3>2': [[0, 0], [-2, 0], [1, 0], [-2, -1], [1, 2]], '3>0': [[0, 0], [1, 0], [-2, 0], [1, -2], [-2, 1]], '0>3': [[0, 0], [-1, 0], [2, 0], [-1, 2], [2, -1]] };
+const GRAV = [48, 43, 38, 33, 28, 23, 18, 13, 8, 6, 5, 4, 3, 2, 1];
+let board, p, bag, queue, hold, canHold, gravT, lockT, resets, lines, level, combo, b2b, clearRows, clearT, dasL, dasR, bg;
+
+const cellsOf = (q, x = q.x, y = q.y, r = q.rot) => { const m = SH[q.t][r], out = []; for (let j = 0; j < m.length; j++) for (let i = 0; i < m[j].length; i++) if (m[j][i]) out.push([x + i, y + j]); return out; };
+const hits = (q, x, y, r) => cellsOf(q, x, y, r).some(([cx, cy]) => cx < 0 || cx >= COLS || cy >= ROWS || (cy >= 0 && board[cy][cx]));
+function refill() { const b = [0, 1, 2, 3, 4, 5, 6]; for (let i = 6; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } queue.push(...b); }
+function spawn(G, t) {
+  while (queue.length < 5) refill();
+  if (t === undefined) t = queue.shift();
+  p = { t, rot: 0, x: 3, y: t === 0 ? -1 : 0 }; gravT = 0; lockT = 0; resets = 0;
+  if (hits(p, p.x, p.y, 0)) { G.shake(10); G.over('Topped Out', lines + ' lines · level ' + level); }
+}
+function init(G) {
+  board = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+  queue = []; hold = -1; canHold = true; lines = 0; level = 1; combo = -1; b2b = false; clearRows = []; clearT = 0; dasL = 0; dasR = 0;
+  bg = A.makeStars(40, W, H);
+  spawn(G); G.hudL = '';
+}
+const grounded = () => hits(p, p.x, p.y + 1, p.rot);
+function bump() { if (grounded() && resets < 15) { lockT = 0; resets++; } }
+
+function rotate(dir) {
+  if (p.t === 3) return;
+  const to = (p.rot + dir + 4) % 4, kicks = (p.t === 0 ? KI : KJ)[p.rot + '>' + to];
+  for (const [dx, dy] of kicks) if (!hits(p, p.x + dx, p.y - dy, to)) { p.x += dx; p.y -= dy; p.rot = to; A.sfx('rotate'); bump(); return; }
+}
+function move(dx) { if (!hits(p, p.x + dx, p.y, p.rot)) { p.x += dx; A.sfx('tick'); bump(); return true; } return false; }
+
+function lockPiece(G) {
+  let out = false;
+  for (const [cx, cy] of cellsOf(p)) { if (cy < 0) out = true; else board[cy][cx] = p.t + 1; }
+  for (const [cx, cy] of cellsOf(p)) if (cy >= 0) G.burst(BX + cx * CELL + CELL / 2, BY + cy * CELL + CELL / 2, 2, { color: COLORS[p.t], speed: 1.5, life: 14, glow: true });
+  if (out) { G.shake(10); return G.over('Locked Out', lines + ' lines · level ' + level); }
+  const full = [];
+  for (let y = 0; y < ROWS; y++) if (board[y].every(Boolean)) full.push(y);
+  canHold = true;
+  if (!full.length) { combo = -1; A.sfx('thud'); return spawn(G); }
+  combo++;
+  clearRows = full; clearT = 24;
+  const base = [0, 100, 300, 500, 800][full.length] * level;
+  const hard = full.length === 4, bonus = hard && b2b ? Math.floor(base * 0.5) : 0;
+  const comboPts = combo > 0 ? 50 * combo * level : 0;
+  G.addScore(base + bonus + comboPts);
+  b2b = hard;
+  A.sfx('clear'); if (hard) { A.sfx('power'); G.shake(10); } else G.shake(4);
+  const label = ['', 'Single', 'Double', 'Triple', 'PRISM!'][full.length];
+  G.popup(BX + COLS * CELL / 2, BY + full[0] * CELL, label + (bonus ? ' · B2B' : ''), hard ? '#fde68a' : '#fff', hard ? 26 : 20);
+  if (combo > 0) G.popup(BX + COLS * CELL / 2, BY + full[0] * CELL + 26, 'Combo ×' + combo, '#67e8f9', 16);
+  for (const y of full) for (let x = 0; x < COLS; x++) G.burst(BX + x * CELL + CELL / 2, BY + y * CELL + CELL / 2, 3, { color: [COLORS[board[y][x] - 1], '#fff'], speed: 4, life: 30, glow: true, grav: 0.1 });
+  G.ring(BX + COLS * CELL / 2, BY + full[0] * CELL, '#fff', 120, 26);
+}
+function hardDrop(G) {
+  let n = 0; while (!hits(p, p.x, p.y + 1, p.rot)) { p.y++; n++; }
+  G.addScore(2 * n); A.sfx('drop'); G.shake(3);
+  for (const [cx, cy] of cellsOf(p)) G.burst(BX + cx * CELL + CELL / 2, BY + (cy + 1) * CELL, 1, { color: '#fff', speed: 2, life: 12, angle: Math.PI / 2, spread: 1, glow: true });
+  lockPiece(G);
+}
+
+function update(G) {
+  if (clearT > 0) {
+    if (--clearT === 0) {
+      board = board.filter((_, y) => !clearRows.includes(y));
+      while (board.length < ROWS) board.unshift(Array(COLS).fill(0));
+      lines += clearRows.length;
+      const nl = 1 + Math.floor(lines / 10);
+      if (nl > level) { level = nl; A.sfx('power'); G.popup(W / 2, 300, 'LEVEL ' + level, '#fde68a', 30); G.ring(W / 2, 300, '#fde68a', 140, 34); }
+      clearRows = [];
+      if (lines >= WIN_LINES) { G.addScore(5000); return G.win('Marathon Complete!', WIN_LINES + ' lines cleared'); }
+      spawn(G);
+    }
+    return;
+  }
+  if ((A.hit('KeyC') || A.hit('ShiftLeft', 'ShiftRight')) && canHold) {
+    const cur = p.t; canHold = false; A.sfx('select');
+    if (hold < 0) { hold = cur; spawn(G); } else { const h = hold; hold = cur; spawn(G, h); }
+    canHold = false; return;
+  }
+  if (A.hit('ArrowUp', 'KeyX', 'KeyW')) rotate(1);
+  if (A.hit('KeyZ')) rotate(-1);
+  // horizontal movement with DAS
+  const l = A.held('ArrowLeft', 'KeyA'), r = A.held('ArrowRight', 'KeyD');
+  if (l && !r) { if (dasL === 0 || (dasL > 9 && (dasL - 9) % 2 === 0)) move(-1); dasL++; } else dasL = 0;
+  if (r && !l) { if (dasR === 0 || (dasR > 9 && (dasR - 9) % 2 === 0)) move(1); dasR++; } else dasR = 0;
+  if (A.hit('Space')) return hardDrop(G);
+  // gravity
+  const soft = A.held('ArrowDown', 'KeyS'), fall = soft ? Math.min(2, GRAV[Math.min(level - 1, 14)]) : GRAV[Math.min(level - 1, 14)];
+  if (++gravT >= fall) {
+    gravT = 0;
+    if (!hits(p, p.x, p.y + 1, p.rot)) { p.y++; if (soft) G.addScore(1); }
+  }
+  if (grounded()) { if (++lockT >= 30) lockPiece(G); } else lockT = 0;
+}
+
+function cube(c, x, y, s, color, a) {
+  c.save(); if (a != null) c.globalAlpha = a;
+  c.fillStyle = color; c.fillRect(x, y, s, s);
+  c.fillStyle = A.shade(color, 0.45); c.beginPath(); c.moveTo(x, y); c.lineTo(x + s, y); c.lineTo(x + s - 5, y + 5); c.lineTo(x + 5, y + 5); c.lineTo(x + 5, y + s - 5); c.lineTo(x, y + s); c.fill();
+  c.fillStyle = A.shade(color, -0.4); c.beginPath(); c.moveTo(x + s, y + s); c.lineTo(x, y + s); c.lineTo(x + 5, y + s - 5); c.lineTo(x + s - 5, y + s - 5); c.lineTo(x + s - 5, y + 5); c.lineTo(x + s, y); c.fill();
+  c.fillStyle = A.shade(color, 0.12); c.fillRect(x + 5, y + 5, s - 10, s - 10);
+  c.restore();
+}
+function mini(c, t, cx, cy, s) {
+  const m = SH[t][0]; let minR = 9, maxR = -1, minC = 9, maxC = -1;
+  m.forEach((row, j) => row.forEach((v, i) => { if (v) { minR = Math.min(minR, j); maxR = Math.max(maxR, j); minC = Math.min(minC, i); maxC = Math.max(maxC, i); } }));
+  const w = (maxC - minC + 1) * s, h = (maxR - minR + 1) * s;
+  m.forEach((row, j) => row.forEach((v, i) => { if (v) cube(c, cx - w / 2 + (i - minC) * s, cy - h / 2 + (j - minR) * s, s, COLORS[t]); }));
+}
+function panel(c, x, y, w, h, title) {
+  c.fillStyle = 'rgba(21,25,38,.85)'; A.roundRect(c, x, y, w, h, 10); c.fill();
+  c.strokeStyle = 'rgba(255,255,255,.1)'; c.lineWidth = 1; A.roundRect(c, x, y, w, h, 10); c.stroke();
+  A.text(c, title, x + w / 2, y + 18, 12, '#8b93b3', 'center', '800');
+}
+
+function draw(G, c) {
+  const t = G.clock;
+  A.sky(c, W, H, ['#07051a', '#10113a', '#1b1250']);
+  A.drawStars(c, bg, t, W, H, 0.05, '#c7d2fe');
+  // board frame with depth
+  c.save(); c.shadowColor = '#6366f1'; c.shadowBlur = 24; c.fillStyle = '#0a0d1f'; c.fillRect(BX - 6, BY - 6, COLS * CELL + 12, ROWS * CELL + 12); c.restore();
+  c.fillStyle = '#080b19'; c.fillRect(BX, BY, COLS * CELL, ROWS * CELL);
+  c.strokeStyle = 'rgba(255,255,255,.05)'; c.lineWidth = 1; c.beginPath();
+  for (let i = 1; i < COLS; i++) { c.moveTo(BX + i * CELL, BY); c.lineTo(BX + i * CELL, BY + ROWS * CELL); }
+  for (let j = 1; j < ROWS; j++) { c.moveTo(BX, BY + j * CELL); c.lineTo(BX + COLS * CELL, BY + j * CELL); }
+  c.stroke();
+  // locked cells
+  for (let y = 0; y < ROWS; y++) {
+    const flash = clearRows.includes(y);
+    for (let x = 0; x < COLS; x++) if (board[y][x]) {
+      if (flash) { c.fillStyle = Math.floor(clearT / 3) % 2 ? '#fff' : A.shade(COLORS[board[y][x] - 1], 0.6); c.fillRect(BX + x * CELL, BY + y * CELL, CELL, CELL); }
+      else cube(c, BX + x * CELL, BY + y * CELL, CELL, COLORS[board[y][x] - 1]);
+    }
+  }
+  if (p && clearT === 0 && G.state !== 'over') {
+    // ghost
+    let gy = p.y; while (!hits(p, p.x, gy + 1, p.rot)) gy++;
+    for (const [cx, cy] of cellsOf(p, p.x, gy)) if (cy >= 0) { c.strokeStyle = A.alpha(COLORS[p.t], 0.6); c.lineWidth = 2; c.strokeRect(BX + cx * CELL + 2, BY + cy * CELL + 2, CELL - 4, CELL - 4); c.fillStyle = A.alpha(COLORS[p.t], 0.1); c.fillRect(BX + cx * CELL + 2, BY + cy * CELL + 2, CELL - 4, CELL - 4); }
+    // active piece (glows while on the lock timer)
+    const lockGlow = grounded() ? lockT / 30 : 0;
+    for (const [cx, cy] of cellsOf(p)) if (cy >= 0) {
+      cube(c, BX + cx * CELL, BY + cy * CELL, CELL, COLORS[p.t]);
+      if (lockGlow > 0) { c.fillStyle = 'rgba(255,255,255,' + lockGlow * 0.5 + ')'; c.fillRect(BX + cx * CELL, BY + cy * CELL, CELL, CELL); }
+    }
+  }
+  // side panels
+  panel(c, 10, BY, 120, 100, 'HOLD');
+  if (hold >= 0) { c.save(); if (!canHold) c.globalAlpha = 0.4; mini(c, hold, 70, BY + 62, 20); c.restore(); }
+  panel(c, 430, BY, 120, 210, 'NEXT');
+  for (let i = 0; i < 3; i++) if (queue[i] !== undefined) mini(c, queue[i], 490, BY + 58 + i * 60, i === 0 ? 20 : 16);
+  panel(c, 430, BY + 226, 120, 170, 'STATS');
+  const row = (k, v, y, col) => { A.text(c, k, 442, y, 11, '#8b93b3', 'left', '700'); A.text(c, String(v), 540, y, 16, col || '#fff', 'right', '800', A.MONO); };
+  row('SCORE', G.score, BY + 262); row('LEVEL', level, BY + 296, '#fde68a'); row('LINES', lines + '/' + WIN_LINES, BY + 330);
+  row('COMBO', combo > 0 ? '×' + combo : '–', BY + 364, '#67e8f9');
+  A.text(c, b2b ? 'BACK-TO-BACK' : '', 490, BY + 386, 10, '#fde68a', 'center', '800');
+  panel(c, 10, BY + 116, 120, 150, 'KEYS');
+  ['←/→ move', '↑ / X rotate', 'Z rotate back', '↓ soft drop', 'Space hard drop', 'C / Shift hold'].forEach((s, i) => A.text(c, s, 70, BY + 150 + i * 18, 11, '#c8cde4', 'center', '600'));
+  A.vignette(c, W, H, 0.3);
+  G.drawFX(c);
+}
+
+Arcade.game({
+  id: 'prism-stack', title: 'Prism Stack', subtitle: 'Stack, clear, and reach 150 lines', color: '#818cf8',
+  help: '←/→ move, ↑ or X rotate, Z rotate back, ↓ soft drop, Space hard drop, C or Shift hold. Clear 4 lines at once for a PRISM; back-to-back and combos score extra. P pauses, M mutes.',
+  w: W, h: H,
+  touchL: [['◀', 'ArrowLeft'], ['▶', 'ArrowRight'], ['▼', 'ArrowDown']], touchR: [['⟳', 'ArrowUp'], ['⤓', 'Space'], ['H', 'KeyC']],
+  init, update, draw,
+});
+</script>
+</body>
+</html>

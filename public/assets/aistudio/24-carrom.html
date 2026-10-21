@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carrom</title>
+<style>
+  .cr { display: grid; grid-template-columns: auto minmax(240px, 1fr); gap: 22px; align-items: start; }
+  @media (max-width: 900px) { .cr { grid-template-columns: 1fr; } }
+  #cv { --s: max(280px, min(100vw - 40px, 640px, 100vh - 170px)); width: var(--s); height: var(--s); display: block; border-radius: 8px; box-shadow: 0 20px 50px -20px #000, 0 0 0 12px #4a2c14, 0 0 0 15px #2a1809; touch-action: none; cursor: crosshair; user-select: none; }
+  .side { display: grid; gap: 12px; }
+  .capt { color: var(--muted); line-height: 1.7; }
+  #pos { width: 100%; accent-color: #f59e0b; }
+  .tag { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; border: 1px solid #888; }
+</style>
+</head>
+<body>
+<script src="board-kit.js"></script>
+<script>
+const ui = Board.shell({
+  id: 'carrom', cpu: true, title: 'Carrom', subtitle: 'Flick the striker and pocket your coins before your rival',
+  rules: 'You play the light coins from the bottom edge; your rival plays the dark coins from the top. Slide the striker along your baseline, then press on the striker and drag backwards like a slingshot — the longer the pull, the harder the flick — and release. Pocket one of your own coins to shoot again. Pocketing only rival coins hands them to your rival and ends your turn. The red queen is worth taking, but you must "cover" her by pocketing one of your own coins in the same shot (or she returns to the centre). Pocketing your striker is a foul: one of your coins comes back to the centre and the turn passes. Clear all nine of your coins and the queen to win.',
+  controls: [['Drag back from striker', 'Aim and set power, release to flick'], ['Click baseline / ← →', 'Slide the striker'], ['Space', 'Flick straight ahead at the last power'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
+});
+ui.main.innerHTML = `
+<div class="cr">
+  <canvas id="cv" width="640" height="640"></canvas>
+  <div class="side">
+    <div class="bk-status" id="st"></div>
+    <label class="capt">Striker position<input type="range" id="pos" min="0" max="100" value="50"></label>
+    <div class="bk-row">
+      <label>Play <select class="bk-select" id="mode"><option value="a">You first vs computer</option><option value="b">Computer first</option><option value="two">Two players</option></select></label>
+      <label>Level <select class="bk-select" id="lvl"><option value="0">Easy</option><option value="1" selected>Medium</option><option value="2">Hard</option></select></label>
+    </div>
+    <div class="bk-row"><button class="bk-btn bk-primary" id="new">New game</button></div>
+    <div class="capt" id="cp"></div>
+  </div>
+</div>`;
+const $ = (s) => ui.main.querySelector(s);
+const cv = $('#cv'), cx = cv.getContext('2d');
+
+/* ---------- physics (shared by the live game and the computer's what-if simulations) ---------- */
+const S = 640, CR = 11, SR = 15, PR = 36, FR = 0.9955, EW = 0.82, EC = 0.94, MIN2 = 0.0009;
+const POCK = [[0, 0], [S, 0], [0, S], [S, S]];
+const mk = (x, y, r, m, t) => ({ x, y, vx: 0, vy: 0, r, m, t, a: 1 });
+function step(W, ev) {
+  const D = W.d, n = D.length;
+  for (let i = 0; i < n; i++) {
+    const d = D[i]; if (!d.a) continue;
+    d.x += d.vx; d.y += d.vy; d.vx *= FR; d.vy *= FR; if (d.vx * d.vx + d.vy * d.vy < MIN2) d.vx = d.vy = 0;
+    for (const p of POCK) if (Math.hypot(d.x - p[0], d.y - p[1]) < PR) { d.a = 0; d.vx = d.vy = 0; if (ev) ev.push(d); break; }
+    if (!d.a) continue;
+    if (d.x < d.r) { d.x = d.r; d.vx = Math.abs(d.vx) * EW; } else if (d.x > S - d.r) { d.x = S - d.r; d.vx = -Math.abs(d.vx) * EW; }
+    if (d.y < d.r) { d.y = d.r; d.vy = Math.abs(d.vy) * EW; } else if (d.y > S - d.r) { d.y = S - d.r; d.vy = -Math.abs(d.vy) * EW; }
+  }
+  let hit = 0;
+  for (let i = 0; i < n; i++) {
+    const a = D[i]; if (!a.a) continue;
+    for (let j = i + 1; j < n; j++) {
+      const b = D[j]; if (!b.a) continue;
+      const dx = b.x - a.x, dy = b.y - a.y, rr = a.r + b.r; if (dx > rr || dx < -rr || dy > rr || dy < -rr) continue;
+      const d2 = dx * dx + dy * dy; if (d2 >= rr * rr || d2 === 0) continue;
+      const d = Math.sqrt(d2), nx = dx / d, ny = dy / d, im = 1 / a.m + 1 / b.m, ov = rr - d;
+      a.x -= nx * ov * (1 / a.m) / im; a.y -= ny * ov * (1 / a.m) / im; b.x += nx * ov * (1 / b.m) / im; b.y += ny * ov * (1 / b.m) / im;
+      const vn = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+      if (vn < 0) { const j2 = -(1 + EC) * vn / im; a.vx -= j2 * nx / a.m; a.vy -= j2 * ny / a.m; b.vx += j2 * nx / b.m; b.vy += j2 * ny / b.m; hit = Math.max(hit, -vn); }
+    }
+  }
+  return hit;
+}
+const moving = (W) => W.d.some((d) => d.a && (d.vx || d.vy));
+const clone = (W) => ({ d: W.d.map((d) => ({ ...d })) });
+function fresh() {
+  const D = [mk(S / 2, S / 2, CR, 1, 'q')];
+  for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; D.push(mk(S / 2 + Math.cos(a) * 22.6, S / 2 + Math.sin(a) * 22.6, CR, 1, k % 2 ? 'b' : 'w')); }
+  for (let k = 0; k < 12; k++) { const a = k * Math.PI / 6, r = k % 2 ? 38.9 : 45.2; D.push(mk(S / 2 + Math.cos(a) * r, S / 2 + Math.sin(a) * r, CR, 1, (k >> 1) % 2 ? (k % 2 ? 'w' : 'b') : (k % 2 ? 'b' : 'w'))); }
+  return { d: D };
+}
+
+/* ---------- game state ---------- */
+const BY = [S - 98, 98]; /* baseline y for player 0 (bottom, light) and player 1 (top, dark) */
+const OWN = ['w', 'b'], NAME = ['Light', 'Dark'];
+let gen = 0, W, turn, mode, phase, sx, st, drag, msg, evs, out, qOff, over, sfxT = 0;
+const human = () => mode === 'two' || turn === (mode === 'a' ? 0 : 1);
+const free = (x, y, W0) => !W0.d.some((d) => d.a && d.t !== 's' && Math.hypot(d.x - x, d.y - y) < SR + CR + 2);
+function newGame() {
+  gen++; mode = $('#mode').value; W = fresh(); out = { w: 0, b: 0 }; qOff = false; over = null; turn = mode === 'b' ? 1 : 0; phase = 'place'; sx = S / 2; st = null; drag = null; evs = [];
+  msg = ''; sync(); begin();
+}
+function sync() { $('#pos').value = Math.round((sx - 110) / (S - 220) * 100); }
+function begin() {
+  sx = S / 2; for (const dx of [0, 40, -40, 80, -80, 120, -120, 160, -160]) if (free(S / 2 + dx, BY[turn], W)) { sx = S / 2 + dx; break; }
+  sync(); phase = 'place'; drag = null; text(); if (!human()) { phase = 'think'; const g = gen; setTimeout(() => g === gen && aiMove(), Board.pace(1300)); }
+}
+function shoot(x, ang, pw) {
+  st = mk(x, BY[turn], SR, 1.7, 's'); st.vx = Math.cos(ang) * pw; st.vy = Math.sin(ang) * pw; st.sp = pw; st.ang = ang;
+  W.d.push(st); evs = []; phase = 'run'; drag = null; Board.sfx('click'); text();
+}
+const power = (L) => 1.3 + Math.min(1, L / 150) * 5.7;
+
+/* ---------- end of a shot ---------- */
+function resolve() {
+  W.d = W.d.filter((d) => d.t !== 's'); const p = turn, own = OWN[p]; let gotOwn = 0, gotOpp = 0, queen = false, foul = false; const say = [];
+  for (const d of evs) { if (d.t === 's') foul = true; else if (d.t === 'q') queen = true; else if (d.t === own) { gotOwn++; out[d.t]++; } else { gotOpp++; out[d.t]++; } }
+  W.d = W.d.filter((d) => d.a);
+  const back = (t) => { const spot = (() => { for (let r = 0; r < 140; r += 6) for (let a = 0; a < 6.3; a += 0.6) { const x = S / 2 + Math.cos(a) * r, y = S / 2 + Math.sin(a) * r; if (free(x, y, W)) return [x, y]; } return [S / 2, S / 2]; })(); W.d.push(mk(spot[0], spot[1], CR, 1, t)); };
+  if (queen) { if (!foul && (gotOwn || out[own] === 9)) { qOff = true; say.push('queen covered'); } else { back('q'); say.push('queen returns — not covered'); } }
+  if (foul) { if (out[own] > 0) { out[own]--; back(own); say.push('foul — one of your coins returns'); } else say.push('foul — striker pocketed'); }
+  if (gotOpp) say.push(gotOpp + ' rival coin' + (gotOpp > 1 ? 's' : '') + ' pocketed for them');
+  if (gotOwn) say.push(gotOwn + ' of yours pocketed');
+  const win = out.w === 9 && qOff ? 0 : out.b === 9 && qOff ? 1 : -1;
+  msg = say.length ? NAME[p] + ': ' + say.join(', ') : NAME[p] + ' missed';
+  if (win >= 0) { over = NAME[win] + ' wins!'; phase = 'over'; text(); const w = mode !== 'two' && (win === 0) === (mode === 'a'); Board.sfx(mode === 'two' || w ? 'win' : 'lose'); Board.modal(mode === 'two' ? over : w ? 'You won!' : 'Computer wins', over, [['New game', newGame], ['Close']]); return; }
+  if (!(gotOwn || (queen && qOff)) || foul) turn = 1 - turn;
+  begin();
+}
+function text() {
+  const who = turn === 0 ? 'Light' : 'Dark';
+  $('#st').innerHTML = over || (phase === 'run' ? 'Rolling…' : phase === 'think' ? 'Computer is lining up a shot…' : `<span class="tag" style="background:${turn ? '#1c1917' : '#f5efe0'}"></span>${who} to play${mode !== 'two' && human() ? ' — your turn' : ''}`);
+  $('#cp').innerHTML = (msg ? '<b>' + msg + '</b><br>' : '') + `Light coins pocketed: <b>${out.w}</b> / 9<br>Dark coins pocketed: <b>${out.b}</b> / 9<br>Queen: <b>${qOff ? 'taken' : 'on the board'}</b>`;
+}
+
+/* ---------- computer player ---------- */
+function evalShot(W0, p, x, ang, pw) {
+  const S0 = clone(W0), s = mk(x, BY[p], SR, 1.7, 's'); s.vx = Math.cos(ang) * pw; s.vy = Math.sin(ang) * pw; S0.d.push(s);
+  const ev = []; let n = 0; while (moving(S0) && n++ < 1800) step(S0, ev);
+  const own = OWN[p]; let v = 0, qd = 0;
+  for (const d of ev) { if (d.t === 's') v -= 8; else if (d.t === 'q') qd = 1; else if (d.t === own) v += 10; else v -= 7; }
+  if (qd) v += ev.some((d) => d.t === own) && !ev.some((d) => d.t === 's') ? 6 : -3;
+  const mine = S0.d.filter((d) => d.a && d.t === own); for (const d of mine) { v += 0.4 * (1 - Math.min(...POCK.map((q) => Math.hypot(d.x - q[0], d.y - q[1]))) / 450); }
+  return v;
+}
+function aiMove() {
+  if (over || phase !== 'think') return; const p = turn, L = +$('#lvl').value, own = OWN[p], y0 = BY[p], cands = [];
+  let T = W.d.filter((d) => d.a && d.t === own); if (!T.length || out[own] >= 8) T = T.concat(W.d.filter((d) => d.a && d.t === 'q'));
+  if (!T.length) T = W.d.filter((d) => d.a);
+  for (let xi = 0; xi <= 12; xi++) {
+    const x = 110 + xi * (S - 220) / 12; if (!free(x, y0, W)) continue;
+    for (const c of T) for (const P of POCK) {
+      let ux = P[0] - c.x, uy = P[1] - c.y; const len = Math.hypot(ux, uy); if (len < 1) continue; ux /= len; uy /= len;
+      const gx = c.x - ux * (c.r + SR), gy = c.y - uy * (c.r + SR), ax = gx - x, ay = gy - y0, al = Math.hypot(ax, ay); if (al < 2) continue;
+      const dot = (ax / al) * ux + (ay / al) * uy; if (dot < 0.3) continue;
+      const blocked = W.d.some((d) => d.a && d !== c && (() => { const t = Math.max(0, Math.min(1, ((d.x - x) * ax + (d.y - y0) * ay) / (al * al))); return Math.hypot(x + ax * t - d.x, y0 + ay * t - d.y) < SR + d.r - 1; })());
+      cands.push({ x, ang: Math.atan2(ay, ax), d: al + len, sc: dot * 100 - (blocked ? 60 : 0) - (al + len) * 0.05 });
+    }
+  }
+  cands.sort((a, b) => b.sc - a.sc);
+  let best = null;
+  if (!cands.length) best = { x: free(S / 2, y0, W) ? S / 2 : S / 2 + 60, ang: p ? Math.PI / 2 + (Math.random() - 0.5) * 0.8 : -Math.PI / 2 + (Math.random() - 0.5) * 0.8, pw: 4 + Math.random() * 2 };
+  else if (L === 0) { const c = cands[Math.min(cands.length - 1, Math.floor(Math.random() * 4))]; best = { x: c.x, ang: c.ang + (Math.random() - 0.5) * 0.14, pw: Math.min(6.8, 2.2 + c.d / 150 + Math.random() * 1.5) }; }
+  else {
+    const N = L === 1 ? 10 : 26, noise = L === 1 ? 0.03 : 0.008; let bs = -1e9;
+    for (const c of cands.slice(0, N)) for (const k of L === 1 ? [1] : [0.9, 1.25]) {
+      const pw = Math.max(2, Math.min(7, (2.0 + c.d / 130) * k)), ang = c.ang + (Math.random() - 0.5) * noise, v = evalShot(W, p, c.x, ang, pw) + Math.random() * 0.5;
+      if (v > bs) { bs = v; best = { x: c.x, ang, pw }; }
+    }
+  }
+  /* slide the striker to the chosen spot, show the aim line, then flick */
+  phase = 'aim'; drag = null;
+  const x0 = sx, T = Board.pace(600), t0 = performance.now(), g = gen;
+  (function slide() {
+    if (g !== gen || over) return;
+    const k = Math.min(1, (performance.now() - t0) / T); sx = x0 + (best.x - x0) * (k * k * (3 - 2 * k)); sync();
+    if (k < 1) { requestAnimationFrame(slide); return; }
+    drag = { ai: true, ang: best.ang, pw: best.pw };
+    setTimeout(() => { if (g === gen && !over && phase === 'aim' && drag && drag.ai) shoot(best.x, best.ang, best.pw); }, Board.pace(1200));
+  })();
+}
+
+/* ---------- input ---------- */
+function pt(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * S / r.width, (e.clientY - r.top) * S / r.height]; }
+cv.addEventListener('pointerdown', (e) => {
+  if (over || phase !== 'place' || !human()) return;
+  const [x, y] = pt(e), y0 = BY[turn];
+  if (Math.hypot(x - sx, y - y0) < 42) { drag = { x, y, cur: [x, y] }; cv.setPointerCapture(e.pointerId); }
+  else if (Math.abs(y - y0) < 50) { sx = Math.max(110, Math.min(S - 110, x)); sync(); Board.sfx('click'); }
+});
+cv.addEventListener('pointermove', (e) => { if (drag && !drag.ai) drag.cur = pt(e); });
+cv.addEventListener('pointerup', (e) => {
+  if (!drag || drag.ai) return; const [x, y] = pt(e), vx = sx - x, vy = BY[turn] - y, L = Math.hypot(vx, vy); drag = null;
+  if (L < 14) return; if (!free(sx, BY[turn], W)) { Board.sfx('error'); return; }
+  shoot(sx, Math.atan2(vy, vx), power(L));
+});
+cv.addEventListener('pointercancel', () => { if (drag && !drag.ai) drag = null; });
+$('#pos').oninput = (e) => { if (phase === 'place' && human()) sx = 110 + (S - 220) * e.target.value / 100; else sync(); };
+$('#new').onclick = (e) => { e.target.blur(); newGame(); }; $('#mode').onchange = (e) => { e.target.blur(); newGame(); };
+let lastPw = 4.5;
+document.addEventListener('keydown', (e) => {
+  if (/SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey) return; if (e.target.tagName === 'INPUT' && e.key.startsWith('Arrow')) return;
+  const k = e.key;
+  if (k === 'n' || k === 'N') newGame();
+  else if ((k === 'ArrowLeft' || k === 'ArrowRight') && phase === 'place' && human()) { sx = Math.max(110, Math.min(S - 110, sx + (k === 'ArrowLeft' ? -12 : 12))); sync(); e.preventDefault(); }
+  else if (k === ' ' && phase === 'place' && human() && free(sx, BY[turn], W)) { shoot(sx, turn ? Math.PI / 2 : -Math.PI / 2, lastPw); e.preventDefault(); }
+});
+
+/* ---------- drawing & loop ---------- */
+function disc(d) {
+  const g = cx.createRadialGradient(d.x - d.r * 0.3, d.y - d.r * 0.35, 1, d.x, d.y, d.r);
+  const c = { w: ['#fffbeb', '#d6c7a1'], b: ['#57534e', '#0c0a09'], q: ['#fb7185', '#9f1239'], s: ['#bae6fd', '#0284c7'] }[d.t]; g.addColorStop(0, c[0]); g.addColorStop(1, c[1]);
+  cx.fillStyle = 'rgba(0,0,0,.28)'; cx.beginPath(); cx.arc(d.x + 2, d.y + 3, d.r, 0, 6.3); cx.fill();
+  cx.fillStyle = g; cx.beginPath(); cx.arc(d.x, d.y, d.r, 0, 6.3); cx.fill();
+  cx.strokeStyle = d.t === 'b' ? '#78716c' : 'rgba(0,0,0,.35)'; cx.lineWidth = 1.5; cx.beginPath(); cx.arc(d.x, d.y, d.r * 0.62, 0, 6.3); cx.stroke();
+}
+function board() {
+  cx.fillStyle = '#e6b878'; cx.fillRect(0, 0, S, S);
+  cx.strokeStyle = 'rgba(120,70,20,.16)'; cx.lineWidth = 2; for (let y = 8; y < S; y += 16) { cx.beginPath(); cx.moveTo(0, y); cx.lineTo(S, y); cx.stroke(); }
+  cx.strokeStyle = '#7c2d12'; cx.lineWidth = 2;
+  for (const y of BY) { cx.beginPath(); cx.moveTo(100, y - 17); cx.lineTo(S - 100, y - 17); cx.moveTo(100, y + 17); cx.lineTo(S - 100, y + 17); cx.stroke(); for (const x of [100, S - 100]) { cx.fillStyle = '#b91c1c'; cx.beginPath(); cx.arc(x, y, 16, 0, 6.3); cx.stroke(); cx.fill(); } }
+  cx.beginPath(); cx.arc(S / 2, S / 2, 70, 0, 6.3); cx.stroke(); cx.beginPath(); cx.arc(S / 2, S / 2, 20, 0, 6.3); cx.stroke();
+  cx.strokeStyle = 'rgba(124,45,18,.6)'; for (const [a, b, sxn, syn] of [[60, 60, 1, 1], [S - 60, 60, -1, 1], [60, S - 60, 1, -1], [S - 60, S - 60, -1, -1]]) { cx.beginPath(); cx.moveTo(a, b); cx.lineTo(a + sxn * 70, b + syn * 70); cx.stroke(); cx.beginPath(); cx.arc(a + sxn * 90, b + syn * 90, 9, 0, 6.3); cx.stroke(); }
+  cx.fillStyle = '#0c0a09'; for (const p of POCK) { cx.beginPath(); cx.arc(p[0], p[1], PR, 0, 6.3); cx.fill(); }
+}
+function draw() {
+  board();
+  for (const d of W.d) if (d.a && d.t !== 's') disc(d);
+  const y0 = BY[turn];
+  if (phase === 'place' || phase === 'aim' || phase === 'think') {
+    const ok = free(sx, y0, W), g = mk(sx, y0, SR, 1, 's'); cx.globalAlpha = ok ? 1 : 0.4; disc(g); cx.globalAlpha = 1;
+    if (!ok) { cx.strokeStyle = '#dc2626'; cx.lineWidth = 3; cx.beginPath(); cx.arc(sx, y0, SR + 4, 0, 6.3); cx.stroke(); }
+    let ang = null;
+    if (drag && drag.ai) ang = drag.ang; else if (drag) { const vx = sx - drag.cur[0], vy = y0 - drag.cur[1], L = Math.hypot(vx, vy); if (L > 6) { ang = Math.atan2(vy, vx); lastPw = power(L); cx.strokeStyle = 'rgba(30,20,10,.55)'; cx.lineWidth = 4; cx.lineCap = 'round'; cx.beginPath(); cx.moveTo(sx, y0); cx.lineTo(drag.cur[0], drag.cur[1]); cx.stroke(); } }
+    if (ang !== null) {
+      const dx = Math.cos(ang), dy = Math.sin(ang); let t = 1e9;
+      for (const d of W.d) if (d.a && d.t !== 's') { const fx = sx - d.x, fy = y0 - d.y, b = fx * dx + fy * dy, c = fx * fx + fy * fy - (SR + d.r) ** 2, q = b * b - c; if (q >= 0) { const tt = -b - Math.sqrt(q); if (tt > 0 && tt < t) t = tt; } }
+      for (const [w, o, dd] of [[dx, sx, SR], [dy, y0, SR]]) { if (w > 0) t = Math.min(t, (S - dd - o) / w); else if (w < 0) t = Math.min(t, (dd - o) / w); }
+      cx.setLineDash([6, 7]); cx.strokeStyle = 'rgba(30,20,10,.7)'; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(sx + dx * SR, y0 + dy * SR); cx.lineTo(sx + dx * t, y0 + dy * t); cx.stroke(); cx.setLineDash([]);
+    }
+  }
+  if (st && phase === 'run' && st.a) disc(st);
+}
+let prev = 0, acc = 0;
+function frame(t) {
+  requestAnimationFrame(frame); acc += Math.min(0.05, (t - prev) / 1000 || 0); prev = t;
+  while (acc >= 1 / 240) {
+    acc -= 1 / 240;
+    if (phase === 'run') { const h = step(W, evs); if (h > 0.6 && t - sfxT > 60) { Board.sfx('step'); sfxT = t; } if (evs.length && evs.at(-1)._s !== 1) { evs.at(-1)._s = 1; Board.sfx('capture'); } if (!moving(W)) { resolve(); break; } }
+  }
+  draw();
+}
+newGame(); requestAnimationFrame(frame);
+</script>
+</body>
+</html>

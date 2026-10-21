@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tic-Tac-Toe</title>
+<style>
+  .tt { display: grid; grid-template-columns: auto minmax(240px, 1fr); gap: 22px; align-items: start; }
+  @media (max-width: 860px) { .tt { grid-template-columns: 1fr; } }
+  #bd { --s: max(270px, min(100vw - 40px, 480px)); width: var(--s); aspect-ratio: 1; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 8px; padding: 8px; background: #0f121c; border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 20px 50px -20px #000; user-select: none; touch-action: manipulation; }
+  .cl { position: relative; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; display: flex; align-items: center; justify-content: center; font: 800 calc(var(--s) / 4) / 1 "Segoe UI", system-ui, sans-serif; }
+  .cl.free:hover { background: #1b2133; border-color: rgba(255,255,255,.25); }
+  .cl:not(.free) { cursor: default; }
+  .cl .n { position: absolute; left: 9px; top: 6px; font: 600 11px ui-monospace, Consolas, monospace; color: var(--muted); opacity: .55; }
+  .cl .m { animation: pop .38s ease-out; }
+  .cl.x .m { color: #22d3ee; text-shadow: 0 0 18px rgba(34,211,238,.45); }
+  .cl.o .m { color: #f59e0b; text-shadow: 0 0 18px rgba(245,158,11,.45); }
+  .cl.pick { background: #1b2133; border-color: var(--amber); }
+  .cl.win { background: rgba(16,185,129,.22); border-color: var(--emerald); }
+  .cl.win .m { animation: pulse .6s ease-in-out infinite alternate; }
+  @keyframes pop { from { transform: scale(.3); opacity: 0; } }
+  @keyframes pulse { to { transform: scale(1.12); } }
+  .side { display: grid; gap: 12px; }
+  .sb { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .sb div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 13px; color: var(--muted); }
+  .sb b { display: block; font-size: 28px; color: var(--text); }
+  .sb .xx b { color: #22d3ee; }
+  .sb .oo b { color: #f59e0b; }
+  .capt { color: var(--muted); line-height: 1.7; font-size: 13px; }
+</style>
+</head>
+<body>
+<script src="board-kit.js"></script>
+<script>
+const ui = Board.shell({
+  id: 'tic-tac-toe', cpu: true, title: 'Tic-Tac-Toe', subtitle: 'Line up three marks — can you beat the unbeatable computer?',
+  rules: 'Players take turns placing their mark (X or O) on a 3×3 grid. The first to line up three of their own marks in a row — across, down or diagonally — wins. If all nine squares fill with no line, it is a draw. X always goes first. On the Unbeatable level the computer plays perfectly, so the best you can hope for is a draw.',
+  controls: [['Click a square', 'Place your mark'], ['1 – 9', 'Place a mark (numpad layout: 7 8 9 on top)'], ['U', 'Undo'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
+});
+ui.main.innerHTML = `
+<div class="tt">
+  <div id="bd"></div>
+  <div class="side">
+    <div class="bk-status" id="st"></div>
+    <div class="sb" id="sb"></div>
+    <div class="bk-row">
+      <label>Play <select class="bk-select" id="mode"><option value="x">X (first) vs computer</option><option value="o">O vs computer</option><option value="two">Two players</option></select></label>
+      <label>Level <select class="bk-select" id="lvl"><option value="0">Easy</option><option value="1">Medium</option><option value="2" selected>Unbeatable</option></select></label>
+    </div>
+    <div class="bk-row"><button class="bk-btn bk-primary" id="new">New game</button><button class="bk-btn" id="undo">Undo</button><button class="bk-btn" id="rs">Reset score</button></div>
+    <div class="capt">Easy plays at random. Medium wins or blocks when it can. Unbeatable never loses.</div>
+  </div>
+</div>`;
+const $ = (s) => ui.main.querySelector(s);
+const LN = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
+const other = (s) => (s === 'x' ? 'o' : 'x');
+const NUMPAD = [7, 8, 9, 4, 5, 6, 1, 2, 3]; /* label shown in each square, top-left to bottom-right */
+const KEY2IDX = {}; NUMPAD.forEach((k, i) => { KEY2IDX[k] = i; });
+
+/* ---- rules & computer ---- */
+function winner(b) { for (const L of LN) { const [a, c, d] = L; if (b[a] && b[a] === b[c] && b[a] === b[d]) return { p: b[a], line: L }; } return null; }
+function mm(b, s, me, depth) { /* score for `me`; s is to move */
+  const w = winner(b); if (w) return w.p === me ? 10 - depth : depth - 10;
+  if (b.every(Boolean)) return 0;
+  let best = s === me ? -99 : 99;
+  for (let i = 0; i < 9; i++) if (!b[i]) {
+    b[i] = s; const v = mm(b, other(s), me, depth + 1); b[i] = 0;
+    best = s === me ? Math.max(best, v) : Math.min(best, v);
+  }
+  return best;
+}
+function cpuMove(b, s, L) {
+  const free = []; for (let i = 0; i < 9; i++) if (!b[i]) free.push(i);
+  const rnd = (a) => a[Board.rand(a.length)];
+  if (L === 0) return rnd(free);
+  const win = (p) => free.find((i) => { b[i] = p; const w = winner(b); b[i] = 0; return !!w; });
+  if (L === 1) {
+    const w = win(s); if (w !== undefined) return w;
+    const bl = win(other(s)); if (bl !== undefined) return bl;
+    if (!b[4] && Math.random() < 0.7) return 4;
+    return rnd(free);
+  }
+  let bs = -99, ms = [];
+  for (const i of free) { b[i] = s; const v = mm(b, other(s), s, 1); b[i] = 0; if (v > bs) { bs = v; ms = [i]; } else if (v === bs) ms.push(i); }
+  return rnd(ms);
+}
+
+/* ---- state & UI ---- */
+let B, turn, over, mode, busy, hist, wl, gen = 0;
+const score = { x: 0, o: 0, d: 0 };
+const bd = $('#bd'), cells = [];
+for (let i = 0; i < 9; i++) { const d = document.createElement('div'); d.className = 'cl'; d.dataset.i = i; bd.appendChild(d); cells.push(d); }
+const human = () => mode === 'two' || turn === mode;
+function newGame() {
+  gen++; mode = $('#mode').value; B = Array(9).fill(''); turn = 'x'; over = ''; busy = false; hist = []; wl = null;
+  render(); cpu();
+}
+function render(dropped) {
+  cells.forEach((d, i) => {
+    const p = B[i], can = !over && !busy && human() && !p;
+    d.className = 'cl' + (p ? ' ' + p : '') + (can ? ' free' : '') + (wl && wl.includes(i) ? ' win' : '');
+    d.innerHTML = `<span class="n">${NUMPAD[i]}</span>` + (p ? `<span class="m"${i === dropped ? '' : ' style="animation:none"'}>${p.toUpperCase()}</span>` : '');
+  });
+  const you = mode !== 'two';
+  $('#st').innerHTML = over || (busy ? 'Computer is thinking…' : `${turn.toUpperCase()} to move${you && human() ? ' — your turn' : ''}`);
+  const who = (s) => (!you ? 'Player ' + (s === 'x' ? 'X' : 'O') : (s === mode ? 'You' : 'Computer') + ' (' + s.toUpperCase() + ')');
+  $('#sb').innerHTML = `<div class="xx">${who('x')}<b>${score.x}</b></div><div>Draws<b>${score.d}</b></div><div class="oo">${who('o')}<b>${score.o}</b></div>`;
+}
+function play(i) {
+  if (B[i] || over) return; hist.push(i); B[i] = turn; Board.sfx('move');
+  const w = winner(B);
+  if (w) { wl = w.line; over = turn.toUpperCase() + ' wins!'; score[turn]++; }
+  else if (B.every(Boolean)) { over = 'Draw — the board is full'; score.d++; }
+  else turn = other(turn);
+  render(i);
+  if (over) {
+    const t = !w ? 'Draw' : mode === 'two' ? over : w.p === mode ? 'You won!' : 'Computer wins';
+    Board.sfx(!w ? 'move' : mode === 'two' || w.p === mode ? 'win' : 'lose');
+    setTimeout(() => Board.modal(t, over, [['New game', newGame], ['Close']]), 650);
+  } else cpu();
+}
+function cpu() {
+  if (over || human()) return; busy = true; render();
+  const g = gen;
+  Board.think(() => cpuMove(B.slice(), turn, +$('#lvl').value), 850).then(async (m) => {
+    if (g !== gen) return;
+    cells[m].classList.add('pick'); await Board.sleep(Board.pace(450));   /* highlight the square it chose before marking it */
+    if (g !== gen) return;
+    busy = false; play(m);
+  });
+}
+function undo() {
+  if (busy || !hist.length) return;
+  if (over) { /* take back the game result from the score */
+    const w = winner(B); if (w) score[w.p]--; else score.d--;
+  }
+  const pop = () => { B[hist.pop()] = ''; };
+  pop(); if (mode !== 'two' && hist.length && hist.length % 2 !== (mode === 'x' ? 0 : 1)) pop();
+  turn = hist.length % 2 ? 'o' : 'x'; over = ''; wl = null; gen++; render(); cpu();
+}
+function go(i) { if (over || busy || !human() || B[i]) { if (!over && !busy && human() && B[i]) Board.sfx('error'); return; } play(i); }
+bd.addEventListener('click', (e) => { const d = e.target.closest('.cl'); if (d) go(+d.dataset.i); });
+$('#new').onclick = newGame; $('#undo').onclick = undo; $('#mode').onchange = newGame;
+$('#rs').onclick = () => { score.x = score.o = score.d = 0; render(); };
+document.addEventListener('keydown', (e) => {
+  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'n') newGame(); else if (k === 'u') undo();
+  else if (k >= '1' && k <= '9') go(KEY2IDX[+k]);
+});
+newGame();
+</script>
+</body>
+</html>

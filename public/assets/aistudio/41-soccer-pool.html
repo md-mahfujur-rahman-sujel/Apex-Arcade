@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soccer Pool</title>
+</head>
+<body>
+<script src="arcade-core.js"></script>
+<script>
+(function () {
+  const A = Arcade, W = 800, H = 480, PX0 = 60, PX1 = 740, PY0 = 80, PY1 = 440, GY0 = 205, GY1 = 315, DR = 20, BR = 11, MAXV = 17, WINS = 5;
+  const SEGS = [[PX0, PY0, PX1, PY0], [PX0, PY1, PX1, PY1], [PX0, PY0, PX0, GY0], [PX0, GY1, PX0, PY1], [PX1, PY0, PX1, GY0], [PX1, GY1, PX1, PY1], [30, GY0, PX0, GY0], [30, GY1, PX0, GY1], [30, GY0, 30, GY1], [PX1, GY0, 770, GY0], [PX1, GY1, 770, GY1], [770, GY0, 770, GY1]];
+  const MOUTH = [[PX0, GY0, PX0, GY1], [PX1, GY0, PX1, GY1]];
+  let G, discs, ball, turn, state, sel = null, drag = null, ptr = { x: 0, y: 0 }, score, wait, msg, msgT, firstTouch, inited = false, hitCd = 0, scored;
+  const FORM = [[100, 260], [190, 175], [190, 345], [300, 260]];
+  function setup() {
+    discs = []; FORM.forEach(([x, y]) => { discs.push({ x, y, vx: 0, vy: 0, t: 0 }); discs.push({ x: W - x, y, vx: 0, vy: 0, t: 1 }); });
+    ball = { x: 400, y: 260, vx: 0, vy: 0 }; sel = null; drag = null;
+  }
+  function init(g) { G = g; score = [0, 0]; turn = 0; setup(); state = 'aim'; wait = 0; msg = 'Your kick-off — drag back from one of your discs and release'; msgT = 220; scored = false; if (!inited) { inited = true; bind(); } }
+  const pt = (e) => { const r = G.canvas.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; };
+  function bind() {
+    G.canvas.addEventListener('pointermove', (e) => { ptr = pt(e); });
+    G.canvas.addEventListener('pointerdown', (e) => {
+      if (G.state !== 'playing' || state !== 'aim' || turn !== 0) return; ptr = pt(e);
+      let best = null, bd = DR + 16; for (const d of discs) if (d.t === 0) { const k = Math.hypot(d.x - ptr.x, d.y - ptr.y); if (k < bd) { bd = k; best = d; } }
+      if (best) { sel = best; drag = { x: ptr.x, y: ptr.y }; A.sfx('select'); }
+    });
+    window.addEventListener('pointerup', () => {
+      if (!drag || !sel) { drag = null; return; } const d = drag, s = sel; drag = null; sel = null; if (G.state !== 'playing' || state !== 'aim' || turn !== 0) return;
+      const dx = d.x - ptr.x, dy = d.y - ptr.y, len = Math.hypot(dx, dy); if (len < 12) return; kick(s, Math.atan2(dy, dx), Math.min(1, len / 150));
+    });
+  }
+  function kick(d, a, p) { const v = Math.max(2, p * MAXV); d.vx = Math.cos(a) * v; d.vy = Math.sin(a) * v; state = 'roll'; firstTouch = null; scored = false; A.sfx('thud'); }
+  function hitSeg(o, r, x1, y1, x2, y2, e) {
+    const dx = x2 - x1, dy = y2 - y1, L2 = dx * dx + dy * dy; let t = A.clamp(((o.x - x1) * dx + (o.y - y1) * dy) / L2, 0, 1);
+    const cx = x1 + dx * t, cy = y1 + dy * t; let nx = o.x - cx, ny = o.y - cy; const d = Math.hypot(nx, ny), m = r + 2; if (d >= m || d < 1e-6) return;
+    nx /= d; ny /= d; o.x = cx + nx * m; o.y = cy + ny * m; const vn = o.vx * nx + o.vy * ny; if (vn < 0) { o.vx -= (1 + e) * vn * nx; o.vy -= (1 + e) * vn * ny; if (-vn > 2 && hitCd <= 0) { A.sfx('blip'); hitCd = 4; } }
+  }
+  function pair(a, ra, ma, b, rb, mb, e) {
+    const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy), m = ra + rb; if (d >= m || d < 1e-6) return false;
+    const nx = dx / d, ny = dy / d, ov = m - d, tm = ma + mb; a.x -= nx * ov * mb / tm; a.y -= ny * ov * mb / tm; b.x += nx * ov * ma / tm; b.y += ny * ov * ma / tm;
+    const rv = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny; if (rv > 0) { const j = ((1 + e) * rv) / (1 / ma + 1 / mb); a.vx -= j / ma * nx; a.vy -= j / ma * ny; b.vx += j / mb * nx; b.vy += j / mb * ny; if (rv > 1.5 && hitCd <= 0) { A.sfx('hit'); hitCd = 4; } }
+    return true;
+  }
+  function physics() {
+    for (let k = 0; k < 4; k++) {
+      for (const d of discs) { d.x += d.vx / 4; d.y += d.vy / 4; } ball.x += ball.vx / 4; ball.y += ball.vy / 4;
+      for (let i = 0; i < discs.length; i++) { for (let j = i + 1; j < discs.length; j++) pair(discs[i], DR, 4, discs[j], DR, 4, 0.85); if (pair(discs[i], DR, 4, ball, BR, 1, 0.92) && firstTouch === null) firstTouch = discs[i].t; }
+      for (const d of discs) { for (const s of SEGS.slice(0, 6)) hitSeg(d, DR, s[0], s[1], s[2], s[3], 0.6); for (const s of MOUTH) hitSeg(d, DR, s[0], s[1], s[2], s[3], 0.6); }
+      for (const s of SEGS) hitSeg(ball, BR, s[0], s[1], s[2], s[3], 0.78);
+    }
+    for (const d of discs) { d.vx *= 0.984; d.vy *= 0.984; if (Math.hypot(d.vx, d.vy) < 0.06) d.vx = d.vy = 0; }
+    ball.vx *= 0.991; ball.vy *= 0.991; if (Math.hypot(ball.vx, ball.vy) < 0.05) ball.vx = ball.vy = 0;
+    if (!scored && ball.y > GY0 && ball.y < GY1) { if (ball.x < PX0 - 2) goal(1); else if (ball.x > PX1 + 2) goal(0); }
+  }
+  function goal(who) {
+    scored = true; score[who]++; A.sfx(who === 0 ? 'win' : 'hurt'); G.shake(6); G.burst(who === 0 ? PX1 + 15 : PX0 - 15, 260, 40, { color: who === 0 ? ['#22d3ee', '#fff'] : ['#fbbf24', '#fff'], speed: 6, glow: true });
+    if (who === 0) G.addScore(100); msg = who === 0 ? 'GOAL! You score' : 'Goal for the computer'; msgT = 110; state = 'goal'; wait = 100; turn = 1 - who;
+    if (score[who] >= WINS) { state = 'end'; wait = 90; }
+  }
+  function settled() { return discs.every((d) => !d.vx && !d.vy) && !ball.vx && !ball.vy; }
+  function cpuPlan() {
+    const mine = discs.filter((d) => d.t === 1), gx = PX0 - 10, gy = 260; let ux = gx - ball.x, uy = gy - ball.y; const ul = Math.hypot(ux, uy) || 1; ux /= ul; uy /= ul;
+    const tx = ball.x - ux * (BR + DR - 3), ty = ball.y - uy * (BR + DR - 3); let best = null, bs = 1e9;
+    for (const d of mine) {
+      const dx = tx - d.x, dy = ty - d.y, dist = Math.hypot(dx, dy) || 1, cs = (dx / dist) * ux + (dy / dist) * uy;
+      let cost = dist + (cs < 0.2 ? 220 : 0) - cs * 60;
+      for (const o of discs) { if (o === d) continue; const t = A.clamp(((o.x - d.x) * dx + (o.y - d.y) * dy) / (dist * dist), 0, 1); if (Math.hypot(d.x + dx * t - o.x, d.y + dy * t - o.y) < DR * 2 - 2) cost += 120; }
+      if (cost < bs) { bs = cost; best = { d, a: Math.atan2(dy, dx), v: A.clamp(dist * 0.045 + 6, 7, 16) }; }
+    }
+    return best;
+  }
+  function update(g) {
+    if (g.state !== 'playing') return; if (hitCd > 0) hitCd--; if (msgT > 0) msgT--;
+    g.hudL = 'YOU ' + score[0] + ' – ' + score[1] + ' CPU'; g.hudR = 'FIRST TO ' + WINS;
+    if (state === 'roll') { physics(); if (state === 'roll' && settled()) { turn = 1 - turn; if (turn === 0) { state = 'aim'; msg = 'Your turn'; msgT = 50; } else { state = 'cpu'; wait = 55; } } }
+    else if (state === 'cpu') { physics(); if (--wait <= 0) { const p = cpuPlan(); if (p) kick(p.d, p.a + A.rand(-0.045, 0.045), p.v / MAXV); else state = 'aim'; } }
+    else if (state === 'goal') { physics(); if (--wait <= 0) { setup(); if (turn === 0) { state = 'aim'; msg = 'Your kick-off'; msgT = 80; } else { state = 'cpu'; wait = 50; } scored = false; } }
+    else if (state === 'end') { if (--wait <= 0) { state = 'done'; if (score[0] > score[1]) g.win('You win ' + score[0] + '–' + score[1] + '!', 'Full time'); else g.over('Computer wins ' + score[1] + '–' + score[0], 'Full time'); } }
+  }
+  function discDraw(c, d, hot) {
+    const col = d.t === 0 ? '#06b6d4' : '#f59e0b';
+    A.shadow(c, d.x + 3, d.y + 5, DR, DR * 0.45, 0.35);
+    c.fillStyle = A.shade(col, -0.35); c.beginPath(); c.arc(d.x, d.y + 3, DR, 0, A.TAU); c.fill();
+    const g = c.createRadialGradient(d.x - 6, d.y - 6, 2, d.x, d.y, DR); g.addColorStop(0, A.shade(col, 0.4)); g.addColorStop(1, col); c.fillStyle = g; c.beginPath(); c.arc(d.x, d.y, DR, 0, A.TAU); c.fill();
+    c.strokeStyle = hot ? '#fff' : 'rgba(255,255,255,.55)'; c.lineWidth = hot ? 4 : 2; c.beginPath(); c.arc(d.x, d.y, DR - 4, 0, A.TAU); c.stroke();
+  }
+  function draw(g, c) {
+    A.sky(c, W, H, ['#0e1424', '#07090f']);
+    c.fillStyle = '#0b1e17'; c.fillRect(20, 60, 760, 400);
+    for (let i = 0; i < 8; i++) { c.fillStyle = i % 2 ? '#1a8c52' : '#1fa05f'; c.fillRect(PX0 + i * 85, PY0, 85, PY1 - PY0); }
+    c.strokeStyle = 'rgba(255,255,255,.7)'; c.lineWidth = 3; c.strokeRect(PX0, PY0, PX1 - PX0, PY1 - PY0); c.beginPath(); c.moveTo(400, PY0); c.lineTo(400, PY1); c.stroke(); c.beginPath(); c.arc(400, 260, 55, 0, A.TAU); c.stroke();
+    c.strokeRect(PX0, 165, 110, 190); c.strokeRect(PX1 - 110, 165, 110, 190); c.fillStyle = '#fff'; c.beginPath(); c.arc(400, 260, 4, 0, A.TAU); c.fill();
+    for (const [x0, x1] of [[30, PX0], [PX1, 770]]) { c.fillStyle = 'rgba(255,255,255,.12)'; c.fillRect(x0, GY0, x1 - x0, GY1 - GY0); c.strokeStyle = 'rgba(255,255,255,.35)'; c.lineWidth = 1; for (let x = x0; x <= x1; x += 8) { c.beginPath(); c.moveTo(x, GY0); c.lineTo(x, GY1); c.stroke(); } for (let y = GY0; y <= GY1; y += 8) { c.beginPath(); c.moveTo(x0, y); c.lineTo(x1, y); c.stroke(); } }
+    c.strokeStyle = '#f8fafc'; c.lineWidth = 5; c.lineCap = 'round'; for (const s of SEGS.slice(6)) { c.beginPath(); c.moveTo(s[0], s[1]); c.lineTo(s[2], s[3]); c.stroke(); } c.lineCap = 'butt';
+    c.fillStyle = '#f8fafc'; for (const [x, y] of [[PX0, GY0], [PX0, GY1], [PX1, GY0], [PX1, GY1]]) { c.beginPath(); c.arc(x, y, 5, 0, A.TAU); c.fill(); }
+    const hover = state === 'aim' && turn === 0 && !drag ? discs.find((d) => d.t === 0 && Math.hypot(d.x - ptr.x, d.y - ptr.y) < DR + 16) : null;
+    for (const d of discs) discDraw(c, d, d === sel || d === hover || (state === 'cpu' && false));
+    A.shadow(c, ball.x + 2, ball.y + 4, BR, BR * 0.45, 0.35); c.fillStyle = '#f8fafc'; c.beginPath(); c.arc(ball.x, ball.y, BR, 0, A.TAU); c.fill(); c.fillStyle = '#111827'; for (let k = 0; k < 5; k++) { const a = k * 1.2566 + ball.x * 0.03; c.beginPath(); c.arc(ball.x + Math.cos(a) * 6, ball.y + Math.sin(a) * 6, 2.2, 0, A.TAU); c.fill(); } c.beginPath(); c.arc(ball.x, ball.y, 3, 0, A.TAU); c.fill();
+    if (drag && sel) {
+      const dx = drag.x - ptr.x, dy = drag.y - ptr.y, len = Math.hypot(dx, dy); if (len > 6) { const a = Math.atan2(dy, dx), p = Math.min(1, len / 150), L = 30 + p * 140; c.setLineDash([7, 6]); c.strokeStyle = 'rgba(255,255,255,.9)'; c.lineWidth = 3; c.beginPath(); c.moveTo(sel.x, sel.y); c.lineTo(sel.x + Math.cos(a) * L, sel.y + Math.sin(a) * L); c.stroke(); c.setLineDash([]); c.strokeStyle = A.mix('#22c55e', '#ef4444', p); c.lineWidth = 5; c.beginPath(); c.moveTo(sel.x, sel.y); c.lineTo(sel.x - Math.cos(a) * (10 + p * 40), sel.y - Math.sin(a) * (10 + p * 40)); c.stroke(); }
+    }
+    g.drawFX(c);
+    A.text(c, state === 'cpu' || (state === 'roll' && turn === 1) ? 'COMPUTER TO FLICK' : state === 'aim' ? 'YOUR FLICK' : '', 400, 464, 13, state === 'aim' ? '#22d3ee' : '#fbbf24', 'center', '800');
+    if (msgT > 0 && msg) { c.save(); c.globalAlpha = Math.min(1, msgT / 20); const big = /GOAL|Goal/.test(msg); A.glowText(c, msg, 400, big ? 130 : 50, big ? 40 : 16, big ? '#fbbf24' : '#e6e9f5', 'center'); c.restore(); }
+  }
+  Arcade.game({ id: 'soccer-pool', title: 'Soccer Pool', subtitle: 'Flick your discs across the table and score more goals than your rival.', w: W, h: H, color: '#38bdf8',
+    controls: [['Drag back from a cyan disc & release', 'flick it (longer pull = harder)'], ['Goal', 'knock the ball into the amber goal on the right'], ['Match', 'first to ' + WINS + ' goals wins']], init, update, draw });
+})();
+</script>
+</body>
+</html>

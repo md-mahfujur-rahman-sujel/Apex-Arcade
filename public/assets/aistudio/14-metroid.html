@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deepcore Drifter</title>
+</head>
+<body>
+<script src="arcade-core.js"></script>
+<script src="act-kit.js"></script>
+<script>
+/* Deepcore Drifter — sci-fi cavern shooter: find Spring Boots (double jump), the Charge Cell and Missiles,
+   open cyan and red doors, break weak walls, and defeat the Brood Warden. Built on act-kit.js. */
+const A = Arcade, K = Act, TAU = Math.PI * 2;
+
+const CORE = K.make('Deepcore', 150, 20, (g) => {
+  const gy = 16; /* row the player stands on */
+  g.ground(0, 34, 17); g.set(2, gy, 'P'); g.set(12, gy, 'k'); g.set(22, gy, 'k'); g.set(28, 11, 'v'); g.plat(14, 13, 4); g.coins(14, 12, 4); g.set(31, gy, 'C');
+  g.fill(34, 8, 1, 9, 'd');
+  g.ground(35, 58, 17); g.set(42, gy, 'h'); g.set(48, gy, 'k'); g.set(54, gy, 'u'); g.set(52, gy, 'J'); g.set(38, 12, 'v'); g.coins(44, 14, 3);
+  g.ground(64, 106, 17); g.set(66, gy, 'C'); g.set(72, gy, 'k'); g.set(78, gy, 'h'); g.set(76, 10, 'v');
+  g.plat(84, 14, 3); g.plat(88, 11, 3); g.set(89, 10, 'H'); g.set(92, gy, 'u'); g.set(94, gy, 'k'); g.coins(84, 13, 3);
+  g.fill(96, 8, 1, 9, 'x'); g.set(100, gy, 'k'); g.set(101, gy, 'M'); g.set(104, gy, 'T'); g.set(103, 12, 'v');
+  g.fill(107, 8, 1, 9, 'e');
+  g.ground(108, 150, 17); g.set(112, gy, 'C'); g.set(130, gy, 'B'); g.set(147, gy, 'F');
+});
+CORE.hint = 'Shoot cyan doors · find the Spring Boots to cross the chasm';
+CORE.theme = { solid: '#2a2f4a', top: '#6d28d9', plat: '#475569', accent: '#22d3ee', spike: '#f0abfc' };
+
+const vis = new Set();
+function bg(c, cam, t) {
+  A.sky(c, 800, 480, ['#07061a', '#14103a', '#2a1650']);
+  for (let i = 0; i < 24; i++) { const x = ((i * 97 - cam.x * 0.15) % 900 + 900) % 900 - 50, h = 40 + (i * 37) % 90; c.fillStyle = 'rgba(88,28,135,.35)'; c.beginPath(); c.moveTo(x - 14, 0); c.lineTo(x, h); c.lineTo(x + 14, 0); c.fill(); }
+  K.ridge(c, 360, 40, 1.7, cam.x * 0.2, 'rgba(30,27,75,.8)'); K.ridge(c, 420, 26, 4.2, cam.x * 0.45, '#120e30');
+  c.fillStyle = 'rgba(103,232,249,.5)'; for (let i = 0; i < 18; i++) { const x = ((i * 131 - cam.x * 0.3) % 960 + 960) % 960 - 80, y = 90 + (i * 53) % 280, a = 0.4 + Math.sin(t * 0.03 + i) * 0.3; c.globalAlpha = a; c.fillRect(x, y, 3, 3); } c.globalAlpha = 1;
+}
+function drawHero(c, p, G) {
+  const cx = p.x + p.w / 2, f = p.face, b = p.y + p.h, run = p.ground ? Math.sin(p.walk) : 0;
+  A.shadow(c, cx, b + 1, 11, 3, 0.25); c.save(); c.translate(cx, b); c.scale(f * (1 + p.sq * 0.4), 1 - p.sq * 0.4);
+  c.fillStyle = '#b45309'; c.fillRect(-7 + (p.ground ? run * 3 : 0), -10, 6, 10); c.fillRect(1 - (p.ground ? run * 3 : 0), -10, 6, 10);
+  c.fillStyle = '#f97316'; A.roundRect(c, -9, -26, 18, 18, 6); c.fill(); c.fillStyle = '#fb923c'; c.fillRect(-9, -26, 18, 4);
+  c.fillStyle = '#fdba74'; A.roundRect(c, -7, -36, 14, 12, 5); c.fill(); c.fillStyle = '#22d3ee'; c.shadowColor = '#22d3ee'; c.shadowBlur = 6; c.fillRect(0, -32, 6, 5); c.shadowBlur = 0;
+  c.fillStyle = '#7c2d12'; A.roundRect(c, 4, -22, 14, 7, 3); c.fill();
+  if (p.chg > 8) { c.fillStyle = p.chg >= 45 ? '#fff' : '#67e8f9'; c.shadowColor = '#22d3ee'; c.shadowBlur = 14; c.beginPath(); c.arc(19, -19, 2 + p.chg / 14, 0, TAU); c.fill(); }
+  c.restore();
+}
+function drawEnemy(c, e, G) {
+  const cx = e.x + e.w / 2, cy = e.y + e.h / 2, t = G.clock, f = e.face, hit = e.hurt > 0, k = e.k;
+  if (k === 'k') { A.shadow(c, cx, e.y + e.h + 1, 12, 3, 0.25); c.fillStyle = hit ? '#fff' : '#84cc16'; c.beginPath(); c.ellipse(cx, cy + 3, 14, 10, 0, Math.PI, 0); c.fill(); c.fillRect(e.x, cy + 3, e.w, 6); for (let i = 0; i < 4; i++) c.fillRect(e.x + 3 + i * 6, e.y + e.h - 3 + Math.sin(t * 0.4 + i * 2) * 2, 3, 4); c.fillStyle = '#111'; c.fillRect(cx + f * 6 - 2, cy - 2, 4, 4); return true; }
+  if (k === 'h') { c.fillStyle = hit ? '#fff' : '#f43f5e'; A.roundRect(c, e.x, e.y + (e.ground ? 4 : 0), e.w, e.h - (e.ground ? 4 : 0), 8); c.fill(); c.fillStyle = '#fff'; c.fillRect(cx - 7, cy - 4, 5, 6); c.fillRect(cx + 2, cy - 4, 5, 6); c.fillStyle = '#111'; c.fillRect(cx - 5 + f, cy - 2, 2, 3); c.fillRect(cx + 4 + f, cy - 2, 2, 3); return true; }
+  if (k === 'v') { const fl = Math.sin(t * 0.35) * 8; c.fillStyle = hit ? '#fff' : '#a78bfa'; c.beginPath(); c.moveTo(cx - 3, cy); c.lineTo(cx - 18, cy - fl - 6); c.lineTo(cx - 9, cy + 6); c.fill(); c.beginPath(); c.moveTo(cx + 3, cy); c.lineTo(cx + 18, cy - fl - 6); c.lineTo(cx + 9, cy + 6); c.fill(); c.beginPath(); c.arc(cx, cy, 7, 0, TAU); c.fill(); c.fillStyle = '#fde047'; c.fillRect(cx - 4, cy - 2, 3, 3); c.fillRect(cx + 1, cy - 2, 3, 3); return true; }
+  if (k === 'u') { c.fillStyle = '#334155'; A.roundRect(c, e.x, e.y + 14, e.w, e.h - 14, 6); c.fill(); c.save(); c.translate(cx, e.y + 14); c.scale(f, 1); c.fillStyle = hit ? '#fff' : '#94a3b8'; c.fillRect(0, -4, 20, 8); c.restore(); c.fillStyle = hit ? '#fff' : '#ef4444'; c.beginPath(); c.arc(cx, e.y + 14, 9, 0, TAU); c.fill(); return true; }
+  if (k === 'B') {
+    c.save(); c.translate(cx, e.y + e.h); c.scale(f, 1); const sq = e.ground ? 0 : 1; c.fillStyle = hit ? '#fff' : '#65a30d';
+    c.beginPath(); c.ellipse(0, -34, 40, 34 - sq * 4, 0, Math.PI, 0); c.fill(); c.fillRect(-40, -34, 80, 26);
+    for (let i = 0; i < 5; i++) { c.fillRect(-36 + i * 16, -10 + Math.sin(t * 0.3 + i) * 2, 8, 10); }
+    c.fillStyle = hit ? '#fff' : '#3f6212'; for (let i = -2; i <= 2; i++) { c.beginPath(); c.moveTo(i * 14 - 6, -60); c.lineTo(i * 14, -76 + Math.abs(i) * 5); c.lineTo(i * 14 + 6, -60); c.fill(); }
+    c.fillStyle = '#fef08a'; c.shadowColor = '#fde047'; c.shadowBlur = 12; c.beginPath(); c.arc(22, -42, 8, 0, TAU); c.fill(); c.beginPath(); c.arc(4, -48, 6, 0, TAU); c.fill(); c.shadowBlur = 0; c.fillStyle = '#111'; c.fillRect(22, -45, 4, 6);
+    c.restore(); return true;
+  }
+}
+function boss(e, x) {
+  const p = x.p, low = e.hp < e.hmax * 0.5, per = low ? 56 : 82; e.t++;
+  if (e.ground) { e.vx *= 0.8; if (e.t % per === 0) { e.vy = -12.5; e.vx = (p.x < e.x ? -1 : 1) * (low ? 4.4 : 3.5); A.sfx('jump2'); } else if (e.t % per === Math.floor(per / 2)) { const a = Math.atan2(p.y - e.y - 20, p.x - e.x); for (let i = -1; i <= 1; i++) x.shoot(e, Math.cos(a + i * 0.3) * 4, Math.sin(a + i * 0.3) * 4, { color: '#bef264', r: 7 }); A.sfx('shoot'); } }
+  if (e.ground && e.vy === 0 && e.t % per === 1) x.G.shake(5);
+}
+function hud(c, G, p) {
+  const rows = CORE.rows, mw = 150, mh = 20, ox = 800 - mw - 14, oy = 64;
+  if (G.t < 4) vis.clear();
+  const pc = Math.floor(p.x / 32), pr = Math.floor(p.y / 32);
+  for (let dx = -9; dx <= 9; dx++) for (let dy = -5; dy <= 5; dy++) vis.add((pc + dx) + ',' + (pr + dy));
+  c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(ox - 3, oy - 3, mw + 6, mh * 1.5 + 6);
+  for (let r = 0; r < mh; r++) for (let q = 0; q < mw; q++) {
+    if (!vis.has(q + ',' + r)) continue; const ch = rows[r][q];
+    if (ch === '#') c.fillStyle = '#6d28d9'; else if (ch === 'd') c.fillStyle = '#22d3ee'; else if (ch === 'e') c.fillStyle = '#fb7185'; else if (ch === 'x') c.fillStyle = '#a3a3a3'; else if (ch === 'C' || ch === 'F') c.fillStyle = '#4ade80'; else continue;
+    c.fillRect(ox + q, oy + r * 1.5, 1, 1.5);
+  }
+  if (Math.floor(G.clock / 20) % 2) { c.fillStyle = '#fff'; c.fillRect(ox + pc - 1, oy + pr * 1.5 - 1, 3, 3); }
+  const ab = p.ab, items = [['BOOTS', ab.dj], ['CHARGE', ab.charge], ['MISSILE', ab.sub]];
+  items.forEach((it, i) => A.text(c, it[0], 14 + i * 70, 98, 11, it[1] ? '#67e8f9' : 'rgba(255,255,255,.25)', 'left', '800'));
+}
+
+K.game({
+  id: 'deepcore-drifter', title: 'Deepcore Drifter', subtitle: 'Explore, upgrade, unlock, survive', color: '#22d3ee',
+  controls: [['← →  /  A D', 'Move'], ['Space  /  ↑  /  W  /  Z', 'Jump (double jump after Spring Boots)'], ['X  /  J', 'Fire beam — hold to charge after the Charge Cell'], ['C  /  K', 'Missile (after pickup) — opens red doors'], ['Shoot cyan doors / cracked walls', 'Opens the way'], ['P / M', 'Pause / mute']],
+  help: '← → move · Space jump · X fire (hold to charge) · C missile · shoot cyan doors and cracked walls · find 3 upgrades · defeat the Brood Warden',
+  levels: [CORE], bg, hud, hero: { hp: 6, run: 3.3, jump: 10.6, ab: { sub: false }, ammo: 0, weapon: { type: 'shot', dmg: 1, speed: 9, cd: 14, life: 55, size: 5, color: '#67e8f9' }, sub: { name: 'missile', cost: 1, dmg: 6, vx: 8, grav: 0, life: 90, size: 6, color: '#fb7185', glow: true, sfx: 'boom' } },
+  pickups: {
+    J: { ab: 'dj', msg: 'SPRING BOOTS — jump again in mid-air', icon: 'J' },
+    H: { ab: 'charge', msg: 'CHARGE CELL — hold fire, release for a big shot', icon: 'C' },
+    M: { ab: 'sub', ammo: 8, msg: 'MISSILES — press C, opens red doors', icon: 'M' },
+    T: { hp: 2, msg: 'ENERGY TANK +2', icon: '+' },
+  },
+  enemies: {
+    k: { w: 28, h: 18, hp: 2, ai: 'walk', sp: 0.7, score: 80, color: '#84cc16' },
+    h: { w: 24, h: 24, hp: 2, ai: 'hop', sp: 2.2, jump: 9, every: 70, score: 100, color: '#f43f5e' },
+    v: { w: 24, h: 18, hp: 1, ai: 'fly', sp: 1.7, sight: 210, range: 60, bob: 24, score: 80, color: '#a78bfa' },
+    u: { w: 28, h: 30, hp: 4, ai: 'turret', fixed: true, score: 150, color: '#ef4444', sight: 400, shoot: { speed: 3.4, color: '#fb7185' }, every: 90, aim: true },
+    B: { w: 80, h: 76, hp: 36, ai: 'boss', name: 'BROOD WARDEN', wake: 380, score: 3000, color: '#65a30d', dmg: 2 },
+  },
+  boss, drawEnemy, drawHero, clear: 'SECTOR CLEAR', winTitle: 'Warden Down', winSub: (G) => 'Sector secured · Score ' + G.score,
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bowling</title>
+</head>
+<body>
+<script src="arcade-core.js"></script>
+<script>
+(function () {
+  const A = Arcade, W = 800, H = 480, LX0 = 490, LX1 = 670, CX = 580, BR = 11, PR = 8, BY = 425;
+  let G, pins, ball, phase, px, ang, pow, rolls, frame, rif, timer, msg, msgT, steer, lockT, ptrX = null, inited = false, rollT;
+  const standing = () => pins.filter((p) => !p.down).length;
+  function rack() {
+    pins = []; let n = 0;
+    for (let r = 0; r < 4; r++) for (let i = 0; i <= r; i++) { const x = CX + (i - r / 2) * 28, y = 130 - r * 24; pins.push({ n: ++n, x, y, hx: x, hy: y, vx: 0, vy: 0, down: false, gone: false, fade: 1 }); }
+  }
+  function init(g) {
+    G = g; rack(); ball = null; phase = 'pos'; px = CX; ang = 0; pow = 0; rolls = []; frame = 0; rif = 0; timer = 0; msg = ''; msgT = 0; steer = 0; lockT = 0; rollT = 0;
+    if (!inited) { inited = true; bind(); }
+  }
+  const pt = (e) => { const r = G.canvas.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; };
+  function bind() {
+    G.canvas.addEventListener('pointermove', (e) => { ptrX = pt(e).x; });
+    G.canvas.addEventListener('pointerdown', (e) => { if (G.state !== 'playing') return; ptrX = pt(e).x; if (phase === 'pos') px = A.clamp(ptrX, LX0 + 14, LX1 - 14); action(); });
+  }
+  function action() {
+    if (lockT > 0) return;
+    if (phase === 'pos') { phase = 'aim'; timer = 0; lockT = 8; A.sfx('select'); }
+    else if (phase === 'aim') { phase = 'power'; timer = 0; lockT = 8; A.sfx('select'); }
+    else if (phase === 'power') { throwBall(); }
+  }
+  function throwBall() {
+    const sp = 5 + pow * 6.5; ball = { x: px, y: BY, vx: Math.sin(ang) * sp, vy: -Math.cos(ang) * sp, gutter: false };
+    phase = 'roll'; rollT = 0; steer = 0; A.sfx('shoot'); lockT = 10; G.popup(px, BY - 30, Math.round(pow * 100) + '%', '#fff', 14); pins.forEach((p) => (p.before = !p.down));
+  }
+  function collide(a, b, ma, mb, mark) {
+    const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy), min = a.r + b.r; if (d >= min || d < 0.001) return false;
+    const nx = dx / d, ny = dy / d, ov = min - d, tm = ma + mb;
+    a.x -= nx * ov * (mb / tm); a.y -= ny * ov * (mb / tm); b.x += nx * ov * (ma / tm); b.y += ny * ov * (ma / tm);
+    const rv = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+    if (rv > 0) { const j = (1.7 * rv) / (1 / ma + 1 / mb); a.vx -= (j / ma) * nx; a.vy -= (j / ma) * ny; b.vx += (j / mb) * nx; b.vy += (j / mb) * ny; if (rv > 0.4) { mark(rv); } }
+    return true;
+  }
+  function physics() {
+    if (ball && !ball.gone) {
+      if (!ball.gutter && (ball.x < LX0 - 2 || ball.x > LX1 + 2)) { ball.gutter = true; ball.x = ball.x < CX ? LX0 - 14 : LX1 + 14; ball.vx = 0; A.sfx('thud'); msg = 'Gutter ball'; msgT = 70; }
+      if (!ball.gutter) { const s = A.axisX(); steer = A.clamp(steer + s * 0.012, -0.45, 0.45); ball.vx += steer * 0.012 * (ball.y < 330 ? 1 : 0.4); ball.vx = A.clamp(ball.vx, -4, 4); }
+      ball.x += ball.vx; ball.y += ball.vy; ball.r = BR;
+      if (ball.y < 24) ball.gone = true;
+    }
+    for (const p of pins) { p.r = PR; if (p.gone) continue; p.x += p.vx; p.y += p.vy; p.vx *= 0.955; p.vy *= 0.955; if (p.y < 40 || p.y > 300) { p.gone = true; p.down = true; } if (Math.hypot(p.x - p.hx, p.y - p.hy) > 10 || p.x < LX0 - 2 || p.x > LX1 + 2) p.down = true; }
+    if (ball && !ball.gone && !ball.gutter) for (const p of pins) if (!p.gone && collide(ball, p, 6, 1, () => { })) { p.down = true; A.sfx('hit'); G.burst(p.x, p.y, 5, { color: '#fff', speed: 2 }); G.shake(1.5); }
+    for (let i = 0; i < pins.length; i++) for (let j = i + 1; j < pins.length; j++) { const a = pins[i], b = pins[j]; if (a.gone || b.gone) continue; if (Math.hypot(a.vx, a.vy) < 0.15 && Math.hypot(b.vx, b.vy) < 0.15) continue; collide(a, b, 1, 1, () => { a.down = true; b.down = true; if (G.t % 3 === 0) A.sfx('tick'); }); }
+  }
+  function moving() { return (ball && !ball.gone) || pins.some((p) => !p.gone && Math.hypot(p.vx, p.vy) > 0.12); }
+  function marks(rs) {
+    const out = []; let stand = 10;
+    rs.forEach((k) => { if (k === stand) { out.push(stand === 10 ? 'X' : '/'); stand = 10; } else { out.push(k === 0 ? '-' : String(k)); stand -= k; } });
+    return out;
+  }
+  function frames() {
+    const res = []; let i = 0;
+    for (let f = 0; f < 10 && i < rolls.length; f++) {
+      if (f < 9) {
+        const a = rolls[i];
+        if (a === 10) { res.push({ m: ['X'], pts: i + 2 < rolls.length ? 10 + rolls[i + 1] + rolls[i + 2] : null }); i += 1; }
+        else if (i + 1 >= rolls.length) { res.push({ m: marks([a]), pts: null }); break; }
+        else { const b = rolls[i + 1]; res.push({ m: marks([a, b]), pts: a + b === 10 ? (i + 2 < rolls.length ? 10 + rolls[i + 2] : null) : a + b }); i += 2; }
+      } else {
+        const r = rolls.slice(i), done = r.length === 3 || (r.length === 2 && r[0] !== 10 && r[0] + r[1] < 10);
+        res.push({ m: marks(r), pts: done ? r.reduce((s, v) => s + v, 0) : null });
+      }
+    }
+    return res;
+  }
+  function total() { let t = 0; for (const f of frames()) { if (f.pts == null) break; t += f.pts; } return t; }
+  function afterRoll() {
+    const k = pins.filter((p) => p.before).length - standing(); rolls.push(k); G.score = total(); if (G.score > G.hi) G.hi = G.score;
+    let reset = false, fin = false, text = k === 0 ? 'Miss' : k + ' pin' + (k > 1 ? 's' : '');
+    const stand = standing(), fresh = pins.every((p) => p.before) ;
+    if (frame < 9) {
+      if (rif === 0) { if (k === 10) { text = 'STRIKE!'; reset = true; frame++; rif = 0; } else rif = 1; }
+      else { if (stand === 0) text = 'SPARE!'; reset = true; frame++; rif = 0; }
+    } else {
+      const r = rolls.slice(rolls.length - (rif + 1));
+      if (rif === 0) { rif = 1; if (k === 10) { text = 'STRIKE!'; reset = true; } }
+      else if (rif === 1) { if (r[0] === 10) { rif = 2; if (k === 10) { text = 'STRIKE!'; reset = true; } } else if (r[0] + k === 10) { text = 'SPARE!'; reset = true; rif = 2; } else fin = true; }
+      else { fin = true; if (k === 10 || stand === 0) text = text; }
+    }
+    if (/STRIKE|SPARE/.test(text)) { A.sfx('clear'); G.burst(CX, 150, 36, { color: ['#06b6d4', '#facc15', '#fff'], speed: 5, glow: true }); }
+    msg = text; msgT = 90; phase = 'between'; timer = 0; G.shake(/STRIKE/.test(text) ? 5 : 0);
+    window.__bowlNext = { reset, fin };
+  }
+  function nextTurn() {
+    const n = window.__bowlNext; ball = null;
+    if (n.fin) { const t = total(); G.win('Game complete', 'Final score ' + t + (t >= 200 ? ' — fantastic!' : t >= 120 ? ' — nice game' : '')); return; }
+    if (n.reset) rack(); else pins = pins.filter((p) => !p.gone).map((p) => p).concat([]), pins.forEach((p) => { p.vx = p.vy = 0; if (p.down) p.gone = true; });
+    phase = 'pos'; ang = 0; pow = 0; px = A.clamp(px, LX0 + 14, LX1 - 14);
+  }
+  function update(g) {
+    if (g.state !== 'playing' || g.t < 6) return; if (lockT > 0) lockT--; if (msgT > 0) msgT--; timer++;
+    if (phase === 'pos') { const s = A.axisX(); px = A.clamp(px + s * 3.2, LX0 + 14, LX1 - 14); if (A.hit('Space', 'Enter')) action(); }
+    else if (phase === 'aim') { ang = Math.sin(timer * 0.055) * 0.32; if (A.hit('Space', 'Enter')) action(); }
+    else if (phase === 'power') { pow = (1 - Math.cos(timer * 0.075)) / 2; if (A.hit('Space', 'Enter')) action(); }
+    else if (phase === 'roll') { rollT++; physics(); if ((!moving() && rollT > 20) || rollT > 420) { pins.forEach((p) => { if (Math.hypot(p.x - p.hx, p.y - p.hy) > 4) p.down = true; }); afterRoll(); } }
+    else if (phase === 'between') { physics(); if (timer > 90) nextTurn(); }
+  }
+  function drawPin(c, p) {
+    if (p.gone) return; c.save(); c.globalAlpha = p.down ? 0.45 : 1;
+    A.shadow(c, p.x + 2, p.y + 3, PR, PR * 0.5, 0.25); c.fillStyle = '#f8fafc'; c.beginPath(); c.arc(p.x, p.y, PR, 0, A.TAU); c.fill();
+    c.strokeStyle = '#dc2626'; c.lineWidth = 2.5; c.beginPath(); c.arc(p.x, p.y, PR * 0.55, 0, A.TAU); c.stroke(); c.restore();
+  }
+  function draw(g, c) {
+    A.sky(c, W, H, ['#0e1424', '#07090f']);
+    c.fillStyle = '#0a0d17'; c.fillRect(LX0 - 40, 0, LX1 - LX0 + 80, 50);
+    c.fillStyle = '#111827'; c.fillRect(LX0 - 28, 50, 28, H - 50); c.fillRect(LX1, 50, 28, H - 50);
+    const lg = c.createLinearGradient(LX0, 0, LX1, 0); lg.addColorStop(0, '#c8924f'); lg.addColorStop(0.5, '#e0b274'); lg.addColorStop(1, '#c8924f'); c.fillStyle = lg; c.fillRect(LX0, 50, LX1 - LX0, H - 50);
+    c.strokeStyle = 'rgba(90,55,20,.35)'; c.lineWidth = 1; for (let x = LX0 + 9; x < LX1; x += 9) { c.beginPath(); c.moveTo(x, 50); c.lineTo(x, H); c.stroke(); }
+    c.fillStyle = 'rgba(120,70,20,.5)'; for (let i = -3; i <= 3; i++) { c.beginPath(); c.moveTo(CX + i * 24, 330 + Math.abs(i) * 8); c.lineTo(CX + i * 24 - 5, 346 + Math.abs(i) * 8); c.lineTo(CX + i * 24 + 5, 346 + Math.abs(i) * 8); c.fill(); }
+    c.fillStyle = '#ef4444'; c.fillRect(LX0, 440, LX1 - LX0, 3);
+    for (const p of pins) drawPin(c, p);
+    if (phase === 'pos' || phase === 'aim' || phase === 'power') {
+      const bx = px, by = BY;
+      if (phase !== 'pos') { c.setLineDash([6, 6]); c.strokeStyle = 'rgba(255,255,255,.7)'; c.lineWidth = 2; c.beginPath(); c.moveTo(bx, by); c.lineTo(bx + Math.sin(ang) * 260, by - Math.cos(ang) * 260); c.stroke(); c.setLineDash([]); }
+      ballDraw(c, bx, by);
+    } else if (ball && !ball.gone) ballDraw(c, ball.x, ball.y);
+    g.drawFX(c);
+    /* meters */
+    const meter = (x, y, w, label, v, lo) => { c.fillStyle = 'rgba(0,0,0,.5)'; A.roundRect(c, x, y, w, 14, 7); c.fill(); c.fillStyle = lo ? '#06b6d4' : A.mix('#22c55e', '#ef4444', v); const fw = lo ? 8 : Math.max(6, w * v); A.roundRect(c, lo ? x + (w - 8) * v : x, y, fw, 14, 7); c.fill(); A.text(c, label, x, y - 6, 12, '#8b93b3', 'left', '700'); };
+    if (phase === 'pos') A.text(c, '← → or mouse: position   ·   Space / click: lock', 20, 300, 14, '#e6e9f5', 'left', '700');
+    if (phase === 'aim') { meter(20, 330, 320, 'ANGLE — press Space / click to lock', (ang / 0.32 + 1) / 2, true); }
+    if (phase === 'power') { meter(20, 330, 320, 'POWER — press Space / click to throw', pow, false); A.text(c, 'Hold ← → while rolling to curve the ball', 20, 372, 13, '#8b93b3', 'left', '600'); }
+    if (phase === 'roll') A.text(c, 'Hold ← / → to hook the ball', 20, 300, 14, '#67e8f9', 'left', '700');
+    /* scoreboard */
+    const fr = frames(); let run = 0;
+    for (let f = 0; f < 10; f++) {
+      const x = 20 + (f % 5) * 82, y = 54 + Math.floor(f / 5) * 94, cur = f === frame && phase !== 'between' || (f === frame && phase === 'between');
+      c.fillStyle = 'rgba(21,25,38,.95)'; A.roundRect(c, x, y, 76, 84, 8); c.fill(); c.strokeStyle = f === frame && g.state === 'playing' ? '#22d3ee' : 'rgba(255,255,255,.12)'; c.lineWidth = f === frame ? 2 : 1; A.roundRect(c, x, y, 76, 84, 8); c.stroke();
+      A.text(c, String(f + 1), x + 6, y + 15, 11, '#8b93b3', 'left', '700');
+      const e = fr[f]; if (e) { e.m.forEach((m, k) => A.text(c, m, x + 76 - 8 - (e.m.length - 1 - k) * 18, y + 18, 15, m === 'X' || m === '/' ? '#fbbf24' : '#e6e9f5', 'right', '800', A.MONO)); }
+      if (e && e.pts != null) { run += e.pts; A.text(c, String(run), x + 38, y + 62, 24, '#e6e9f5', 'center', '800', A.MONO); } else if (e) { for (let q = 0; q <= f; q++); }
+    }
+    A.text(c, 'FRAME ' + Math.min(frame + 1, 10) + ' · ROLL ' + (rif + 1), 20, 256, 14, '#c8cde4', 'left', '700');
+    A.text(c, 'TOTAL ' + g.score, 20, 280, 18, '#fbbf24', 'left', '800', A.MONO);
+    if (msgT > 0) { c.save(); c.globalAlpha = Math.min(1, msgT / 20); A.glowText(c, msg, CX, 300, 34, /STRIKE|SPARE/.test(msg) ? '#fbbf24' : '#e6e9f5', 'center'); c.restore(); }
+  }
+  function ballDraw(c, x, y) {
+    A.shadow(c, x + 3, y + 5, BR, BR * 0.45, 0.3); const g = c.createRadialGradient(x - 4, y - 4, 1, x, y, BR); g.addColorStop(0, '#67e8f9'); g.addColorStop(1, '#0e7490'); c.fillStyle = g; c.beginPath(); c.arc(x, y, BR, 0, A.TAU); c.fill();
+    c.fillStyle = '#04121a'; for (const [dx, dy] of [[-3, -2], [1, -4], [-1, 0]]) { c.beginPath(); c.arc(x + dx, y + dy, 1.4, 0, A.TAU); c.fill(); }
+  }
+  Arcade.game({ id: 'bowling', title: 'Bowling', subtitle: 'Ten frames. Aim, add spin and knock down all ten pins.', w: W, h: H, color: '#f87171', hud: false,
+    controls: [['← / → or mouse', 'position the ball'], ['Space / click', 'lock position, angle, then power'], ['← / → while rolling', 'curve the ball'], ['Goal', 'strikes and spares score bonus points']], init, update, draw });
+})();
+</script>
+</body>
+</html>

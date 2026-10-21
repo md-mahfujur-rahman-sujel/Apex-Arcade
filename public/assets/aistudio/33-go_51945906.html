@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Go 9×9</title>
+<style>
+  .go { display: grid; grid-template-columns: auto minmax(240px, 1fr); gap: 22px; align-items: start; }
+  @media (max-width: 860px) { .go { grid-template-columns: 1fr; } }
+  #bd { --s: max(290px, min(100vw - 40px, 640px)); width: var(--s); aspect-ratio: 1; border-radius: 14px; box-shadow: 0 20px 50px -20px #000, 0 0 0 6px #5a3b16; overflow: hidden; user-select: none; }
+  #bd svg { width: 100%; height: 100%; display: block; touch-action: manipulation; }
+  .hit { fill: transparent; }
+  svg.can.p1 .hit:hover { fill: rgba(20,20,20,.5); cursor: pointer; }
+  svg.can.p2 .hit:hover { fill: rgba(255,255,255,.65); cursor: pointer; }
+  .dead { opacity: .35; }
+  .gp { animation: gpd .45s ease-out; transform-box: fill-box; transform-origin: center; }
+  @keyframes gpd { from { transform: scale(1.6); opacity: 0; } }
+  .tm { opacity: .8; }
+  .side { display: grid; gap: 12px; }
+  .score { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .score div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 13px; color: var(--muted); }
+  .score b { display: block; font-size: 28px; color: var(--text); }
+  .score .on { border-color: var(--cyan); }
+  .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; border: 1px solid rgba(255,255,255,.35); }
+  .dot.b { background: #111; } .dot.w { background: #eee; }
+  .capt { color: var(--muted); line-height: 1.8; }
+  .note { margin-top: 6px; color: var(--amber); font-weight: 600; font-size: 13px; }
+</style>
+</head>
+<body>
+<script src="board-kit.js"></script>
+<script>
+const ui = Board.shell({
+  id: 'go', cpu: true, title: 'Go 9×9', subtitle: 'Place stones, surround territory and capture your rival',
+  rules: 'Black plays first. Take turns placing a stone on an intersection. A stone or connected group with no empty neighbouring points (liberties) is captured and removed. You may not play a stone that would have no liberties unless it captures, and you may not repeat an earlier board position (ko). Pass when you have nothing useful to play; when both players pass in a row, dead stones are marked (the computer makes a first guess — click a group to toggle it) and you press Confirm score. Scoring is by area: your stones plus the empty points only you surround. White receives 7.5 points of komi.',
+  controls: [['Click a point', 'Place a stone'], ['P', 'Pass'], ['T', 'Show a hint'], ['U', 'Undo'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
+});
+ui.main.innerHTML = `
+<div class="go">
+  <div id="bd"></div>
+  <div class="side">
+    <div class="bk-status" id="st"></div>
+    <div class="score" id="sc"></div>
+    <div class="bk-row">
+      <label>Play <select class="bk-select" id="mode"><option value="1">Black (first) vs computer</option><option value="2">White vs computer</option><option value="two">Two players</option></select></label>
+      <label>Level <select class="bk-select" id="lvl"><option value="0">Easy</option><option value="1" selected>Medium</option><option value="2">Hard</option></select></label>
+    </div>
+    <div class="bk-row"><button class="bk-btn bk-primary" id="new">New game</button><button class="bk-btn" id="pass">Pass</button><button class="bk-btn" id="undo">Undo</button><button class="bk-btn" id="hint">Hint</button><button class="bk-btn bk-primary" id="done" hidden>Confirm score</button></div>
+    <div class="capt" id="cp"></div>
+  </div>
+</div>`;
+const $ = (s) => ui.main.querySelector(s);
+const S = 9, NN = 81, KOMI = 7.5, CELL = 60, PAD = 40, W = PAD * 2 + (S - 1) * CELL;
+const NAME = { 1: 'Black', 2: 'White' };
+const NB = []; for (let i = 0; i < NN; i++) { const r = (i / S) | 0, c = i % S, a = []; if (r > 0) a.push(i - S); if (r < S - 1) a.push(i + S); if (c > 0) a.push(i - 1); if (c < S - 1) a.push(i + 1); NB.push(a); }
+
+/* ---- rules ---- */
+function grp(b, i) {
+  const col = b[i], st = [i], seen = new Uint8Array(NN), stones = [], libs = new Set(); seen[i] = 1;
+  while (st.length) { const x = st.pop(); stones.push(x); for (const y of NB[x]) { if (!b[y]) libs.add(y); else if (b[y] === col && !seen[y]) { seen[y] = 1; st.push(y); } } }
+  return { stones, libs };
+}
+function tryMove(b, i, p) {
+  if (b[i]) return null;
+  const nb = b.slice(), cap = []; nb[i] = p;
+  for (const y of NB[i]) if (nb[y] === 3 - p) { const g = grp(nb, y); if (!g.libs.size) for (const s of g.stones) { nb[s] = 0; cap.push(s); } }
+  const me = grp(nb, i); if (!me.libs.size) return null;
+  return { b: nb, cap, me };
+}
+function areaOf(b) {
+  let bl = 0, wh = 0; const seen = new Uint8Array(NN), own = new Uint8Array(NN);
+  for (let i = 0; i < NN; i++) {
+    if (b[i] === 1) { bl++; own[i] = 1; } else if (b[i] === 2) { wh++; own[i] = 2; }
+    else if (!seen[i]) {
+      const st = [i], reg = []; let tb = 0, tw = 0; seen[i] = 1;
+      while (st.length) { const x = st.pop(); reg.push(x); for (const y of NB[x]) { if (b[y] === 1) tb = 1; else if (b[y] === 2) tw = 1; else if (!seen[y]) { seen[y] = 1; st.push(y); } } }
+      if (tb && !tw) { bl += reg.length; reg.forEach((x) => (own[x] = 1)); } else if (tw && !tb) { wh += reg.length; reg.forEach((x) => (own[x] = 2)); }
+    }
+  }
+  return { bl, wh, own };
+}
+function playout(b0, p0, startPasses) {
+  let b = b0.slice(), p = p0, passes = startPasses || 0, n = 0, ko = -1;
+  while (passes < 2 && n < 130) {
+    n++; const cand = []; for (let i = 0; i < NN; i++) if (!b[i]) cand.push(i);
+    let moved = false;
+    for (let t = 0; t < cand.length && !moved; t++) {
+      const k = t + Board.rand(cand.length - t); const tmp = cand[t]; cand[t] = cand[k]; cand[k] = tmp;
+      const i = cand[t]; if (i === ko) continue;
+      if (NB[i].every((y) => b[y] === p)) continue;
+      const r = tryMove(b, i, p); if (!r) continue;
+      ko = (r.cap.length === 1 && r.me.stones.length === 1 && r.me.libs.size === 1) ? r.cap[0] : -1;
+      b = r.b; moved = true;
+    }
+    if (moved) passes = 0; else { passes++; ko = -1; }
+    p = 3 - p;
+  }
+  return b;
+}
+
+/* ---- state ---- */
+let b, turn, passes, caps, last, phase, dead, positions, hist, mode, busy, hint, note, gen = 0;
+const human = () => mode === 'two' || turn === mode;
+const snap = () => hist.push({ b: b.slice(), turn, passes, caps: { ...caps }, last, phase, dead: new Set(dead), pl: positions.length });
+function newGame() {
+  gen++; mode = $('#mode').value === 'two' ? 'two' : +$('#mode').value;
+  b = Array(NN).fill(0); turn = 1; passes = 0; caps = { 1: 0, 2: 0 }; last = -1; phase = 'play'; dead = new Set(); positions = [b.join('')]; hist = []; busy = false; hint = -1; note = '';
+  render(); cpu();
+}
+function finalBoard() { const f = b.slice(); dead.forEach((i) => (f[i] = 0)); return f; }
+
+/* ---- drawing ---- */
+function render() {
+  const can = phase === 'play' && !busy && human();
+  let s = `<svg class="${can ? 'can ' : ''}p${turn}" viewBox="0 0 ${W} ${W}" role="img" aria-label="Go board"><defs>
+    <radialGradient id="gB" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#6b7280"/><stop offset="1" stop-color="#0a0a0c"/></radialGradient>
+    <radialGradient id="gW" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#c3c9d4"/></radialGradient>
+    <linearGradient id="wd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e0b266"/><stop offset="1" stop-color="#c8913f"/></linearGradient></defs>
+    <rect width="${W}" height="${W}" fill="url(#wd)"/>`;
+  for (let k = 0; k < S; k++) { const v = PAD + k * CELL; s += `<line x1="${PAD}" y1="${v}" x2="${PAD + (S - 1) * CELL}" y2="${v}" stroke="#3b2a14" stroke-width="1.6"/><line x1="${v}" y1="${PAD}" x2="${v}" y2="${PAD + (S - 1) * CELL}" stroke="#3b2a14" stroke-width="1.6"/>`; }
+  for (const [r, c] of [[2, 2], [2, 6], [6, 2], [6, 6], [4, 4]]) s += `<circle cx="${PAD + c * CELL}" cy="${PAD + r * CELL}" r="5" fill="#3b2a14"/>`;
+  const fb = phase === 'play' ? b : finalBoard(), ar = phase === 'play' ? null : areaOf(fb);
+  for (let i = 0; i < NN; i++) {
+    const x = PAD + (i % S) * CELL, y = PAD + ((i / S) | 0) * CELL;
+    if (b[i]) {
+      const isDead = dead.has(i);
+      s += `<circle class="${isDead ? 'dead' : (i === last ? 'gp' : '')}" cx="${x}" cy="${y}" r="26" fill="url(#g${b[i] === 1 ? 'B' : 'W'})" stroke="rgba(0,0,0,.45)" stroke-width="1"/>`;
+      if (isDead) s += `<path d="M${x - 9} ${y - 9}L${x + 9} ${y + 9}M${x + 9} ${y - 9}L${x - 9} ${y + 9}" stroke="#ef4444" stroke-width="4" stroke-linecap="round"/>`;
+    } else if (ar && ar.own[i]) s += `<rect class="tm" x="${x - 8}" y="${y - 8}" width="16" height="16" rx="3" fill="${ar.own[i] === 1 ? '#111' : '#fff'}"/>`;
+    if (i === last && phase === 'play') s += `<circle cx="${x}" cy="${y}" r="10" fill="none" stroke="${b[i] === 1 ? '#fff' : '#111'}" stroke-width="3"/>`;
+    if (i === hint) s += `<circle cx="${x}" cy="${y}" r="14" fill="none" stroke="#06b6d4" stroke-width="4"><animate attributeName="opacity" values="1;.2;1" dur="1s" repeatCount="indefinite"/></circle>`;
+  }
+  for (let i = 0; i < NN; i++) s += `<circle class="hit" data-i="${i}" cx="${PAD + (i % S) * CELL}" cy="${PAD + ((i / S) | 0) * CELL}" r="28"/>`;
+  $('#bd').innerHTML = s + '</svg>';
+
+  const inScore = phase === 'score';
+  $('#done').hidden = !inScore; $('#pass').hidden = inScore; $('#hint').hidden = inScore;
+  let st;
+  if (phase === 'over') st = $('#st').dataset.final || 'Game over';
+  else if (inScore) { const a = areaOf(fb), tb = a.bl, tw = a.wh + KOMI; st = `Scoring — click groups to mark them dead, then Confirm.<div class="note">Black ${tb} · White ${tw} (incl. ${KOMI} komi) → ${tb > tw ? 'Black' : 'White'} leads by ${Math.abs(tb - tw)}</div>`; }
+  else st = (busy ? 'Computer is thinking…' : `<span class="dot ${turn === 1 ? 'b' : 'w'}"></span>${NAME[turn]} to move${mode !== 'two' && human() ? ' — your turn' : ''}`) + (note ? `<div class="note">${note}</div>` : '');
+  $('#st').innerHTML = st;
+  const a = areaOf(fb);
+  $('#sc').innerHTML = `<div class="${turn === 1 && phase === 'play' ? 'on' : ''}"><span class="dot b"></span>Black${mode === 1 ? ' (you)' : ''}<b>${a.bl}</b></div><div class="${turn === 2 && phase === 'play' ? 'on' : ''}"><span class="dot w"></span>White${mode === 2 ? ' (you)' : ''}<b>${a.wh}</b></div>`;
+  $('#cp').innerHTML = `Area now (stones + sure territory) · komi ${KOMI} for White<br>Prisoners — Black: <b>${caps[1]}</b> · White: <b>${caps[2]}</b><br>Moves played: <b>${hist.length}</b>`;
+}
+
+/* ---- moves ---- */
+function place(i) {
+  const r = tryMove(b, i, turn);
+  if (!r) { note = 'Illegal — that stone would have no liberties.'; Board.sfx('error'); render(); return; }
+  const key = r.b.join('');
+  if (positions.includes(key)) { note = 'Ko — that would repeat an earlier position.'; Board.sfx('error'); render(); return; }
+  snap(); b = r.b; caps[turn] += r.cap.length; positions.push(key); last = i; passes = 0; note = ''; hint = -1; turn = 3 - turn;
+  Board.sfx(r.cap.length ? 'capture' : 'move'); render(); cpu();
+}
+function doPass() {
+  if (phase !== 'play' || busy) return;
+  snap(); passes++; last = -1; hint = -1; note = NAME[turn] + ' passes.'; turn = 3 - turn; Board.sfx('click');
+  if (passes >= 2) startScoring(); else { render(); cpu(); }
+}
+function startScoring() {
+  phase = 'score'; note = ''; dead = new Set();
+  const N = 120, tally = Array.from({ length: NN }, () => [0, 0, 0]);
+  for (let k = 0; k < N; k++) { const a = areaOf(playout(b, 1, 1)); for (let i = 0; i < NN; i++) tally[i][a.own[i]]++; }
+  const seen = new Set();
+  for (let i = 0; i < NN; i++) {
+    if (!b[i] || seen.has(i)) continue; const g = grp(b, i); g.stones.forEach((s) => seen.add(s));
+    const own = g.stones.reduce((n, s) => n + tally[s][b[i]], 0) / (g.stones.length * N);
+    if (own < 0.25) g.stones.forEach((s) => dead.add(s));
+  }
+  render();
+}
+function toggleDead(i) {
+  if (!b[i]) return; const g = grp(b, i), on = !dead.has(i);
+  g.stones.forEach((s) => (on ? dead.add(s) : dead.delete(s)));
+  /* a marked group's neighbours of the same colour that are connected through it are included by grp() */
+  Board.sfx('click'); render();
+}
+function finish() {
+  const a = areaOf(finalBoard()), tb = a.bl, tw = a.wh + KOMI, w = tb > tw ? 1 : 2, diff = Math.abs(tb - tw);
+  phase = 'over'; const msg = `${NAME[w]} wins by ${diff} points (Black ${a.bl}, White ${a.wh} + ${KOMI} komi)`;
+  $('#st').dataset.final = msg; render(); $('#st').innerHTML = msg;
+  Board.sfx(mode === 'two' || w === mode ? 'win' : 'lose');
+  const title = mode === 'two' ? NAME[w] + ' wins!' : w === mode ? 'You won!' : 'Computer wins';
+  setTimeout(() => Board.modal(title, msg, [['New game', newGame], ['Close']]), 500);
+}
+
+/* ---- computer ---- */
+function heur(bd, p, noise) {
+  const o = 3 - p, res = [];
+  for (let i = 0; i < NN; i++) {
+    if (bd[i]) continue; const r = tryMove(bd, i, p); if (!r) continue;
+    if (positions.includes(r.b.join(''))) continue;
+    let s = r.cap.length * 30; const libs = r.me.libs.size;
+    if (!r.cap.length && NB[i].every((y) => bd[y] === p)) s -= 60;
+    s += Math.min(libs, 4) * 2; if (libs === 1) s -= 40;
+    const seen = new Set();
+    for (const y of NB[i]) {
+      if (seen.has(y) || !bd[y]) continue; const g = grp(bd, y); g.stones.forEach((z) => seen.add(z));
+      if (bd[y] === p && g.libs.size === 1 && libs > 1) s += 22 + g.stones.length * 3;
+      else if (bd[y] === o && g.libs.size === 2) s += 8 + g.stones.length * 2;
+    }
+    const line = Math.min(i % S, (i / S) | 0, S - 1 - (i % S), S - 1 - ((i / S) | 0)); s += [-8, -1, 5, 6, 4][line];
+    let near = 0; for (let k = 0; k < NN; k++) if (bd[k] && Math.abs((k % S) - (i % S)) + Math.abs(((k / S) | 0) - ((i / S) | 0)) <= 2) { near = 3; break; }
+    s += near + Math.random() * noise; res.push({ i, s });
+  }
+  return res.sort((a, c) => c.s - a.s);
+}
+function cpu() {
+  if (phase !== 'play' || human()) return; busy = true; render();
+  const g = gen, L = +$('#lvl').value, p = turn, ownLead = () => { const a = areaOf(b); return p === 1 ? a.bl - (a.wh + KOMI) : a.wh + KOMI - a.bl; };
+  setTimeout(() => {
+    if (g !== gen) return;
+    if (passes === 1 && ownLead() > 0) { busy = false; doPass(); return; }
+    if (hist.length >= 130) { busy = false; doPass(); return; }
+    const cands = heur(b, p, L === 0 ? 14 : 3);
+    if (!cands.length) { busy = false; doPass(); return; }
+    if (L < 2) { busy = false; place(cands[0].i); return; }
+    think(cands.slice(0, 8), p, g);
+  }, Board.pace(1000) + Board.rand(450));
+}
+function think(top, p, g) {
+  const opts = top.map((c) => ({ i: c.i, b: tryMove(b, c.i, p).b, pass: false, w: 0, n: 0 }));
+  if (hist.length >= 20) opts.push({ i: -1, b, pass: true, w: 0, n: 0 });
+  const t0 = performance.now(); let k = 0;
+  (function slice() {
+    if (g !== gen) return;
+    const t1 = performance.now();
+    while (performance.now() - t1 < 25 && performance.now() - t0 < 1500) {
+      const o = opts[k++ % opts.length], f = areaOf(playout(o.b, 3 - p, o.pass ? passes + 1 : 0)), win = p === 1 ? f.bl > f.wh + KOMI : f.wh + KOMI > f.bl;
+      o.n++; if (win) o.w++;
+    }
+    if (performance.now() - t0 < 1500) { setTimeout(slice, 0); return; }
+    busy = false; opts.sort((x, y) => y.w / y.n - x.w / x.n);
+    const best = opts[0]; if (best.pass) doPass(); else place(best.i);
+  })();
+}
+function undo() {
+  if (busy || !hist.length) return;
+  let h;
+  do { h = hist.pop(); b = h.b; turn = h.turn; passes = h.passes; caps = h.caps; last = h.last; phase = h.phase; dead = h.dead; positions.length = h.pl; } while (hist.length && mode !== 'two' && !human());
+  hint = -1; note = ''; gen++; busy = false; render(); cpu();
+}
+function showHint() { if (phase !== 'play' || busy || !human()) return; const c = heur(b, turn, 0); if (!c.length) return; hint = c[0].i; render(); }
+
+$('#bd').addEventListener('click', (e) => {
+  const h = e.target.closest('.hit'); if (!h || busy) return; const i = +h.dataset.i;
+  if (phase === 'score') { toggleDead(i); return; }
+  if (phase !== 'play' || !human()) return; place(i);
+});
+$('#new').onclick = newGame; $('#pass').onclick = doPass; $('#undo').onclick = undo; $('#hint').onclick = showHint; $('#mode').onchange = newGame; $('#done').onclick = finish;
+document.addEventListener('keydown', (e) => {
+  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'n') newGame(); else if (k === 'u') undo(); else if (k === 't') showHint(); else if (k === 'p') doPass();
+});
+newGame();
+</script>
+</body>
+</html>

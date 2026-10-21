@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nuts &amp; Bolts</title>
+<style>
+  .nb { display: grid; grid-template-columns: auto minmax(220px, 1fr); gap: 22px; align-items: start; }
+  @media (max-width: 860px) { .nb { grid-template-columns: 1fr; } }
+  #cv { --h: max(420px, min(100vh - 150px, 700px)); height: var(--h); width: calc(var(--h) * 480 / 640); max-width: calc(100vw - 36px); max-height: calc((100vw - 36px) * 640 / 480); display: block; border-radius: 14px; box-shadow: 0 20px 50px -20px #000; touch-action: manipulation; cursor: pointer; }
+  .side { display: grid; gap: 12px; } .stats { display: flex; gap: 18px; color: var(--muted); font: 600 14px ui-monospace, Consolas, monospace; } .stats b { color: var(--text); }
+</style>
+</head>
+<body>
+<script src="board-kit.js"></script>
+<script>
+const ui = Board.shell({
+  id: 'nuts-bolts', title: 'Nuts & Bolts', subtitle: 'Unscrew the planks — match three bolts in the tray',
+  rules: 'Tap a bolt to unscrew it; it drops into the tray at the bottom. Get three bolts of the same colour into the tray and they pop, freeing up space. A bolt can only be unscrewed if no plank lies on top of it. When a plank loses all its bolts it falls away and uncovers what was underneath. Clear every plank to finish the level. If the tray fills up with no match, the level is lost — undo a bolt or restart. Every level can be cleared.',
+  controls: [['Click / tap a bolt', 'Unscrew it into the tray'], ['U', 'Undo the last bolt'], ['R', 'Restart the level'], ['N', 'New layout for this level'], ['H / M', 'Toggle help / mute']],
+});
+ui.main.innerHTML = `<div class="nb"><canvas id="cv" width="480" height="640"></canvas><div class="side">
+  <div class="stats"><span>Level <b id="lv">1</b></span><span>Bolts left <b id="bl">0</b></span><span>Best <b id="bs">1</b></span></div>
+  <div class="bk-status" id="st"></div>
+  <div class="bk-row"><button class="bk-btn" id="undo">Undo</button><button class="bk-btn" id="rst">Restart</button><button class="bk-btn bk-primary" id="nxt">New layout</button></div>
+  <div class="bk-row"><label>Jump to level <select class="bk-select" id="jump"></select></label></div></div></div>`;
+const $ = (s) => ui.main.querySelector(s);
+const cv = $('#cv'), cx = cv.getContext('2d'), TR = 6;
+const COLS = ['#ef4444', '#3b82f6', '#22c55e', '#facc15', '#a855f7', '#fb923c'];
+let level, planks = [], tray = [], falling = [], hist, state, seedLvl;
+const rnd = (a, b) => a + Math.random() * (b - a);
+
+/* ---- geometry ---- */
+const inside = (p, x, y, pad) => { const dx = x - p.x, dy = y - p.y, c = Math.cos(-p.a), s = Math.sin(-p.a), lx = dx * c - dy * s, ly = dx * s + dy * c; return Math.abs(lx) <= p.l / 2 + pad && Math.abs(ly) <= p.w / 2 + pad; };
+const sp = (p, h) => ({ x: p.x + Math.cos(p.a) * h.t, y: p.y + Math.sin(p.a) * h.t });
+function blocked(pi, s) { const q = sp(planks[pi], s); for (let r = pi + 1; r < planks.length; r++) if (!planks[r].gone && inside(planks[r], q.x, q.y, 6)) return true; return false; }
+
+/* ---- level generation ---- */
+function build(lvl) {
+  const np = Math.min(12, 3 + lvl), nc = Math.min(6, 3 + (lvl >> 1)); let tries = 0;
+  for (;;) {
+    tries++; const P = []; let guard = 0;
+    while (P.length < np && guard++ < 400) {
+      const l = rnd(150, 260), a = rnd(-Math.PI / 2, Math.PI / 2), x = rnd(110, 370), y = rnd(110, 380), p = { x, y, a, l, w: 38, h: [], gone: false };
+      const ends = [[x + Math.cos(a) * (l / 2 - 18), y + Math.sin(a) * (l / 2 - 18)], [x - Math.cos(a) * (l / 2 - 18), y - Math.sin(a) * (l / 2 - 18)]];
+      if (ends.some(([ex, ey]) => ex < 34 || ex > 446 || ey < 34 || ey > 440)) continue;
+      p.h = [{ t: l / 2 - 18 }, { t: -(l / 2 - 18) }];
+      if (P.some((o) => o.h.some((h) => p.h.some((g) => Math.hypot(sp(o, h).x - sp(p, g).x, sp(o, h).y - sp(p, g).y) < 30)))) continue;
+      P.push(p);
+    }
+    if (P.length < np) continue;
+    let tot = P.length * 2; const mid = P.filter((p) => p.l > 190);
+    while (tot % 3) { const q = mid.find((p) => p.h.length === 2); if (!q) break; q.h.push({ t: 0 }); tot++; }
+    if (tot % 3) continue;
+    const cols = []; for (let i = 0; i < tot / 3; i++) cols.push(i % nc, i % nc, i % nc); Board.shuffle(cols);
+    let k = 0; P.forEach((p) => p.h.forEach((h) => { h.c = cols[k++]; h.on = true; }));
+    planks = P; if (greedy() || tries > 80) return;
+  }
+}
+function greedy() { /* exact search: can the level be cleared without overflowing the tray? (tray contents depend only on which bolts are gone) */
+  const B = []; planks.forEach((p, i) => p.h.forEach((h, j) => { const q = sp(p, h), cov = []; for (let r = i + 1; r < planks.length; r++) if (inside(planks[r], q.x, q.y, 6)) cov.push(r); B.push({ i, c: h.c, cov }); }));
+  const n = B.length, byPlank = planks.map((p, i) => B.map((b, k) => (b.i === i ? k : -1)).filter((k) => k >= 0)), seen = new Set(); let nodes = 0;
+  const rm = Array(n).fill(false), cnt = Array(COLS.length).fill(0);
+  const dead = (r) => byPlank[r].every((k) => rm[k]);
+  function dfs(left) {
+    if (!left) return true; if (++nodes > 60000) return false;
+    const key = rm.map((x) => (x ? 1 : 0)).join(''); if (seen.has(key)) return false; seen.add(key);
+    const c = []; for (let k = 0; k < n; k++) if (!rm[k] && B[k].cov.every(dead)) c.push(k);
+    c.sort((x, y) => (cnt[B[y].c] % 3) - (cnt[B[x].c] % 3));
+    for (const k of c) {
+      const col = B[k].c; rm[k] = true; cnt[col]++;
+      let sum = 0; for (let q = 0; q < cnt.length; q++) sum += cnt[q] % 3;
+      if (sum < TR && dfs(left - 1)) return true; rm[k] = false; cnt[col]--;
+    }
+    return false;
+  }
+  return dfs(n);
+}
+
+/* ---- game ---- */
+function start(lvl) {
+  level = lvl; build(lvl); tray = Array(TR).fill(null); falling = []; hist = []; state = 'play'; seedLvl = JSON.stringify(planks);
+  const best = +Board.ls.get('apex:nb:best') || 1; $('#bs').textContent = best; $('#lv').textContent = lvl; fillJump(); upd();
+}
+function restart() { planks = JSON.parse(seedLvl); tray = Array(TR).fill(null); falling = []; hist = []; state = 'play'; upd(); }
+function fillJump() { const best = +Board.ls.get('apex:nb:best') || 1, j = $('#jump'); j.innerHTML = ''; for (let i = 1; i <= Math.max(best, level); i++) { const o = document.createElement('option'); o.value = i; o.textContent = i; if (i === level) o.selected = true; j.appendChild(o); } }
+const left = () => planks.reduce((a, p) => a + p.h.filter((h) => h.on).length, 0);
+function upd() { $('#bl').textContent = left(); $('#st').textContent = state === 'lost' ? 'Tray full — undo or restart' : state === 'won' ? 'Level cleared! 🎉' : tray.filter(Boolean).length + ' / ' + TR + ' tray slots used'; }
+function tap(x, y) {
+  if (state !== 'play') return;
+  for (let i = planks.length - 1; i >= 0; i--) {
+    const p = planks[i]; if (p.gone) continue;
+    for (let j = 0; j < p.h.length; j++) { const h = p.h[j]; if (!h.on) continue; const q = sp(p, h); if (Math.hypot(q.x - x, q.y - y) < 20) { if (blocked(i, h)) { Board.sfx('error'); p.shake = 0.3; return; } take(i, j); return; } }
+  }
+}
+function take(i, j) {
+  const p = planks[i], h = p.h[j], slot = tray.indexOf(null); if (slot < 0) return;
+  h.on = false; const q = sp(p, h); const it = { c: h.c, t0: performance.now(), x0: q.x, y0: q.y }; tray[slot] = it; hist.push({ i, j, it });
+  if (!p.h.some((g) => g.on)) { p.gone = true; falling.push({ p, t0: performance.now() }); Board.sfx('capture'); } else Board.sfx('step');
+  const same = tray.filter((t) => t && t.c === h.c && !t.pop);
+  if (same.length >= 3) { same.slice(0, 3).forEach((t) => { t.pop = true; }); hist.length = 0; setTimeout(() => { tray = tray.map((t) => (t && t.pop ? null : t)); Board.sfx('win'); chk(); }, 320); }
+  upd(); chk();
+}
+function chk() {
+  if (state !== 'play') return;
+  if (left() === 0) { state = 'won'; upd(); const best = Math.max(+Board.ls.get('apex:nb:best') || 1, level + 1); Board.ls.set('apex:nb:best', best); Board.sfx('win'); setTimeout(() => Board.modal('Level ' + level + ' cleared!', 'Every plank is down.', [['Next level', () => start(level + 1)], ['Close']]), 600); }
+  else if (tray.every((t) => t && !t.pop)) { state = 'lost'; upd(); Board.sfx('lose'); setTimeout(() => Board.modal('Tray full', 'No match left to make. Undo a bolt or restart the level.', [['Restart', restart], ['Close']]), 400); }
+}
+function undo() { if (!hist.length || state === 'won') return; const h = hist.pop(), p = planks[h.i]; const k = tray.indexOf(h.it); if (k < 0) return; tray[k] = null; p.h[h.j].on = true; if (p.gone) { p.gone = false; falling = falling.filter((f) => f.p !== p); } state = 'play'; Board.sfx('click'); upd(); }
+
+/* ---- drawing ---- */
+function bolt(x, y, c, r, s) { cx.save(); cx.translate(x, y); cx.scale(s, s); cx.fillStyle = 'rgba(0,0,0,.35)'; cx.beginPath(); cx.arc(1, 3, r, 0, 6.3); cx.fill(); cx.fillStyle = COLS[c]; cx.beginPath(); for (let k = 0; k < 6; k++) cx.lineTo(Math.cos(k * 1.0472 + .5) * r, Math.sin(k * 1.0472 + .5) * r); cx.closePath(); cx.fill(); cx.strokeStyle = 'rgba(255,255,255,.5)'; cx.lineWidth = 2; cx.stroke(); cx.fillStyle = 'rgba(0,0,0,.35)'; cx.beginPath(); cx.arc(0, 0, r * .38, 0, 6.3); cx.fill(); cx.restore(); }
+function drawPlank(p, ox, oy, rot, alpha) {
+  cx.save(); cx.globalAlpha = alpha; cx.translate(p.x + ox, p.y + oy); cx.rotate(p.a + rot); const g = cx.createLinearGradient(0, -p.w / 2, 0, p.w / 2); g.addColorStop(0, '#d9a066'); g.addColorStop(1, '#a8703a');
+  cx.fillStyle = 'rgba(0,0,0,.3)'; cx.beginPath(); cx.roundRect(-p.l / 2 + 3, -p.w / 2 + 6, p.l, p.w, 10); cx.fill(); cx.fillStyle = g; cx.beginPath(); cx.roundRect(-p.l / 2, -p.w / 2, p.l, p.w, 10); cx.fill();
+  cx.strokeStyle = 'rgba(80,40,10,.35)'; cx.lineWidth = 1.5; for (let k = -2; k <= 2; k += 2) { cx.beginPath(); cx.moveTo(-p.l / 2 + 12, k * 6); cx.lineTo(p.l / 2 - 12, k * 6); cx.stroke(); } cx.restore();
+}
+function draw(now) {
+  const bg = cx.createLinearGradient(0, 0, 0, 640); bg.addColorStop(0, '#26304f'); bg.addColorStop(1, '#141a30'); cx.fillStyle = bg; cx.fillRect(0, 0, 480, 640);
+  cx.fillStyle = 'rgba(255,255,255,.04)'; for (let y = 0; y < 480; y += 40) for (let x = (y / 40 % 2) * 20; x < 480; x += 40) cx.fillRect(x, y, 2, 2);
+  planks.forEach((p) => {
+    if (p.gone) return; const sh = p.shake > 0 ? Math.sin(now / 25) * 4 * p.shake / .3 : 0; if (p.shake > 0) p.shake -= 0.016;
+    drawPlank(p, sh, 0, 0, 1);
+    p.h.forEach((h) => { const q = sp(p, h); if (!h.on) { cx.fillStyle = 'rgba(0,0,0,.45)'; cx.beginPath(); cx.arc(q.x + sh, q.y, 7, 0, 6.3); cx.fill(); return; } bolt(q.x + sh, q.y, h.c, 12, 1); });
+  });
+  for (const f of falling) { const t = (now - f.t0) / 1000; if (t > 1.2) { f.done = true; continue; } drawPlank(f.p, 0, 500 * t * t, t * 1.4, Math.max(0, 1 - t / 1.2)); } falling = falling.filter((f) => !f.done);
+  cx.fillStyle = '#0c1226'; cx.beginPath(); cx.roundRect(14, 548, 452, 78, 16); cx.fill();
+  for (let i = 0; i < TR; i++) {
+    const sx = 240 - (TR * 72) / 2 + 36 + i * 72, sy = 587;
+    cx.fillStyle = 'rgba(255,255,255,.07)'; cx.beginPath(); cx.arc(sx, sy, 26, 0, 6.3); cx.fill();
+    const t = tray[i]; if (!t) continue; const k = Math.min(1, (now - t.t0) / 260), e = 1 - Math.pow(1 - k, 3), px = t.x0 + (sx - t.x0) * e, py = t.y0 + (sy - t.y0) * e;
+    bolt(px, py, t.c, 12 + 8 * e, t.pop ? 1 + Math.sin(((now - (t.pt || (t.pt = now))) / 320) * 3.1) * 0.3 : 1);
+  }
+}
+(function loop(now) { requestAnimationFrame(loop); draw(now); })(0);
+cv.addEventListener('pointerdown', (e) => { const r = cv.getBoundingClientRect(); tap((e.clientX - r.left) * 480 / r.width, (e.clientY - r.top) * 640 / r.height); });
+$('#undo').onclick = undo; $('#rst').onclick = () => { restart(); }; $('#nxt').onclick = () => start(level); $('#jump').onchange = (e) => { start(+e.target.value); e.target.blur(); };
+document.addEventListener('keydown', (e) => { if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || document.getElementById('bk-dlg')?.open) return; const k = e.key.toLowerCase(); if (k === 'u') undo(); else if (k === 'r') restart(); else if (k === 'n') start(level); });
+start(Math.min(+Board.ls.get('apex:nb:best') || 1, 99));
+</script>
+</body>
+</html>

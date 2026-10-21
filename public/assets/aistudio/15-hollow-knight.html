@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hollowbell</title>
+</head>
+<body>
+<script src="arcade-core.js"></script>
+<script src="act-kit.js"></script>
+<script>
+/* Hollowbell — a moody cave-crawler: a small bell-masked wanderer with a needle, a shade-cloak dash,
+   focus healing, benches, lost-shard retrieval and the Pale Warden. Built on act-kit.js. */
+const A = Arcade, K = Act, TAU = Math.PI * 2;
+
+const CAVE = K.make('The Sunken Hollow', 134, 16, (g) => {
+  const gy = 12;
+  g.ground(0, 40, 13); g.set(2, gy, 'P'); g.set(10, gy, 'k'); g.set(18, gy, 'C'); g.set(25, gy, 'k'); g.set(31, 7, 'v'); g.plat(27, 9, 4); g.coins(27, 8, 4); g.coins(12, 11, 3);
+  g.ground(41, 52, 13); g.set(45, gy, 'k'); g.set(47, gy, 'D'); g.set(50, gy, 'C');
+  g.ground(58, 82, 13); g.set(61, gy, 'C'); g.set(65, gy, 'h'); g.set(70, gy, 'u'); g.set(74, gy, 'k'); g.set(68, 7, 'v'); g.plat(66, 9, 3); g.coins(66, 8, 3); g.set(79, gy, 'k');
+  g.ground(83, 90, 13); g.fill(83, 12, 3, 1, '^'); g.ground(92, 108, 13); g.set(95, gy, 'k'); g.set(98, 8, 'v'); g.set(101, gy, 'h'); g.plat(100, 9, 3); g.coins(100, 8, 3); g.set(105, gy, 'u');
+  g.ground(109, 134, 13); g.set(111, gy, 'C'); g.set(124, gy, 'B'); g.set(131, gy, 'F');
+});
+CAVE.hint = 'X strike · hold V to focus-heal · benches save your place';
+CAVE.theme = { solid: '#1d2a3b', top: '#2dd4bf', plat: '#334155', accent: '#5eead4', spike: '#cbd5e1' };
+
+function bg(c, cam, t) {
+  A.sky(c, 800, 480, ['#02060f', '#0a1626', '#10263a']);
+  for (let i = 0; i < 22; i++) { const x = ((i * 101 - cam.x * 0.18) % 920 + 920) % 920 - 60, h = 50 + (i * 41) % 110; c.fillStyle = 'rgba(15,40,60,.8)'; c.beginPath(); c.moveTo(x - 18, 0); c.lineTo(x, h); c.lineTo(x + 18, 0); c.fill(); }
+  K.ridge(c, 380, 34, 2.1, cam.x * 0.25, 'rgba(8,24,38,.85)'); K.ridge(c, 430, 22, 5.4, cam.x * 0.5, '#050d18');
+  for (let i = 0; i < 26; i++) { const x = ((i * 79 - cam.x * 0.35 + Math.sin(t * 0.01 + i) * 20) % 880 + 880) % 880 - 40, y = 60 + (i * 61) % 340; c.globalAlpha = 0.25 + 0.25 * Math.sin(t * 0.04 + i); c.fillStyle = '#5eead4'; c.fillRect(x, y - Math.sin(t * 0.02 + i) * 8, 2, 2); } c.globalAlpha = 1;
+}
+function drawHero(c, p, G, wp) {
+  const cx = p.x + p.w / 2, f = p.face, b = p.y + p.h, run = p.ground ? Math.sin(p.walk) : 0;
+  if (p.dashT > 0) { c.save(); c.globalAlpha = 0.35; c.fillStyle = '#5eead4'; for (let i = 1; i < 4; i++) A.roundRect(c, p.x - f * i * 12, p.y, 20, 28, 8), c.fill(); c.restore(); }
+  A.shadow(c, cx, b + 1, 10, 3, 0.3); c.save(); c.translate(cx, b); c.scale(f * (1 + p.sq * 0.4), 1 - p.sq * 0.4);
+  c.fillStyle = '#0b1220'; c.fillRect(-6 + (p.ground ? run * 3 : 0), -8, 5, 8); c.fillRect(1 - (p.ground ? run * 3 : 0), -8, 5, 8);
+  c.beginPath(); c.moveTo(-9, -6); c.quadraticCurveTo(-8, -24, 0, -26); c.quadraticCurveTo(8, -24, 9, -6); c.fill();
+  c.fillStyle = '#e2e8f0'; c.beginPath(); c.ellipse(0, -30, 9, 9, 0, 0, TAU); c.fill(); c.beginPath(); c.moveTo(-7, -36); c.lineTo(-11, -46); c.lineTo(-2, -38); c.moveTo(7, -36); c.lineTo(11, -46); c.lineTo(2, -38); c.fill();
+  c.fillStyle = '#020617'; c.beginPath(); c.ellipse(-3, -30, 2.2, 3.6, 0.2, 0, TAU); c.ellipse(4, -30, 2.2, 3.6, -0.2, 0, TAU); c.fill();
+  if (p.heal) { c.save(); c.globalAlpha = 0.6; c.shadowColor = '#a5f3fc'; c.shadowBlur = 16; c.fillStyle = '#a5f3fc'; c.beginPath(); c.arc(0, -16, 12 + Math.sin(G.clock * 0.5) * 3, 0, TAU); c.fill(); c.restore(); }
+  if (p.atk > 0) {
+    const k = 1 - p.atk / wp.dur; c.save(); c.strokeStyle = 'rgba(226,246,255,' + (1 - k * 0.6) + ')'; c.lineWidth = 5; c.lineCap = 'round'; c.shadowColor = '#7dd3fc'; c.shadowBlur = 10; c.beginPath();
+    if (p.atkDir) c.arc(0, -4, 22, 0.3, Math.PI - 0.3); else c.arc(-4, -16, 34, -0.9 + k * 0.5, 0.9 - k * 0.2);
+    c.stroke(); c.restore();
+  }
+  c.restore();
+}
+function drawEnemy(c, e, G) {
+  const cx = e.x + e.w / 2, cy = e.y + e.h / 2, t = G.clock, f = e.face, hit = e.hurt > 0, k = e.k;
+  if (k === 'k') { A.shadow(c, cx, e.y + e.h + 1, 12, 3, 0.25); c.fillStyle = hit ? '#fff' : '#78716c'; c.beginPath(); c.ellipse(cx, cy + 2, 14, 11, 0, Math.PI, 0); c.fill(); c.fillRect(e.x, cy + 2, e.w, 7); c.fillStyle = hit ? '#fff' : '#a8a29e'; for (let i = 0; i < 3; i++) c.fillRect(e.x + 4 + i * 8, cy - 9 + i % 2 * 2, 3, 6); c.fillStyle = '#fbbf24'; c.fillRect(cx + f * 7 - 2, cy, 4, 3); return true; }
+  if (k === 'h') { c.fillStyle = hit ? '#fff' : '#57534e'; A.roundRect(c, e.x, e.y + (e.ground ? 4 : 0), e.w, e.h - (e.ground ? 4 : 0), 9); c.fill(); c.fillStyle = '#fbbf24'; c.fillRect(cx - 6, cy - 3, 4, 5); c.fillRect(cx + 2, cy - 3, 4, 5); return true; }
+  if (k === 'v') { const fl = Math.sin(t * 0.5 + e.x) * 6; c.fillStyle = 'rgba(186,230,253,.7)'; c.beginPath(); c.ellipse(cx - 7, cy - 4 - fl * 0.3, 8, 4, -0.4, 0, TAU); c.ellipse(cx + 7, cy - 4 + fl * 0.3, 8, 4, 0.4, 0, TAU); c.fill(); c.fillStyle = hit ? '#fff' : '#44403c'; c.beginPath(); c.ellipse(cx, cy, 8, 7, 0, 0, TAU); c.fill(); c.fillStyle = '#fbbf24'; c.fillRect(cx - 4, cy - 2, 3, 3); c.fillRect(cx + 1, cy - 2, 3, 3); return true; }
+  if (k === 'u') { c.fillStyle = hit ? '#fff' : '#292524'; A.roundRect(c, e.x, e.y + 6, e.w, e.h - 6, 8); c.fill(); c.fillStyle = hit ? '#fff' : '#57534e'; c.beginPath(); c.ellipse(cx, e.y + 8, 12, 9, 0, Math.PI, 0); c.fill(); c.fillStyle = '#f97316'; c.shadowColor = '#f97316'; c.shadowBlur = 8; c.beginPath(); c.arc(cx + f * 3, e.y + 12, 4, 0, TAU); c.fill(); c.shadowBlur = 0; return true; }
+  if (k === 'B') {
+    c.save(); c.translate(cx, e.y + e.h); c.scale(f, 1); const tell = e.tell && Math.floor(t / 4) % 2;
+    c.fillStyle = tell ? '#fca5a5' : hit ? '#fff' : '#e2e8f0'; c.shadowColor = '#bae6fd'; c.shadowBlur = tell ? 24 : 10;
+    c.beginPath(); c.moveTo(-18, 0); c.quadraticCurveTo(-24, -34, -10, -50); c.lineTo(10, -50); c.quadraticCurveTo(24, -34, 18, 0); c.fill();
+    c.shadowBlur = 0; c.fillStyle = '#0f172a'; c.beginPath(); c.ellipse(-3, -40, 3.5, 6, 0.1, 0, TAU); c.ellipse(9, -40, 3.5, 6, -0.1, 0, TAU); c.fill();
+    c.fillStyle = tell ? '#fca5a5' : '#e2e8f0'; c.beginPath(); c.moveTo(-8, -50); c.lineTo(-14, -64); c.lineTo(-2, -52); c.moveTo(10, -50); c.lineTo(16, -64); c.lineTo(4, -52); c.fill();
+    c.strokeStyle = '#f8fafc'; c.lineWidth = 4; c.lineCap = 'round'; c.beginPath(); c.moveTo(14, -26); c.lineTo(46, -36 + (e.vx ? -8 : 0)); c.stroke();
+    c.restore(); return true;
+  }
+}
+function boss(e, x) {
+  const p = x.p, low = e.hp < e.hmax * 0.5, per = low ? 96 : 128, ph = e.t % per, d = p.x < e.x ? -1 : 1; e.t++;
+  if (!e.ground) e.air = true; else if (e.air) { e.air = false; e.vx = 0; x.G.shake(8); A.sfx('thud'); x.shoot(e, 4.2, 0, { color: '#e0f2fe', r: 9, y: e.y + e.h - 10 }); x.shoot(e, -4.2, 0, { color: '#e0f2fe', r: 9, y: e.y + e.h - 10 }); }
+  e.tell = ph >= 40 && ph < 62;
+  if (ph < 40) e.vx = A.approach(e.vx, d * 1.4, 0.2);
+  else if (ph < 62) e.vx = 0;
+  else if (ph === 62) { e.vx = d * (low ? 8.2 : 7); A.sfx('dash'); }
+  else if (ph === 88 && e.ground) { e.vy = -12.5; e.vx = d * 3.4; A.sfx('jump2'); }
+  else if (ph > 66 && ph < 86) e.vx *= 0.985; else if (ph > 90 && e.ground) e.vx *= 0.8;
+}
+
+K.game({
+  id: 'hollowbell', title: 'Hollowbell', subtitle: 'A quiet descent into a living cave', color: '#5eead4', soul: true, lives: 0,
+  controls: [['← →  /  A D', 'Walk'], ['Space  /  ↑  /  W  /  Z', 'Jump (hold for height)'], ['X  /  J', 'Needle strike — hit enemies to gain focus'], ['↓ + X in the air', 'Pogo off enemies'], ['Shift  /  L', 'Shade dash (after the Cloak)'], ['Hold V  /  H', 'Focus: spend 1/3 of the bar to heal'], ['P / M', 'Pause / mute']],
+  help: '← → walk · Space jump · X strike (↓+X in air to pogo) · Shift dash · hold V to heal · benches save progress · if you fall, retrieve your lost shards from your shade',
+  levels: [CAVE], bg, hero: { hp: 5, run: 3.3, jump: 10.8, dashSpd: 9.5, dashT: 11, dashInv: true, heal: true, ab: {}, weapon: { type: 'melee', dmg: 1, range: 54, h: 40, cd: 17, dur: 9, pogo: true } },
+  pickups: { D: { ab: 'dash', msg: 'SHADE CLOAK — press Shift to dash', icon: 'D' } },
+  enemies: {
+    k: { w: 28, h: 22, hp: 2, ai: 'walk', sp: 0.7, sight: 120, score: 60, color: '#78716c' },
+    h: { w: 24, h: 26, hp: 2, ai: 'hop', sp: 2.4, jump: 9, every: 75, score: 90, color: '#57534e' },
+    v: { w: 24, h: 18, hp: 1, ai: 'fly', sp: 1.5, sight: 200, range: 60, bob: 22, score: 60, color: '#44403c' },
+    u: { w: 28, h: 30, hp: 3, ai: 'turret', fixed: true, score: 120, color: '#57534e', sight: 360, shoot: { speed: 3.2, color: '#fb923c' }, every: 100, aim: true },
+    B: { w: 40, h: 64, hp: 26, ai: 'boss', name: 'THE PALE WARDEN', wake: 340, score: 3000, color: '#e2e8f0', dmg: 2 },
+  },
+  boss, drawEnemy, drawHero, clear: 'THE WARDEN FALLS', winTitle: 'The Bell Falls Silent', winSub: (G, coins) => coins + ' shards carried · Score ' + G.score,
+});
+</script>
+</body>
+</html>
