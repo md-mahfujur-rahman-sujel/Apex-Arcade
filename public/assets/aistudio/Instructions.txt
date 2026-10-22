@@ -1,9 +1,18 @@
 APEX ARCADE — HOW TO PLAY
 =========================
-Open any .html file in a browser. Keep arcade-core.js (and platform-kit.js / act-kit.js) in the same folder.
-On every game's start screen, the CONTROLS panel shows the keys; the same list stays under the game.
-In every game: P = pause, M = mute. High scores are saved in your browser. Touch buttons appear on phones.
-If something breaks, a red error box appears at the bottom of the page — send me its text.
+PLAY FROM THE WEBSITE
+Open the Apex Arcade launcher, choose a game, and use the Play button in its theater. The catalog supports search, category filters, favorites, and game details. The theater also has difficulty, sound, settings, and touch-control options where supported.
+
+INSTALL AND OFFLINE PLAY
+The production website can be installed from a supported browser. Open it online once before going offline so the service worker can cache the app and its 50 canonical game pages. Offline installation requires HTTPS (localhost is allowed for development). Browser support and available storage vary.
+
+SAVES AND SHARING
+Profile details, favorites, and play history are stored in this browser. Use the theater share button to share a score-card PNG or download it. A link such as #game=flappy-bird opens that game in the theater.
+
+OPEN GAME FILES DIRECTLY
+You can also open a numbered .html file below directly. Keep its referenced kit scripts (for example perf-kit.js, arcade-core.js, board-kit.js, save-kit.js, and score-bridge.js) alongside the page in assets/aistudio/.
+Each game's own CONTROLS or How to play panel is authoritative. Controls vary: P pauses many arcade games, M mutes where supported, and board/puzzle games use their own keys. Touch controls are available in supported games.
+If a game shows a red error box, copy the displayed text when reporting the issue.
 
 
 1. Flappy Bird tribute — Glowmoth Gauntlet — 01-flappy-bird.html
@@ -68,7 +77,7 @@ Controls: ←/→ or A/D run, Space / ↑ / W / Z jump (hold in the air to glide
 
 Note: games 1-20 are original games inspired by the classics. They use their own characters, art and code.
 
-The index.html page lists everything (video games 1-20, board games 21-33, cards & brain 34-36, sports 37-41).
+The website launcher catalog lists all 50 games. The standalone assets/aistudio/index.html is a separate local catalog page.
 
 
 BOARD GAMES (21+) — open index.html and use the Board Games section, or open the files directly. Keep board-kit.js in the same folder.
@@ -102,7 +111,7 @@ Controls: click a highlighted pit, or press 1-6. U undo.
 Controls: click a dot to place a disc that traps rival discs in a line. U undo, T hint. If you have no legal move you pass; most discs when the board fills wins. Choose your colour and the computer's level.
 
 30. Tic-Tac-Toe — 30-tic-tac-toe.html
-Controls: click a square or press 1-9 (numpad layout). Three in a row wins — can you beat the computer?
+Controls: choose Classic 3x3, four-in-a-row 4x4, or Ultimate (linked 3x3 boards), then choose solo/two-player mode and AI strength. Click/tap a square or press 1-9 in numpad layout; U undo, N new match. Wins and match stats save in this browser; Statistics shows your record.
 
 31. Backgammon — 31-backgammon.html
 Controls: R or Space rolls the dice. Click one of your checkers (or the bar), then click a glowing point to move it. U undoes your moves this turn, T hints. Hit single rival checkers, re-enter from the bar, bear off once all 15 are home. You must use as many dice as you can (the larger die if only one is playable). Gammons count double and backgammons triple.
@@ -142,7 +151,7 @@ Controls: drag back from one of your cyan discs and release to flick it. Knock t
 PUZZLES & PHYSICS (42-48, 50)
 
 42. Merge 2048 — 42-2048.html
-Controls: arrow keys or WASD slide all tiles (or swipe on a touch screen). Matching tiles merge into their sum; reach 2048, then keep going. U undo, N new game.
+Controls: choose Classic (3x3–6x6), Foundry Trials (30 move-limited goals), or the date-seeded Daily Core. Arrow keys/WASD or swipe to slide; matching tiles merge. Choose Easy/Normal/Hard (8/4/1 undo). U undo, N new run, Statistics for local records. Runs resume in this browser; M mute, H controls.
 
 43. Sudoku — 43-sudoku.html
 Controls: click or use the arrow keys to select a cell, 1-9 place a digit, Backspace or 0 erase, Space or P toggles Notes mode, T hint, U undo, N new puzzle. Every puzzle has exactly one solution.

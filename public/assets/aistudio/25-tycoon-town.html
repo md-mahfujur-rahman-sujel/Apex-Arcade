@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tycoon Town</title>
@@ -36,7 +37,14 @@
 </style>
 </head>
 <body>
+
+<script src="perf-kit.js"></script>
+<script src="save-kit.js"></script>
+<script src="meta-config.js"></script>
+<script src="meta-kit.js"></script>
 <script src="board-kit.js"></script>
+<script src="score-bridge.js"></script>
+<script src="ui-kit.js"></script>
 <script>
 const ui = Board.shell({
   id: 'tycoon-town', cpu: true, title: 'Tycoon Town', subtitle: 'Buy streets, build houses, bankrupt your rivals',
@@ -172,7 +180,7 @@ async function moveTo(p, target, g) {
 }
 async function goJail(p, g) { p.pos = 10; p.jail = 1; log(`🚔 ${p.name} goes to jail`); Board.sfx('lose'); render(); await nap(p.cpu ? Board.pace(900) : 500, g); }
 const cpuBuy = (p, i) => { const s = SQ[i], left = p.cash - s.price, g = s.g; return left >= 150 || (g && groupOf(g).filter((k) => owners[k] === p.id).length === groupOf(g).length - 1); };
-function cpuBuild(p) { for (let n = 0; n < 3; n++) { const c = buildable(p).filter((i) => p.cash - GRP[SQ[i].g][1] >= 200).sort((a, b) => houses[a] - houses[b])[0]; if (c === undefined) break; houses[c]++; p.cash -= GRP[SQ[c].g][1]; log(`${p.name} builds on ${SQ[c].name}`); Board.sfx('move'); } }
+function cpuBuild(p) { const limit = Board.level() === 1 ? 1 : Board.level() === 3 ? 5 : 3; for (let n = 0; n < limit; n++) { const c = buildable(p).filter((i) => p.cash - GRP[SQ[i].g][1] >= 200).sort((a, b) => houses[a] - houses[b])[0]; if (c === undefined) break; houses[c]++; p.cash -= GRP[SQ[c].g][1]; log(`${p.name} builds on ${SQ[c].name}`); Board.sfx('move'); } }
 
 const CHANCE = [
   ['Advance to START and collect $200', async (p, d, g) => { await moveTo(p, 0, g); }],

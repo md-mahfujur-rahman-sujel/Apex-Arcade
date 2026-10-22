@@ -7,30 +7,47 @@
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
+    "test:smoke": "npm run build && node scripts/smoke.mjs",
+    "test:router": "npm run build && node scripts/test-router.mjs",
+    "test:mount-game": "npm run build && node scripts/test-mount-game.mjs",
+    "test:save": "node scripts/test-save.mjs",
+    "test:meta": "node scripts/test-meta.mjs",
+    "test:meta-profile": "npm run build && node scripts/test-meta-profile.mjs",
+    "test:apex-event": "npm run build && node scripts/test-apex-event.mjs",
+    "test:cosmetics": "npm run build && node scripts/test-cosmetics.mjs",
+    "test:game-frame-pilots": "npm run build && node scripts/test-game-frame-pilots.mjs",
+    "test:2048-modes": "npm run build && node scripts/test-2048-modes.mjs",
+    "test:home-rails": "npm run build && node scripts/test-home-rails.mjs",
+    "test:browse-facets": "npm run build && node scripts/test-browse-facets.mjs",
+    "test:game-pages": "npm run build && node scripts/test-game-pages.mjs",
+    "test:theater": "npm run build && node scripts/test-theater.mjs",
+    "capture:ui-final": "node scripts/capture-ui-final.mjs",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "check:theme": "node scripts/check-theme.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.1",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
     "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "vite": "^8.3.0",
-    "express": "^4.21.2",
-    "dotenv": "^17.2.3",
-    "motion": "^12.23.24"
+    "vite": "^8.3.0"
   },
   "devDependencies": {
+    "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.4.21",
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.28.2",
+    "playwright": "^1.64.1",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
-    "typescript": "^7.0.2",
-    "@types/express": "^4.17.21"
+    "typescript": "^7.0.2"
   }
 }

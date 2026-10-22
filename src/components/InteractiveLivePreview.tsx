@@ -26,40 +26,24 @@ export const InteractiveLivePreview: React.FC<LivePreviewProps> = ({ game, isHov
 
       ctx.clearRect(0, 0, width, height);
 
-      // Base cyber background gradient
+      // Keep previews on the same restrained dark canvas used by the hand-built scenes.
       const bgGrad = ctx.createLinearGradient(0, 0, width, height);
-      bgGrad.addColorStop(0, '#0d101d');
+      bgGrad.addColorStop(0, '#0b0d16');
       bgGrad.addColorStop(1, '#08090f');
       ctx.fillStyle = bgGrad;
       ctx.fillRect(0, 0, width, height);
-
-      // Subtle 3D grid perspective floor
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
-      ctx.lineWidth = 1;
-      const horizonY = height * 0.45;
-
-      // Draw perspective vanishing lines
-      const vanishingX = width / 2;
-      for (let x = -width * 0.5; x <= width * 1.5; x += 32) {
-        ctx.beginPath();
-        ctx.moveTo(vanishingX, horizonY);
-        ctx.lineTo(x, height);
-        ctx.stroke();
-      }
-
-      // Draw horizontal depth rungs
-      for (let y = horizonY; y < height; y += (height - y) * 0.25 + 4) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(width, y);
-        ctx.stroke();
-      }
 
       // If hand-crafted scene exists in window.Scenes, render it scaled to preview viewport
       const sceneFn = window.Scenes?.S?.[game.gameNumber];
       if (sceneFn) {
         ctx.save();
-        ctx.scale(width / 300, height / 128);
+        if (game.gameNumber === 5) {
+          const sceneScale = Math.min(width / 300, height / 128);
+          ctx.translate((width - 300 * sceneScale) / 2, (height - 128 * sceneScale) / 2);
+          ctx.scale(sceneScale, sceneScale);
+        } else {
+          ctx.scale(width / 300, height / 128);
+        }
         try {
           sceneFn(ctx, t + game.gameNumber * 1.7, game.accentColor);
         } catch {}
@@ -71,34 +55,15 @@ export const InteractiveLivePreview: React.FC<LivePreviewProps> = ({ game, isHov
       // Fallback: Game-specific procedural animated 2.5D visual
       switch (game.previewType) {
         case 'pong': {
-          // 3D perspective table tennis
-          const ballX = width * 0.5 + Math.sin(t * 2) * (width * 0.35);
-          const ballZ = (Math.cos(t * 2) + 1) * 0.5;
-          const ballY = horizonY + 20 + ballZ * (height - horizonY - 40);
-          const radius = 4 + ballZ * 8;
-
-          // Shadow
-          ctx.fillStyle = 'rgba(0,0,0,0.4)';
-          ctx.beginPath();
-          ctx.ellipse(ballX, ballY + radius, radius * 1.2, radius * 0.4, 0, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Left paddle
-          ctx.fillStyle = '#38BDF8';
-          ctx.fillRect(16, horizonY + 10 + Math.sin(t * 1.5) * 30, 6, 40);
-
-          // Right paddle
-          ctx.fillStyle = '#38BDF8';
-          ctx.fillRect(width - 22, horizonY + 15 + Math.cos(t * 1.8) * 30, 6, 40);
-
-          // Glowing 3D Ball
-          ctx.fillStyle = '#FFFFFF';
-          ctx.shadowColor = '#38BDF8';
-          ctx.shadowBlur = 12;
-          ctx.beginPath();
-          ctx.arc(ballX, ballY, radius, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.shadowBlur = 0;
+          const bx = width * (0.12 + .76 * (Math.sin(t * 1.2) + 1) / 2);
+          const by = height * (0.15 + .7 * (Math.sin(t * .83) + 1) / 2);
+          ctx.fillStyle = 'rgba(255,255,255,.2)';
+          for (let y = 8; y < height; y += 18) ctx.fillRect(width / 2 - 1, y, 2, 8);
+          const paddle = (x: number, y: number) => { ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(x + 2, y + 2, 7, 38); ctx.fillStyle = game.accentColor; ctx.fillRect(x, y, 7, 38); ctx.fillStyle = 'rgba(255,255,255,.38)'; ctx.fillRect(x + 2, y + 4, 1.5, 29); };
+          paddle(18, Math.max(8, Math.min(height - 46, by - 19 + Math.sin(t) * 6)));
+          paddle(width - 25, Math.max(8, Math.min(height - 46, by - 19 + Math.cos(t * .9) * 6)));
+          for (let i = 5; i > 0; i--) { ctx.globalAlpha = .07 * (6 - i); ctx.fillStyle = game.accentColor; ctx.beginPath(); ctx.arc(bx - i * 4, by - i * 2, 3, 0, Math.PI * 2); ctx.fill(); }
+          ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(bx, by, 4, 0, Math.PI * 2); ctx.fill();
           break;
         }
 
@@ -154,31 +119,16 @@ export const InteractiveLivePreview: React.FC<LivePreviewProps> = ({ game, isHov
         }
 
         case 'snake': {
-          // Isometric 3D Snake
-          const cx = width / 2;
-          const cy = height / 2;
-          const points = 7;
-          for (let i = points; i >= 0; i--) {
-            const angle = t * 1.5 - i * 0.35;
-            const radius = 35 + Math.sin(t + i) * 10;
-            const sx = cx + Math.cos(angle) * radius;
-            const sy = cy + Math.sin(angle) * (radius * 0.55);
-
-            // 3D Isometric Cube block
-            ctx.fillStyle = i === 0 ? '#4ADE80' : 'rgba(74, 222, 128, 0.7)';
-            ctx.beginPath();
-            ctx.arc(sx, sy, 7 - i * 0.4, 0, Math.PI * 2);
-            ctx.fill();
-          }
-
-          // Glowing food gem
-          const foodX = cx + Math.sin(t * 0.8) * 45;
-          const foodY = cy + Math.cos(t * 0.8) * 25;
-          ctx.fillStyle = '#EF4444';
-          ctx.shadowColor = '#EF4444';
-          ctx.shadowBlur = 12;
-          ctx.fillRect(foodX - 4, foodY - 4, 8, 8);
-          ctx.shadowBlur = 0;
+          const left = 42, top = 26, right = width - 42, bottom = height - 26;
+          const perimeter = 2 * ((right - left) + (bottom - top));
+          const pointAt = (d: number): [number, number] => { d = (d % perimeter + perimeter) % perimeter; if (d < right - left) return [left + d, top]; d -= right - left; if (d < bottom - top) return [right, top + d]; d -= bottom - top; if (d < right - left) return [right - d, bottom]; d -= right - left; return [left, bottom - d]; };
+          ctx.setLineDash([4, 6]); ctx.strokeStyle = 'rgba(255,255,255,.16)'; ctx.lineWidth = 1.2; ctx.strokeRect(left, top, right - left, bottom - top); ctx.setLineDash([]);
+          const head = (t * 75) % perimeter;
+          const food = pointAt(perimeter * .69);
+          ctx.fillStyle = 'rgba(248,113,113,.18)'; ctx.beginPath(); ctx.arc(food[0], food[1], 11, 0, Math.PI * 2); ctx.fill();
+          ctx.font = '16px "Segoe UI Emoji",sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🍎', food[0], food[1]);
+          for (let i = 10; i >= 0; i--) { const [sx, sy] = pointAt(head - i * 8); ctx.globalAlpha = .55 + .45 * (1 - i / 11); ctx.fillStyle = i ? game.accentColor : '#d9f99d'; ctx.beginPath(); ctx.arc(sx, sy, i ? 5 : 6, 0, Math.PI * 2); ctx.fill(); }
+          ctx.globalAlpha = 1;
           break;
         }
 
@@ -270,54 +220,70 @@ export const InteractiveLivePreview: React.FC<LivePreviewProps> = ({ game, isHov
         }
 
         case 'tetris': {
-          // Isometric 3D blocks falling
-          const cx = width / 2;
-          const cy = height * 0.65;
-
-          // Draw stacked foundation blocks with 3D top and right faces
-          const drawIsoCube = (x: number, y: number, color: string) => {
-            const sz = 12;
-            // Top face
+          // Large neon playfield with a falling piece and animated double-line clear.
+          const cols = 10;
+          const rows = 7;
+          const cell = Math.min(width * 0.064, height * 0.135);
+          const boardW = cols * cell;
+          const boardH = rows * cell;
+          const bx = (width - boardW) / 2;
+          const by = (height - boardH) / 2;
+          const phase = t % 7;
+          const smooth = (value: number) => {
+            const v = Math.max(0, Math.min(1, value));
+            return v * v * (3 - 2 * v);
+          };
+          const colors = ['#22D3EE', '#FACC15', '#C084FC', '#4ADE80', '#F87171', '#60A5FA'];
+          const block = (x: number, y: number, color: string, alpha = 1) => {
+            if (y < -1 || y >= rows) return;
+            ctx.globalAlpha = alpha;
             ctx.fillStyle = color;
-            ctx.beginPath();
-            ctx.moveTo(x, y - sz);
-            ctx.lineTo(x + sz * 1.2, y - sz * 0.5);
-            ctx.lineTo(x, y);
-            ctx.lineTo(x - sz * 1.2, y - sz * 0.5);
-            ctx.closePath();
-            ctx.fill();
-
-            // Left face (darker)
-            ctx.fillStyle = 'rgba(0,0,0,0.2)';
-            ctx.beginPath();
-            ctx.moveTo(x - sz * 1.2, y - sz * 0.5);
-            ctx.lineTo(x, y);
-            ctx.lineTo(x, y + sz);
-            ctx.lineTo(x - sz * 1.2, y + sz * 0.5);
-            ctx.closePath();
-            ctx.fill();
-
-            // Right face (medium dark)
-            ctx.fillStyle = 'rgba(0,0,0,0.35)';
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-            ctx.lineTo(x + sz * 1.2, y - sz * 0.5);
-            ctx.lineTo(x + sz * 1.2, y + sz * 0.5);
-            ctx.lineTo(x, y + sz);
-            ctx.closePath();
-            ctx.fill();
+            ctx.fillRect(bx + x * cell + 1, by + y * cell + 1, cell - 2, cell - 2);
+            ctx.fillStyle = 'rgba(255,255,255,.28)';
+            ctx.fillRect(bx + x * cell + 2, by + y * cell + 2, cell - 4, Math.max(2, cell * .12));
+            ctx.globalAlpha = 1;
           };
 
-          drawIsoCube(cx - 24, cy, '#38BDF8');
-          drawIsoCube(cx, cy, '#FACC15');
-          drawIsoCube(cx + 24, cy, '#A855F7');
-          drawIsoCube(cx - 12, cy - 14, '#10B981');
-          drawIsoCube(cx + 12, cy - 14, '#F97316');
+          ctx.save();
+          ctx.shadowColor = '#8B5CF6';
+          ctx.shadowBlur = 12;
+          ctx.strokeStyle = 'rgba(167,139,250,.8)';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(bx - 5, by - 5, boardW + 10, boardH + 10);
+          ctx.restore();
+          ctx.fillStyle = 'rgba(4,7,16,.88)';
+          ctx.fillRect(bx, by, boardW, boardH);
+          ctx.strokeStyle = 'rgba(148,163,184,.18)';
+          ctx.lineWidth = 1;
+          for (let x = 0; x <= cols; x++) {
+            ctx.beginPath(); ctx.moveTo(bx + x * cell, by); ctx.lineTo(bx + x * cell, by + boardH); ctx.stroke();
+          }
+          for (let y = 0; y <= rows; y++) {
+            ctx.beginPath(); ctx.moveTo(bx, by + y * cell); ctx.lineTo(bx + boardW, by + y * cell); ctx.stroke();
+          }
 
-          // Falling piece
-          const dropY = ((t * 40) % (cy - 30)) + 20;
-          drawIsoCube(cx, dropY, '#EF4444');
-          drawIsoCube(cx + 14, dropY - 7, '#EF4444');
+          const upperCells = [0, 1, 2, 7, 8, 9];
+          const lowerCells = [0, 1, 2, 3, 6, 7, 8, 9];
+          const cleared = phase >= 4.05;
+          if (!cleared) {
+            upperCells.forEach((x, i) => block(x, 4, colors[(i + 2) % colors.length]));
+            for (let y = 5; y <= 6; y++) lowerCells.forEach((x, i) => block(x, y, colors[(i + y) % colors.length]));
+          } else {
+            const settle = smooth((phase - 4.05) / .48);
+            upperCells.forEach((x, i) => block(x, 4 + settle * 2, colors[(i + 2) % colors.length]));
+          }
+
+          if (phase < 4.05) {
+            const fallingY = -1.5 + smooth(phase / 3.35) * 5.5;
+            for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) block(4 + x, 5 + y, '#FACC15', .16);
+            for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) block(4 + x, fallingY + y, '#FACC15');
+          } else if (phase < 4.52) {
+            const flash = .28 + .72 * (Math.floor(phase * 20) % 2);
+            for (let y = 5; y <= 6; y++) for (let x = 0; x < cols; x++) block(x, y, '#FFFFFF', flash);
+          } else {
+            const fallingY = -1.3 + smooth((phase - 4.52) / 2.05) * 3.6;
+            [[1, 0], [0, 1], [1, 1], [2, 1]].forEach(([x, y]) => block(2 + x, fallingY + y, '#22D3EE'));
+          }
           break;
         }
 
@@ -366,7 +332,7 @@ export const InteractiveLivePreview: React.FC<LivePreviewProps> = ({ game, isHov
   }, [game.previewType, game.accentColor, isHovered]);
 
   return (
-    <div className={`relative overflow-hidden w-full h-full bg-[#090A10] ${className}`}>
+    <div className={`relative overflow-hidden w-full h-full bg-stage ${className}`}>
       <canvas
         ref={canvasRef}
         width={320}

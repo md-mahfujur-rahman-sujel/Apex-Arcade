@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Snakes &amp; Ladders</title>
@@ -20,11 +21,18 @@
 </style>
 </head>
 <body>
+
+<script src="perf-kit.js"></script>
+<script src="save-kit.js"></script>
+<script src="meta-config.js"></script>
+<script src="meta-kit.js"></script>
 <script src="board-kit.js"></script>
+<script src="score-bridge.js"></script>
+<script src="ui-kit.js"></script>
 <script>
 const ui = Board.shell({
   id: 'snakes-ladders', cpu: true, title: 'Snakes & Ladders', subtitle: 'Race to 100 — climb the ladders, dodge the snakes',
-  rules: 'Roll the die and move that many squares. Land at the foot of a ladder to climb it; land on a snake\'s head and you slide down to its tail. Roll a 6 for another turn. You must roll the exact number to land on 100. First to 100 wins.',
+  rules: 'Roll the die and move that many squares. Land at the foot of a ladder to climb it; land on a snake\'s head and you slide down to its tail. Roll a 6 for another turn. You must roll the exact number to land on 100. First to 100 wins. Easy shortens snake drops, Normal uses the printed board, and Hard extends each snake drop by five squares. The selected rule applies to every player.',
   controls: [['Space / Enter / R','Roll the die'], ['Roll button','Roll the die (touch)'], ['N','Start a new game'], ['H / M','Toggle help / mute']],
 });
 ui.main.innerHTML = `
@@ -50,7 +58,15 @@ const LAD = { 1: 38, 4: 14, 9: 31, 21: 42, 28: 84, 36: 44, 51: 67, 71: 91, 80: 1
 const SNK = { 16: 6, 47: 26, 49: 11, 56: 53, 62: 19, 64: 60, 87: 24, 93: 73, 95: 75, 98: 78 };
 const SNAKE_COL = ['#ef4444', '#a855f7', '#22c55e', '#f97316', '#3b82f6', '#ec4899', '#14b8a6', '#eab308', '#8b5cf6', '#f43f5e'];
 const CELL = 60, OFF = [[-12, -12], [12, -12], [-12, 12], [12, 12]];
-let players, cur, busy, over;
+let players, cur, busy, over, difficulty = Board.difficulty();
+function snakeTarget(from) {
+  const target = SNK[from];
+  if (target == null) return null;
+  if (difficulty === 'easy') return Math.ceil((from + target) / 2);
+  if (difficulty === 'hard') return Math.max(1, target - 5);
+  return target;
+}
+window.addEventListener('apex:board-difficulty', (event) => { difficulty = event.detail?.difficulty || 'normal'; draw(); });
 
 function pt(n, i) {
   if (n <= 0) return [34 + i * 30, 625];
@@ -69,7 +85,7 @@ function draw() {
   for (let i = 0; i <= 10; i++) { c.beginPath(); c.moveTo(i * CELL, 0); c.lineTo(i * CELL, 600); c.moveTo(0, i * CELL); c.lineTo(600, i * CELL); c.stroke(); }
   c.fillStyle = '#0f1322'; c.fillRect(0, 600, 600, 50); c.fillStyle = '#8b93b3'; c.font = '600 11px ui-monospace, Consolas, monospace'; c.textBaseline = 'middle'; c.fillText('START', 540, 625);
   for (const a in LAD) ladder(pt(+a), pt(LAD[a]));
-  Object.keys(SNK).forEach((a, i) => snake(pt(+a), pt(SNK[a]), SNAKE_COL[i % SNAKE_COL.length], i));
+  Object.keys(SNK).forEach((a, i) => snake(pt(+a), pt(snakeTarget(+a)), SNAKE_COL[i % SNAKE_COL.length], i));
   players.forEach((p, i) => {
     const [bx, by] = p.ax != null ? [p.ax, p.ay] : pt(p.pos, i), o = p.pos <= 0 ? [0, 0] : OFF[i];
     const x = bx + o[0], y = by + o[1];
@@ -129,7 +145,7 @@ async function roll() {
   else {
     ui_update(p.name + ' rolled ' + r);
     for (let s = 0; s < r; s++) { p.pos++; Board.sfx('step'); draw(); await T(200); }
-    const jump = LAD[p.pos] || SNK[p.pos];
+    const jump = LAD[p.pos] || snakeTarget(p.pos);
     if (jump) {
       const up = !!LAD[p.pos]; msg = up ? 'A ladder! ' + p.name + ' climbs to ' + jump : 'A snake! ' + p.name + ' slides to ' + jump;
       ui_update(msg); await T(450); Board.sfx(up ? 'ladder' : 'snake');

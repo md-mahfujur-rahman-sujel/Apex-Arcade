@@ -1,6 +1,1 @@
-{
-  "name": "Apex Arcade — 2.5D Retro & Indie Games Anthology",
-  "description": "Interactive 2.5D web arcade celebrating 50 legendary 2D games, tabletop classics, and brain puzzles with animated live previews, playable engines, and real-time telemetry.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
+{"name":"Apex Arcade","description":"Interactive 2.5D web arcade celebrating 50 legendary 2D games, tabletop classics, and brain puzzles with animated live previews, playable engines, and real-time telemetry.","requestFramePermissions":[],"majorCapabilities":["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]}

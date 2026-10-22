@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Carrom</title>
@@ -15,7 +16,14 @@
 </style>
 </head>
 <body>
+
+<script src="perf-kit.js"></script>
+<script src="save-kit.js"></script>
+<script src="meta-config.js"></script>
+<script src="meta-kit.js"></script>
 <script src="board-kit.js"></script>
+<script src="score-bridge.js"></script>
+<script src="ui-kit.js"></script>
 <script>
 const ui = Board.shell({
   id: 'carrom', cpu: true, title: 'Carrom', subtitle: 'Flick the striker and pocket your coins before your rival',
@@ -157,10 +165,10 @@ function aiMove() {
   }
   /* slide the striker to the chosen spot, show the aim line, then flick */
   phase = 'aim'; drag = null;
-  const x0 = sx, T = Board.pace(600), t0 = performance.now(), g = gen;
+  const x0 = sx, animDur = Board.pace(600), t0 = performance.now(), g = gen;
   (function slide() {
     if (g !== gen || over) return;
-    const k = Math.min(1, (performance.now() - t0) / T); sx = x0 + (best.x - x0) * (k * k * (3 - 2 * k)); sync();
+    const k = Math.min(1, (performance.now() - t0) / animDur); sx = x0 + (best.x - x0) * (k * k * (3 - 2 * k)); sync();
     if (k < 1) { requestAnimationFrame(slide); return; }
     drag = { ai: true, ang: best.ang, pw: best.pw };
     setTimeout(() => { if (g === gen && !over && phase === 'aim' && drag && drag.ai) shoot(best.x, best.ang, best.pw); }, Board.pace(1200));

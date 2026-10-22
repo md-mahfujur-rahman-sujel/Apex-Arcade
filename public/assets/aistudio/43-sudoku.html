@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+
+<script>(()=>{const raw=new URLSearchParams(location.search).get('seed');if(raw!==null&&/^\d+$/.test(raw)){let state=Number(raw)>>>0;Math.random=()=>{state=(state+0x6D2B79F5)>>>0;let value=state;value=Math.imul(value^(value>>>15),value|1);value^=value+Math.imul(value^(value>>>7),value|61);return((value^(value>>>14))>>>0)/4294967296}}})();</script>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sudoku</title>
@@ -19,7 +22,14 @@
 </style>
 </head>
 <body>
+
+<script src="perf-kit.js"></script>
+<script src="save-kit.js"></script>
+<script src="meta-config.js"></script>
+<script src="meta-kit.js"></script>
 <script src="board-kit.js"></script>
+<script src="score-bridge.js"></script>
+<script src="ui-kit.js"></script>
 <script>
 const ui = Board.shell({
   id: 'sudoku', title: 'Sudoku', subtitle: 'Fill every row, column and 3×3 box with 1–9',

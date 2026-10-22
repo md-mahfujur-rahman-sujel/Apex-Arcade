@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ludo</title>
@@ -19,7 +20,14 @@
 </style>
 </head>
 <body>
+
+<script src="perf-kit.js"></script>
+<script src="save-kit.js"></script>
+<script src="meta-config.js"></script>
+<script src="meta-kit.js"></script>
 <script src="board-kit.js"></script>
+<script src="score-bridge.js"></script>
+<script src="ui-kit.js"></script>
 <script>
 const ui = Board.shell({
   id: 'ludo', cpu: true, title: 'Ludo', subtitle: 'Roll a 6 to leave the yard, then race all four tokens home',
@@ -100,11 +108,13 @@ const ok = (p, i) => (p.t[i] === 0 ? die === 6 : p.t[i] + die <= 57);
 const foe = (p, k) => players.some((q) => q !== p && q.t.some((w) => w >= 1 && w <= 51 && trk(q.s, w) === k));
 function auto() { if (!over && players[cur].cpu && phase === 'roll') setTimeout(roll, Board.pace(1300)); }
 function cpuPick(p) {
+  const skill = Board.level();
+  if (skill === 1) return moves[Board.rand(moves.length)];
   const sc = (i) => {
     const v = p.t[i], n = v ? v + die : 1; let s = v;
-    if (n === 57) s += 100;
-    if (n <= 51) { const k = trk(p.s, n); if (SAFE.has(k)) s += 15; else if (foe(p, k)) s += 80; }
-    if (v === 0) s += 40;
+    if (n === 57) s += skill === 3 ? 180 : 100;
+    if (n <= 51) { const k = trk(p.s, n); if (SAFE.has(k)) s += skill === 3 ? 30 : 15; else if (foe(p, k)) s += skill === 3 ? 150 : 80; }
+    if (v === 0) s += skill === 3 ? 55 : 40;
     return s + Math.random();
   };
   return moves.slice().sort((a, b) => sc(b) - sc(a))[0];

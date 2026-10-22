@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { PlayerStats } from '../types/game';
+import { GameCategory, PlayerStats } from '../types/game';
 import { GAMES_DATA } from '../data/gamesData';
 import {
   Activity,
@@ -8,15 +8,15 @@ import {
   Trophy,
   RotateCcw,
   Zap,
-  Sparkles,
   Cpu,
   ShieldCheck,
   CheckCircle2,
   Sliders,
-  Layers,
-  ChevronRight,
-  TrendingUp,
 } from 'lucide-react';
+import { Card } from './ui/Card';
+import { ScreenBezel } from './ui/ScreenBezel';
+import { Chip } from './ui/Chip';
+import { Button } from './ui/Button';
 
 interface TelemetryDashboardProps {
   stats: PlayerStats;
@@ -43,32 +43,79 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
   onSelectGame,
 }) => {
   // Live Frame Rate and Frame-Time state (calm updates once per second)
-  const [fps, setFps] = useState(60);
-  const [avgFrameTime, setAvgFrameTime] = useState(16.6);
-  const [jitterMs, setJitterMs] = useState(0.4);
+  const [fps, setFps] = useState<number | null>(null);
+  const [avgFrameTime, setAvgFrameTime] = useState<number | null>(null);
+  const [jitterMs, setJitterMs] = useState<number | null>(null);
   const [manualTier, setManualTier] = useState<'auto' | HardwareTier>('auto');
-  const [tableFilter, setTableFilter] = useState<'all' | 'ranked' | 'arcade' | 'board'>('all');
-
+  const [tableFilter, setTableFilter] = useState<'all' | 'ranked' | GameCategory>('all');
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  // Live tier reported by window.Perf (perf-kit.js) running inside game iframes
+  const [livePerfTier, setLivePerfTier] = useState<HardwareTier | null>(null);
   const sectionRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const chartColorsRef = useRef({ accent: '', success: '', muted: '' });
+  const gameFrameSamplesRef = useRef<Float32Array>(new Float32Array(60));
+  const gameFrameHeadRef = useRef(0);
+  const gameFrameCountRef = useRef(0);
+  const lastGameFrameAtRef = useRef(0);
+
+  useEffect(() => {
+    const onGameFrame = (event: Event) => {
+      const detail = (event as CustomEvent<{ avgMs: number }>).detail;
+      if (!detail || !Number.isFinite(detail.avgMs) || detail.avgMs <= 0 || detail.avgMs > 200) return;
+      const samples = gameFrameSamplesRef.current;
+      samples[gameFrameHeadRef.current] = detail.avgMs;
+      gameFrameHeadRef.current = (gameFrameHeadRef.current + 1) % samples.length;
+      gameFrameCountRef.current = Math.min(samples.length, gameFrameCountRef.current + 1);
+      lastGameFrameAtRef.current = Date.now();
+      const count = gameFrameCountRef.current;
+      const values = Array.from({ length: count }, (_, index) => samples[(gameFrameHeadRef.current - count + index + samples.length) % samples.length]);
+      const average = values.reduce((sum, value) => sum + value, 0) / count;
+      const jitter = Math.sqrt(values.reduce((sum, value) => sum + (value - average) ** 2, 0) / count);
+      setAvgFrameTime(Number(average.toFixed(1)));
+      setFps(Math.min(240, Math.round(1000 / average)));
+      setJitterMs(Number(jitter.toFixed(2)));
+    };
+    window.addEventListener('apex:game-frame', onGameFrame);
+    const staleTimer = window.setInterval(() => {
+      if (lastGameFrameAtRef.current && Date.now() - lastGameFrameAtRef.current > 2500) {
+        lastGameFrameAtRef.current = 0;
+        gameFrameCountRef.current = 0;
+        gameFrameHeadRef.current = 0;
+        gameFrameSamplesRef.current.fill(0);
+        setFps(null);
+        setAvgFrameTime(null);
+        setJitterMs(null);
+      }
+    }, 1000);
+    return () => {
+      window.removeEventListener('apex:game-frame', onGameFrame);
+      window.clearInterval(staleTimer);
+    };
+  }, []);
 
   // Hardware Profiler
   const detectedProfile = useMemo<HardwareProfile>(() => {
-    const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
-    const memoryGb = typeof navigator !== 'undefined' ? (navigator as unknown as { deviceMemory?: number }).deviceMemory || 4 : 4;
-    const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0));
-    const isMobile = isTouch && typeof window !== 'undefined' && window.innerWidth < 768;
+    const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 2 : 2;
+    const memoryGb = typeof navigator !== 'undefined' ? (navigator as unknown as { deviceMemory?: number }).deviceMemory || 0 : 0;
+    const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
+    const isMobile = typeof window !== 'undefined' && (coarse || navigator.maxTouchPoints > 1 && window.innerWidth < 900);
 
+    // Priority: livePerfTier from perf-kit.js > manualTier > auto-detect
     let computedTier: HardwareTier = 'standard';
-    if (manualTier !== 'auto') {
+    if (livePerfTier && manualTier === 'auto') {
+      computedTier = livePerfTier;
+    } else if (manualTier !== 'auto') {
       computedTier = manualTier;
     } else {
-      if (cores >= 8 && memoryGb >= 8 && !isMobile) {
-        computedTier = 'ultra';
-      } else if (cores <= 4 || memoryGb <= 4 || isMobile) {
+      if (isMobile || cores <= 2 || (memoryGb > 0 && memoryGb <= 2)) {
         computedTier = 'lite';
-      } else {
+      } else if (cores >= 8 && (memoryGb === 0 || memoryGb >= 8)) {
+        computedTier = 'ultra';
+      } else if (cores >= 4 && (memoryGb === 0 || memoryGb >= 4)) {
         computedTier = 'standard';
+      } else {
+        computedTier = 'lite';
       }
     }
 
@@ -78,10 +125,10 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
         label: 'Ultra Performance Tier',
         cores,
         memoryGb,
-        targetFps: 120,
-        particleBudget: '100% Full Fidelity',
-        dprScale: 1.25,
-        modeDescription: 'High-refresh physics, multi-sample anti-aliasing & uncapped visual FX',
+        targetFps: 60,
+        particleBudget: '1,200 particles — 100% Full Fidelity',
+        dprScale: Math.min(window.devicePixelRatio || 1, 2),
+        modeDescription: 'Highest available DPR, particle and shadow budgets from Perf Kit',
       };
     } else if (computedTier === 'lite') {
       return {
@@ -89,10 +136,10 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
         label: 'Lite Eco-Profile',
         cores,
         memoryGb,
-        targetFps: 60,
-        particleBudget: '35% Power Optimized',
+        targetFps: 30,
+        particleBudget: '200 particles — Power Optimized',
         dprScale: 1.0,
-        modeDescription: 'Battery-saving sub-steps, throttled offscreen redraws & low memory footprint',
+        modeDescription: 'Battery-aware DPR, particle cap and disabled shadow blur',
       };
     }
 
@@ -102,10 +149,42 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
       cores,
       memoryGb,
       targetFps: 60,
-      particleBudget: '70% Balanced',
-      dprScale: 1.0,
+      particleBudget: '600 particles — Balanced',
+      dprScale: Math.min(window.devicePixelRatio || 1, 1.5),
       modeDescription: 'Rock-solid 60Hz lock with adaptive GPU hardware acceleration',
     };
+  }, [manualTier, livePerfTier]);
+
+  // Listen for perf-kit tier changes from game windows
+  useEffect(() => {
+    const handlePerfEvent = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && detail.tier) {
+        setLivePerfTier(detail.tier as HardwareTier);
+      }
+    };
+    // Read current Perf.tier if perf-kit.js is loaded in this window
+    if (typeof window !== 'undefined' && (window as unknown as { Perf?: { tier?: string } }).Perf?.tier) {
+      const wPerf = (window as unknown as { Perf: { tier: string } }).Perf;
+      if (['ultra', 'standard', 'lite'].includes(wPerf.tier)) {
+        setLivePerfTier(wPerf.tier as HardwareTier);
+      }
+    }
+    window.addEventListener('apex:perf', handlePerfEvent);
+    return () => window.removeEventListener('apex:perf', handlePerfEvent);
+  }, []);
+
+  // Propagate manual tier selection to window.Perf if available
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent('apex:perf-tier-request', { detail: { tier: manualTier === 'auto' ? null : manualTier } }));
+    const wPerf = (window as unknown as { Perf?: { setTier?: (t: string | null) => void } }).Perf;
+    if (!wPerf || typeof wPerf.setTier !== 'function') return;
+    if (manualTier === 'auto') {
+      wPerf.setTier(null);
+    } else {
+      wPerf.setTier(manualTier);
+    }
   }, [manualTier]);
 
   // Frame timing loop with EMA smoothing and direct Canvas waveform
@@ -115,24 +194,24 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
 
     let animId: number;
     let isVisible = false;
-    let lastTime = performance.now();
-    let frameCount = 0;
-    let lastSecondTime = performance.now();
-    let smoothedInterval = 16.6;
-
-    // Fixed buffer of 60 rolling frame deltas
     const BUFFER_SIZE = 60;
-    const buffer = new Float32Array(BUFFER_SIZE).fill(16.6);
-    let bufferHead = 0;
 
     // Viewport observer ensures zero CPU usage when not looking at telemetry
+    const syncThemeColors = () => {
+      const styles = getComputedStyle(document.documentElement);
+      chartColorsRef.current = {
+        accent: styles.getPropertyValue('--accent').trim(),
+        success: styles.getPropertyValue('--success').trim(),
+        muted: styles.getPropertyValue('--fg-muted').trim(),
+      };
+    };
+    syncThemeColors();
+
     const observer = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
         isVisible = entry?.isIntersecting ?? false;
         if (isVisible && !animId) {
-          lastTime = performance.now();
-          lastSecondTime = performance.now();
           animId = requestAnimationFrame(tick);
         }
       },
@@ -143,42 +222,16 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
       observer.observe(sectionRef.current);
     }
 
+    const themeObserver = new MutationObserver(() => {
+      syncThemeColors();
+      if (isVisible && !animId) animId = requestAnimationFrame(tick);
+    });
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
     const tick = (now: number) => {
       if (!isVisible) {
         animId = 0;
         return;
-      }
-
-      const rawDelta = now - lastTime;
-      lastTime = now;
-
-      // Filter sleep spikes, background tabs or suspension
-      const delta = rawDelta > 0 && rawDelta < 120 ? rawDelta : 16.6;
-
-      // Exponential Moving Average (EMA) with alpha=0.10 for calm stability
-      smoothedInterval = smoothedInterval * 0.90 + delta * 0.10;
-
-      buffer[bufferHead] = delta;
-      bufferHead = (bufferHead + 1) % BUFFER_SIZE;
-      frameCount++;
-
-      // Update text metrics only once every 1,000ms to eliminate React thrashing
-      if (now - lastSecondTime >= 1000) {
-        const measuredFps = Math.round((frameCount * 1000) / (now - lastSecondTime));
-        setFps(Math.min(144, Math.max(15, measuredFps)));
-        setAvgFrameTime(Number(smoothedInterval.toFixed(1)));
-
-        // Calculate jitter (standard deviation over rolling buffer)
-        let sumDev = 0;
-        for (let i = 0; i < BUFFER_SIZE; i++) {
-          const diff = buffer[i] - smoothedInterval;
-          sumDev += diff * diff;
-        }
-        const stdDev = Math.sqrt(sumDev / BUFFER_SIZE);
-        setJitterMs(Number(stdDev.toFixed(2)));
-
-        frameCount = 0;
-        lastSecondTime = now;
       }
 
       // Draw direct to canvas with DPR awareness
@@ -202,7 +255,8 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
 
         // Optimal 16.6ms guide line (60Hz)
         const targetY = ch - (16.6 / 35) * (ch - 24) - 12;
-        ctx.strokeStyle = 'rgba(6, 182, 212, 0.35)';
+        ctx.strokeStyle = chartColorsRef.current.accent;
+        ctx.globalAlpha = 0.35;
         ctx.lineWidth = 1;
         ctx.setLineDash([4, 4]);
         ctx.beginPath();
@@ -210,10 +264,12 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
         ctx.lineTo(cw, targetY);
         ctx.stroke();
         ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
 
         // Target 8.3ms guide line (120Hz)
         const target120Y = ch - (8.33 / 35) * (ch - 24) - 12;
-        ctx.strokeStyle = 'rgba(16, 185, 129, 0.20)';
+        ctx.strokeStyle = chartColorsRef.current.success;
+        ctx.globalAlpha = 0.2;
         ctx.lineWidth = 1;
         ctx.setLineDash([2, 4]);
         ctx.beginPath();
@@ -221,31 +277,33 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
         ctx.lineTo(cw, target120Y);
         ctx.stroke();
         ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
 
-        // Waveform polyline
-        ctx.beginPath();
-        for (let i = 0; i < BUFFER_SIZE; i++) {
-          const idx = (bufferHead + i) % BUFFER_SIZE;
-          const val = buffer[idx];
-          const x = (i / (BUFFER_SIZE - 1)) * cw;
-          const y = ch - (Math.min(val, 35) / 35) * (ch - 24) - 12;
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
+        // The animation loop only paints the dashboard. Plot values come from
+        // Perf.tick reports forwarded from the currently mounted game iframe.
+        const sampleCount = gameFrameCountRef.current;
+        if (sampleCount > 0) {
+          const samples = gameFrameSamplesRef.current;
+          const sampleHead = gameFrameHeadRef.current;
+          ctx.beginPath();
+          for (let i = 0; i < sampleCount; i++) {
+            const idx = (sampleHead - sampleCount + i + BUFFER_SIZE) % BUFFER_SIZE;
+            const val = samples[idx];
+            const x = (i / Math.max(1, sampleCount - 1)) * cw;
+            const y = ch - (Math.min(val, 35) / 35) * (ch - 24) - 12;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.strokeStyle = chartColorsRef.current.accent;
+          ctx.lineWidth = 2;
+          ctx.lineJoin = 'round';
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = chartColorsRef.current.muted;
+          ctx.font = '11px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('Waiting for game frame telemetry', cw / 2, ch / 2);
         }
-        ctx.strokeStyle = '#38BDF8';
-        ctx.lineWidth = 2;
-        ctx.lineJoin = 'round';
-        ctx.stroke();
-
-        // Subtle gradient under waveform
-        ctx.lineTo(cw, ch);
-        ctx.lineTo(0, ch);
-        ctx.closePath();
-        const grad = ctx.createLinearGradient(0, targetY, 0, ch);
-        grad.addColorStop(0, 'rgba(6, 182, 212, 0.18)');
-        grad.addColorStop(1, 'rgba(6, 182, 212, 0.0)');
-        ctx.fillStyle = grad;
-        ctx.fill();
       }
 
       animId = requestAnimationFrame(tick);
@@ -253,6 +311,7 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
 
     return () => {
       observer.disconnect();
+      themeObserver.disconnect();
       if (animId) cancelAnimationFrame(animId);
     };
   }, []);
@@ -277,69 +336,36 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
   // Player Rank Tier
   const playerRank = useMemo(() => {
     if (totalAccumulatedScore > 5000 || totalSessions >= 30) {
-      return { title: 'Apex Grandmaster', progress: 100, color: 'text-amber-400', nextTier: 'Max Rank' };
+      return { title: 'Apex Grandmaster', progress: 100, color: 'text-warning', nextTier: 'Max Rank' };
     }
     if (totalAccumulatedScore > 1500 || totalSessions >= 12) {
-      return { title: 'Retro Veteran', progress: 75, color: 'text-cyan-400', nextTier: 'Grandmaster at 5,000 pts' };
+      return { title: 'Retro Veteran', progress: 75, color: 'text-accent', nextTier: 'Grandmaster at 5,000 pts' };
     }
     if (totalAccumulatedScore > 300 || totalSessions >= 4) {
-      return { title: 'Challenger', progress: 45, color: 'text-emerald-400', nextTier: 'Veteran at 1,500 pts' };
+      return { title: 'Challenger', progress: 45, color: 'text-success', nextTier: 'Veteran at 1,500 pts' };
     }
-    return { title: 'Novice Cadet', progress: Math.min(30, totalSessions * 10), color: 'text-slate-300', nextTier: 'Challenger at 300 pts' };
+    return { title: 'Novice Cadet', progress: Math.min(30, totalSessions * 10), color: 'text-fg', nextTier: 'Challenger at 300 pts' };
   }, [totalAccumulatedScore, totalSessions]);
 
-  // Radar points for 5 progression attributes (Strictly bounded and finite)
-  const arcadeScore = Math.min(100, ((scores['space-invaders'] || 0) / 10) + ((scores['pong'] || 0) / 7));
-  const goldenAgeScore = Math.min(100, ((scores['tetris'] || 0) / 30) + ((scores['super-mario-bros'] || 0) / 20));
-  const modernScore = Math.min(100, ((scores['flappy-bird'] || 0) * 12) + ((scores['celeste'] || 0) / 10));
-  const velocityScore = Math.min(100, totalSessions * 12);
-  const staminaScore = Math.min(100, ((stats?.totalTimeSeconds || 0) / 60) * 8);
-
-  const radarMetrics = [
-    { label: '8-Bit Arcade', val: Math.max(25, Math.min(95, arcadeScore)) },
-    { label: '16-Bit Golden', val: Math.max(30, Math.min(95, goldenAgeScore)) },
-    { label: 'Indie & Reflex', val: Math.max(30, Math.min(95, modernScore)) },
-    { label: 'Play Velocity', val: Math.max(20, Math.min(95, velocityScore)) },
-    { label: 'Focus Dwell', val: Math.max(25, Math.min(95, staminaScore)) },
+  const playedGameIds = new Set([
+    ...Object.keys(scores).filter((id) => (scores[id] || 0) > 0),
+    ...(stats?.recentSessions || []).map((session) => session.gameId),
+  ]);
+  const achievementCount = Object.values(stats?.achievements || {}).reduce((total, ids) => total + ids.length, 0);
+  const completedLevels = Object.values(stats?.levelProgress || {}).reduce((total, level) => total + Math.max(0, level || 0), 0);
+  const realProgress = [
+    { label: 'Games played', value: playedGameIds.size, detail: `of ${GAMES_DATA.length}` },
+    { label: 'Best scores', value: Object.keys(scores).filter((id) => (scores[id] || 0) > 0).length, detail: 'recorded games' },
+    { label: 'Achievements', value: achievementCount, detail: 'unlocked' },
+    { label: 'Levels cleared', value: completedLevels, detail: 'recorded progress' },
   ];
 
-  const radarRadius = 70;
-  const radarCenter = { x: 120, y: 110 };
-  const radarPolygonPoints = radarMetrics
-    .map((m, i) => {
-      const angle = (i / radarMetrics.length) * Math.PI * 2 - Math.PI / 2;
-      const r = (m.val / 100) * radarRadius;
-      const x = (radarCenter.x + Math.cos(angle) * r).toFixed(1);
-      const y = (radarCenter.y + Math.sin(angle) * r).toFixed(1);
-      return `${x},${y}`;
-    })
-    .join(' ');
-
-  // Full high score game records list
-  const catalogRecords = [
-    { id: 'table-tennis', title: 'Table Tennis Tournament (1926)', cat: 'board' },
-    { id: 'pong', title: 'Holo-Pong 3D (Pong 1972)', cat: 'arcade' },
-    { id: 'space-invaders', title: 'Space Invaders 2.5D (1978)', cat: 'arcade' },
-    { id: 'asteroids', title: 'Asteroids Holo-Core (1979)', cat: 'arcade' },
-    { id: 'pac-man', title: 'Pac-Maze 2.5D (Pac-Man 1980)', cat: 'arcade' },
-    { id: 'super-mario-bros', title: 'Mushroom Kingdom (Mario 1985)', cat: 'arcade' },
-    { id: 'tetris', title: 'Iso-Tetris 3D (1989)', cat: 'arcade' },
-    { id: 'sonic-the-hedgehog', title: 'Sonic Speedway 2.5D (1991)', cat: 'arcade' },
-    { id: 'street-fighter-ii', title: 'Street Fighter 2.5D (1991)', cat: 'arcade' },
-    { id: 'chrono-trigger', title: 'Time Warp ATB (Chrono Trigger 1995)', cat: 'arcade' },
-    { id: 'chess', title: 'Grandmaster Chess (Board)', cat: 'board' },
-    { id: 'snake', title: 'Quantum Grid (Snake 1997)', cat: 'arcade' },
-    { id: 'flappy-bird', title: 'Cyber-Flap 2.5D (Flappy Bird 2013)', cat: 'arcade' },
-    { id: 'celeste', title: 'Ascent 2.5D (Celeste 2018)', cat: 'arcade' },
-    { id: 'cuphead', title: 'Inkwell Boss Duel (Cuphead 2017)', cat: 'arcade' },
-    { id: 'hollow-knight', title: 'Hallownest Nail Duel (Hollow Knight 2017)', cat: 'arcade' },
-  ];
+  const catalogRecords = GAMES_DATA.map((game) => ({ id: game.id, title: game.title, cat: game.category }));
 
   const filteredRecords = catalogRecords.filter((rec) => {
     const s = scores[rec.id] || 0;
     if (tableFilter === 'ranked') return s > 0;
-    if (tableFilter === 'arcade') return rec.cat === 'arcade';
-    if (tableFilter === 'board') return rec.cat === 'board';
+    if (tableFilter !== 'all') return rec.cat === tableFilter;
     return true;
   });
 
@@ -348,39 +374,39 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
       {/* Header with Hardware Auto-Tiering & Manual Override */}
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8">
         <div>
-          <div className="flex items-center gap-2 text-xs font-mono text-cyan-400 uppercase tracking-wider mb-2">
+          <div className="flex items-center gap-2 text-xs font-mono text-accent uppercase tracking-wider mb-2">
             <Activity className="w-4 h-4" />
             <span>Interactive Telemetry &amp; Progression Engine</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-fg tracking-tight">
             Performance Engine &amp; Progression Metrics
           </h2>
-          <p className="text-sm text-slate-400 mt-1 max-w-2xl">
+          <p className="text-sm text-fg-muted mt-1 max-w-2xl">
             Real-time sub-millisecond frame intervals, hardware auto-tiering, and client-side high-score progression tracked dynamically with zero server overhead.
           </p>
         </div>
 
         {/* Hardware Auto-Tiering Badge & Mode Selector */}
-        <div className="p-3.5 rounded-2xl bg-[#0F1424] border border-white/10 shrink-0 self-start lg:self-auto flex flex-col gap-2">
+        <Card className="p-3.5 shrink-0 self-start lg:self-auto flex flex-col gap-2">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <Cpu className="w-4 h-4 text-cyan-400" />
-              <span className="text-xs font-bold text-white tracking-tight font-mono">{detectedProfile.label}</span>
+              <Cpu className="w-4 h-4 text-accent" />
+              <span className="text-xs font-bold text-fg tracking-tight font-mono">{detectedProfile.label}</span>
             </div>
             <span
               className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold uppercase ${
                 detectedProfile.tier === 'ultra'
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                  ? 'bg-accent-soft text-accent border border-accent/30'
                   : detectedProfile.tier === 'lite'
-                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                  : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  ? 'bg-warning/10 text-warning border border-warning/30'
+                  : 'bg-success/10 text-success border border-success/30'
               }`}
             >
               {detectedProfile.tier}
             </span>
           </div>
 
-          <div className="text-[11px] text-slate-400 font-mono flex items-center gap-2">
+          <div className="text-[11px] text-fg-muted font-mono flex items-center gap-2">
             <span>{detectedProfile.cores} Cores</span>
             <span>·</span>
             <span>{detectedProfile.memoryGb}GB RAM</span>
@@ -389,284 +415,214 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
           </div>
 
           {/* User selectable hardware tier preset */}
-          <div className="flex items-center gap-1 pt-1.5 border-t border-white/5">
-            <Sliders className="w-3 h-3 text-slate-400 mr-1" />
-            <span className="text-[10px] text-slate-400 mr-1">Profile:</span>
+          <div className="flex items-center gap-1 pt-1.5 border-t border-line">
+            <Sliders className="w-3 h-3 text-fg-muted mr-1" />
+            <span className="text-[10px] text-fg-muted mr-1">Profile:</span>
             {(['auto', 'lite', 'standard', 'ultra'] as const).map((t) => (
-              <button
+              <Chip
                 key={t}
+                selected={manualTier === t}
                 onClick={() => setManualTier(t)}
-                className={`px-2 py-0.5 text-[10px] font-mono rounded transition-colors cursor-pointer ${
-                  manualTier === t
-                    ? 'bg-cyan-500 text-slate-950 font-bold'
-                    : 'bg-white/5 text-slate-400 hover:text-white'
-                }`}
+                className="rounded-lg px-2 py-1 text-[10px] font-mono uppercase"
               >
                 {t.toUpperCase()}
-              </button>
+              </Chip>
             ))}
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Top 4 Real-time Metric Cards (Responsive Grid 1-2-4 cols) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-8">
         {/* Card 1: Display FPS */}
-        <div className="p-4 sm:p-5 bg-[#0F1320] border border-white/10 rounded-2xl flex flex-col justify-between hover:border-cyan-500/30 transition-colors">
-          <div className="flex items-center justify-between text-slate-400 text-xs mb-3">
+        <Card className="p-4 sm:p-5 flex flex-col justify-between hover:border-line-strong transition-colors">
+          <div className="flex items-center justify-between text-fg-muted text-xs mb-3">
             <span>Client Display FPS</span>
-            <Gauge className="w-4 h-4 text-cyan-400" />
+            <Gauge className="w-4 h-4 text-accent" />
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-mono font-bold text-white tabular-nums">{fps}</span>
-            <span className="text-xs text-slate-500 font-mono">Hz / Lock</span>
+            <span className="text-2xl sm:text-3xl font-mono font-bold text-fg tabular-nums">{fps ?? '—'}</span>
+            <span className="text-xs text-fg-muted font-mono">game FPS</span>
           </div>
-          <div className="mt-2 text-[11px] text-cyan-400/90 font-mono flex items-center gap-1">
+          <div className="mt-2 text-[11px] text-accent font-mono flex items-center gap-1">
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Hardware Vsync Steady</span>
+            <span>{fps === null ? 'Open a game with performance reporting' : 'Reported by the active game loop'}</span>
           </div>
-        </div>
+        </Card>
 
         {/* Card 2: Average Frame Interval & Jitter */}
-        <div className="p-4 sm:p-5 bg-[#0F1320] border border-white/10 rounded-2xl flex flex-col justify-between hover:border-emerald-500/30 transition-colors">
-          <div className="flex items-center justify-between text-slate-400 text-xs mb-3">
+        <Card className="p-4 sm:p-5 flex flex-col justify-between hover:border-line-strong transition-colors">
+          <div className="flex items-center justify-between text-fg-muted text-xs mb-3">
             <span>Avg Frame Interval</span>
-            <Zap className="w-4 h-4 text-emerald-400" />
+            <Zap className="w-4 h-4 text-success" />
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-mono font-bold text-white tabular-nums">{avgFrameTime}</span>
-            <span className="text-xs text-slate-500 font-mono">ms</span>
+            <span className="text-2xl sm:text-3xl font-mono font-bold text-fg tabular-nums">{avgFrameTime ?? '—'}</span>
+            <span className="text-xs text-fg-muted font-mono">ms</span>
           </div>
-          <div className="mt-2 text-[11px] text-emerald-400/90 font-mono flex items-center justify-between">
-            <span>Target: 16.6ms (60Hz)</span>
-            <span className="text-slate-400 text-[10px]">±{jitterMs}ms jitter</span>
+          <div className="mt-2 text-[11px] text-success font-mono flex items-center justify-between">
+            <span>Game loop interval</span>
+            <span className="text-fg-muted text-[10px]">{jitterMs === null ? '— jitter' : `±${jitterMs}ms jitter`}</span>
           </div>
-        </div>
+        </Card>
 
         {/* Card 3: Total Play Sessions */}
-        <div className="p-4 sm:p-5 bg-[#0F1320] border border-white/10 rounded-2xl flex flex-col justify-between hover:border-amber-500/30 transition-colors">
-          <div className="flex items-center justify-between text-slate-400 text-xs mb-3">
+        <Card className="p-4 sm:p-5 flex flex-col justify-between hover:border-line-strong transition-colors">
+          <div className="flex items-center justify-between text-fg-muted text-xs mb-3">
             <span>Total Play Sessions</span>
-            <Trophy className="w-4 h-4 text-amber-400" />
+            <Trophy className="w-4 h-4 text-warning" />
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-mono font-bold text-white tabular-nums">{totalSessions}</span>
-            <span className="text-xs text-slate-500">runs</span>
+            <span className="text-2xl sm:text-3xl font-mono font-bold text-fg tabular-nums">{totalSessions}</span>
+            <span className="text-xs text-fg-muted">runs</span>
           </div>
-          <div className="mt-2 text-[11px] text-slate-400 flex items-center justify-between">
+          <div className="mt-2 text-[11px] text-fg-muted flex items-center justify-between">
             <span>{GAMES_DATA.length} playable titles</span>
-            <span className="text-amber-400 font-mono">{totalAccumulatedScore.toLocaleString()} pts</span>
+            <span className="text-warning font-mono">{totalAccumulatedScore.toLocaleString()} pts</span>
           </div>
-        </div>
+        </Card>
 
         {/* Card 4: Arcade Dwell Time */}
-        <div className="p-4 sm:p-5 bg-[#0F1320] border border-white/10 rounded-2xl flex flex-col justify-between hover:border-purple-500/30 transition-colors">
-          <div className="flex items-center justify-between text-slate-400 text-xs mb-3">
+        <Card className="p-4 sm:p-5 flex flex-col justify-between hover:border-line-strong transition-colors">
+          <div className="flex items-center justify-between text-fg-muted text-xs mb-3">
             <span>Arcade Dwell Time</span>
-            <Clock className="w-4 h-4 text-purple-400" />
+            <Clock className="w-4 h-4 text-accent" />
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-mono font-bold text-white tabular-nums">
+            <span className="text-2xl sm:text-3xl font-mono font-bold text-fg tabular-nums">
               {formatTime(stats?.totalTimeSeconds || 0)}
             </span>
           </div>
-          <div className="mt-2 text-[11px] text-purple-400/90 font-mono">
+          <div className="mt-2 text-[11px] text-fg-muted font-mono">
             Persistent local session
           </div>
-        </div>
+        </Card>
       </div>
 
-      {/* Real-Time Waveform & Era Mastery Radar */}
+      {/* Real-time frame timing and recorded progression only */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         {/* Real-Time Frame-Time Waveform Graph (Driven by Canvas, Zero Thrash) */}
-        <div className="lg:col-span-2 p-5 sm:p-6 bg-[#0F1320] border border-white/10 rounded-2xl flex flex-col justify-between">
+        <Card className="lg:col-span-2 p-5 sm:p-6 flex flex-col justify-between">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
             <div>
-              <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
-                <span>Real-Time Frame Interval Oscilloscope</span>
-                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+              <h3 className="text-sm font-bold text-fg tracking-tight flex items-center gap-2">
+                <span>Game Frame Interval</span>
+                <span className={`h-2 w-2 rounded-full ${fps === null ? 'bg-fg-subtle' : 'animate-pulse bg-accent'}`} />
               </h3>
-              <p className="text-xs text-slate-400">
-                Direct GPU canvas render with EMA jitter suppression and zero garbage collection overhead
+              <p className="text-xs text-fg-muted">
+                Rolling frame time samples reported by the active game loop
               </p>
             </div>
             <div className="flex items-center gap-2 text-xs font-mono">
-              <span className="text-cyan-300 bg-cyan-950/50 px-2.5 py-1 rounded-md border border-cyan-500/30">
+              <span className="text-accent bg-accent-soft px-2.5 py-1 rounded-md border border-accent/30">
                 60Hz Vsync: 16.6ms
               </span>
-              <span className="text-emerald-300 bg-emerald-950/50 px-2.5 py-1 rounded-md border border-emerald-500/30 hidden sm:inline">
+              <span className="text-success bg-success/10 px-2.5 py-1 rounded-md border border-success/30 hidden sm:inline">
                 120Hz Pro: 8.3ms
               </span>
             </div>
           </div>
 
-          <div className="relative w-full h-[140px] bg-[#070912] rounded-xl border border-white/5 overflow-hidden flex items-center justify-center p-2">
+          <ScreenBezel framed={false} className="relative w-full h-[140px] rounded-xl border border-line overflow-hidden flex items-center justify-center p-2">
             <canvas
               ref={canvasRef}
               className="w-full h-full block"
             />
-          </div>
+          </ScreenBezel>
 
-          <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-500 font-mono mt-3 gap-2">
+          <div className="flex flex-wrap items-center justify-between text-[11px] text-fg-muted font-mono mt-3 gap-2">
             <span>T-60 Rolling Samples</span>
-            <span>Jitter: ±{jitterMs}ms (Rock Solid)</span>
-            <span className="text-cyan-400 font-semibold">{avgFrameTime} ms / frame</span>
+          <span>{jitterMs === null ? 'Jitter: —' : `Jitter: ±${jitterMs}ms`}</span>
+          <span className="text-accent font-semibold">{avgFrameTime === null ? 'No game sample' : `${avgFrameTime} ms / frame`}</span>
           </div>
-        </div>
+        </Card>
 
-        {/* Progression & Player Mastery Radar */}
-        <div className="p-5 sm:p-6 bg-[#0F1320] border border-white/10 rounded-2xl flex flex-col justify-between">
+        {/* Progression summary — no inferred score floors or synthetic radar values */}
+        <Card className="p-5 sm:p-6 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-1">
-              <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-cyan-400" />
-                <span>Progression &amp; Mastery</span>
+              <h3 className="text-sm font-bold text-fg tracking-tight flex items-center gap-2">
+                <Trophy className="w-4 h-4 text-accent" />
+                <span>Recorded Progression</span>
               </h3>
               <span className={`text-xs font-mono font-bold ${playerRank.color}`}>
                 {playerRank.title}
               </span>
             </div>
-            <p className="text-xs text-slate-400 mb-3">
-              Multi-genre skill distribution across game sessions
+            <p className="text-xs text-fg-muted mb-3">
+              Only locally saved plays, scores, achievements, and level progress appear here.
             </p>
 
             {/* Rank Progress Bar */}
-            <div className="w-full bg-white/5 rounded-full h-2 mb-2 overflow-hidden border border-white/10">
+            <div className="w-full bg-surface-2 rounded-full h-2 mb-2 overflow-hidden border border-line">
               <div
-                className="bg-gradient-to-r from-cyan-500 to-emerald-400 h-full rounded-full transition-all duration-500"
+                className="bg-accent h-full rounded-full transition-all duration-500"
                 style={{ width: `${playerRank.progress}%` }}
               />
             </div>
-            <div className="flex justify-between text-[10px] text-slate-500 font-mono mb-2">
+            <div className="flex justify-between text-[10px] text-fg-muted font-mono mb-2">
               <span>{playerRank.title}</span>
               <span>{playerRank.nextTier}</span>
             </div>
           </div>
-
-          {/* SVG Radar */}
-          <div className="relative w-full aspect-square max-w-[210px] mx-auto flex items-center justify-center">
-            <svg className="w-full h-full" viewBox="0 0 240 220">
-              {/* Concentric pentagons */}
-              {[0.25, 0.5, 0.75, 1].map((scale, sIdx) => {
-                const ringPts = radarMetrics
-                  .map((_, i) => {
-                    const angle = (i / radarMetrics.length) * Math.PI * 2 - Math.PI / 2;
-                    const r = scale * radarRadius;
-                    return `${(radarCenter.x + Math.cos(angle) * r).toFixed(1)},${(radarCenter.y + Math.sin(angle) * r).toFixed(1)}`;
-                  })
-                  .join(' ');
-                return (
-                  <polygon
-                    key={sIdx}
-                    points={ringPts}
-                    fill="none"
-                    stroke="rgba(255, 255, 255, 0.08)"
-                    strokeWidth="1"
-                  />
-                );
-              })}
-
-              {/* Axis rays */}
-              {radarMetrics.map((_, i) => {
-                const angle = (i / radarMetrics.length) * Math.PI * 2 - Math.PI / 2;
-                return (
-                  <line
-                    key={i}
-                    x1={radarCenter.x}
-                    y1={radarCenter.y}
-                    x2={(radarCenter.x + Math.cos(angle) * radarRadius).toFixed(1)}
-                    y2={(radarCenter.y + Math.sin(angle) * radarRadius).toFixed(1)}
-                    stroke="rgba(255, 255, 255, 0.08)"
-                    strokeWidth="1"
-                  />
-                );
-              })}
-
-              {/* Radar filled polygon */}
-              <polygon
-                points={radarPolygonPoints}
-                fill="rgba(6, 182, 212, 0.25)"
-                stroke="#06B6D4"
-                strokeWidth="2"
-              />
-
-              {/* Labels */}
-              {radarMetrics.map((m, i) => {
-                const angle = (i / radarMetrics.length) * Math.PI * 2 - Math.PI / 2;
-                const lx = radarCenter.x + Math.cos(angle) * (radarRadius + 18);
-                const ly = radarCenter.y + Math.sin(angle) * (radarRadius + 18) + 4;
-                return (
-                  <text
-                    key={i}
-                    x={lx.toFixed(1)}
-                    y={ly.toFixed(1)}
-                    fontSize="9"
-                    fontFamily="JetBrains Mono"
-                    fill="#94A3B8"
-                    textAnchor="middle"
-                  >
-                    {m.label}
-                  </text>
-                );
-              })}
-            </svg>
+          <div className="mt-5 grid grid-cols-2 gap-2">
+            {realProgress.map((metric) => (
+              <div key={metric.label} className="rounded-xl border border-line bg-surface-2 p-3">
+                <div className="font-mono text-xl font-bold tabular-nums text-fg">{metric.value}</div>
+                <div className="mt-1 text-[11px] font-medium text-fg">{metric.label}</div>
+                <div className="text-[10px] text-fg-muted">{metric.detail}</div>
+              </div>
+            ))}
           </div>
-
-          <div className="text-center text-xs text-slate-400 mt-2">
-            Scales dynamically with match scores and clear times
-          </div>
-        </div>
+        </Card>
       </div>
 
       {/* High Scores & History Table with Category Filters (Responsive) */}
-      <div className="p-5 sm:p-6 bg-[#0F1320] border border-white/10 rounded-2xl">
+      <Card className="p-5 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
           <div>
-            <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
-              <Trophy className="w-4 h-4 text-amber-400" />
+            <h3 className="text-sm font-bold text-fg tracking-tight flex items-center gap-2">
+              <Trophy className="w-4 h-4 text-warning" />
               <span>Local High Scores &amp; Session Records</span>
             </h3>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-fg-muted">
               Preserved in your browser via localStorage with zero cloud telemetry
             </p>
           </div>
 
           {/* Table filter tabs + Reset button */}
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1 p-1 bg-black/40 rounded-xl border border-white/5 text-xs">
-              {(['all', 'ranked', 'arcade', 'board'] as const).map((filterKey) => (
-                <button
+            <div className="flex flex-wrap items-center gap-1 p-1 bg-surface-2 rounded-xl border border-line text-xs">
+              {(['all', 'ranked', 'arcade', 'board', 'sports', 'puzzle', 'cards'] as const).map((filterKey) => (
+                <Chip
                   key={filterKey}
+                  selected={tableFilter === filterKey}
                   onClick={() => setTableFilter(filterKey)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer capitalize min-h-[36px] ${
-                    tableFilter === filterKey
-                      ? 'bg-cyan-500 text-slate-950 font-bold'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
+                  className="rounded-lg px-3 py-1.5 text-xs capitalize"
                 >
                   {filterKey}
-                </button>
+                </Chip>
               ))}
             </div>
 
-            <button
-              onClick={() => {
-                if (confirm('Reset all high score records and play statistics?')) {
-                  onStatsReset();
-                }
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-red-400 bg-white/5 hover:bg-red-500/10 rounded-xl border border-white/5 transition-colors cursor-pointer min-h-[38px]"
+            {confirmingReset ? <div role="group" aria-label="Confirm save reset" className="flex items-center gap-2 rounded-xl border border-danger/30 bg-danger/10 px-2 py-1">
+              <span className="text-[10px] text-danger">Erase local stats?</span>
+              <button onClick={() => { onStatsReset(); setConfirmingReset(false); }} className="min-h-11 rounded-lg bg-danger px-2.5 py-1 text-[11px] font-bold text-accent-fg hover:brightness-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-offset-2 focus-visible:ring-offset-bg">Confirm</button>
+              <Button variant="ghost" onClick={() => setConfirmingReset(false)} className="min-h-11 rounded-lg px-2 py-1 text-[11px]">Cancel</Button>
+            </div> : <button
+              onClick={() => setConfirmingReset(true)}
+              className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-xl border border-line bg-surface-2 px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Reset</span>
-            </button>
+            </button>}
           </div>
         </div>
 
         <div className="overflow-x-auto -mx-5 px-5 sm:mx-0 sm:px-0">
           <table className="w-full text-left text-xs min-w-[500px]">
             <thead>
-              <tr className="border-b border-white/10 text-slate-400 font-mono">
+              <tr className="border-b border-line text-fg-muted font-mono">
                 <th className="py-2.5 px-3">Title &amp; Engine</th>
                 <th className="py-2.5 px-3">Category</th>
                 <th className="py-2.5 px-3">Personal Best</th>
@@ -674,35 +630,36 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
                 <th className="py-2.5 px-3 text-right">Quick Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y divide-line">
               {filteredRecords.map((item) => {
                 const score = scores[item.id] || 0;
                 return (
-                  <tr key={item.id} className="hover:bg-white/5 transition-colors">
-                    <td className="py-3 px-3 font-medium text-white flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/80" />
+                  <tr key={item.id} className="transition-colors hover:bg-surface-2">
+                    <td className="py-3 px-3 font-medium text-fg flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-accent" />
                       <span>{item.title}</span>
                     </td>
-                    <td className="py-3 px-3 text-slate-400 uppercase font-mono text-[10px]">
+                    <td className="py-3 px-3 text-fg-muted uppercase font-mono text-[10px]">
                       {item.cat}
                     </td>
-                    <td className="py-3 px-3 font-mono text-cyan-400 font-bold tabular-nums">
+                    <td className="py-3 px-3 font-mono text-accent font-bold tabular-nums">
                       {score > 0 ? score.toLocaleString() : '—'}
                     </td>
-                    <td className="py-3 px-3 text-slate-400">
+                    <td className="py-3 px-3 text-fg-muted">
                       {score > 0 ? (
-                        <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                        <span className="text-success font-semibold flex items-center gap-1">
                           <CheckCircle2 className="w-3.5 h-3.5" />
                           <span>Ranked</span>
                         </span>
                       ) : (
-                        <span className="text-slate-500">Unplayed</span>
+                        <span className="text-fg-muted">Unplayed</span>
                       )}
                     </td>
                     <td className="py-3 px-3 text-right">
                       <button
+                        data-ui-open
                         onClick={() => onSelectGame(item.id)}
-                        className="px-3 py-1.5 text-[11px] font-semibold text-cyan-400 hover:text-white bg-cyan-950/60 hover:bg-cyan-900 border border-cyan-500/30 rounded-lg transition-colors cursor-pointer min-h-[36px]"
+                        className="px-3 py-1.5 text-[11px] font-semibold text-accent hover:text-fg bg-accent-soft hover:bg-surface border border-accent/30 rounded-lg transition-colors cursor-pointer min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
                       >
                         Play
                       </button>
@@ -713,7 +670,7 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
             </tbody>
           </table>
         </div>
-      </div>
+      </Card>
     </section>
   );
 };

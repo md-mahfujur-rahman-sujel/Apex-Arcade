@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Chess</title>
@@ -29,7 +30,14 @@
 </style>
 </head>
 <body>
+
+<script src="perf-kit.js"></script>
+<script src="save-kit.js"></script>
+<script src="meta-config.js"></script>
+<script src="meta-kit.js"></script>
 <script src="board-kit.js"></script>
+<script src="score-bridge.js"></script>
+<script src="ui-kit.js"></script>
 <script>
 const ui = Board.shell({
   id: 'chess', cpu: true, title: 'Chess', subtitle: 'The royal game — play the computer or a friend',
@@ -181,7 +189,7 @@ function bestMove(s, depth, noise) {
 const LEVELS = [{ d: 1, n: 140 }, { d: 2, n: 12 }, { d: 3, n: 0 }];
 
 /* ---------------- game state & UI ---------------- */
-let S, hist, sel, tg, last, over, flipped, mode, thinking, caps, moves, reps, hintSq, gen = 0;
+let S, hist, sel, tg, last, over, flipped, mode, thinking, caps, moves, reps, hintSq, genId = 0;
 const boardEl = $('#board'), sqs = [];
 for (let k = 0; k < 64; k++) {
   const d = document.createElement('div'); d.dataset.k = k; d.innerHTML = '<span class="pc"></span>';
@@ -194,21 +202,21 @@ const humanTurn = () => mode === 'two' || (mode === 'w' ? S.turn === 'w' : S.tur
 const posKey = (s) => s.b.map((p) => p || '.').join('') + s.turn + s.cr.K + s.cr.Q + s.cr.k + s.cr.q + s.ep;
 
 function newGame() {
-  gen++; mode = $('#mode').value; S = startPos(); hist = []; sel = -1; tg = []; last = null; over = null; moves = []; caps = { w: [], b: [] };
+  genId++; mode = $('#mode').value; S = startPos(); hist = []; sel = -1; tg = []; last = null; over = null; moves = []; caps = { w: [], b: [] };
   thinking = false; hintSq = null; flipped = mode === 'b'; reps = {}; reps[posKey(S)] = 1;
   render(); maybeCpu();
 }
 function maybeCpu() {
   if (over || humanTurn()) return;
   thinking = true; render();
-  const g = gen, L = LEVELS[+$('#lvl').value];
+  const g = genId, L = LEVELS[+$('#lvl').value];
   Board.think(() => bestMove(S, L.d, L.n), 1100).then(async (m) => {
-    if (g !== gen || !m) return;
+    if (g !== genId || !m) return;
     const el = (i) => sqs[flipped ? 63 - i : i];
     sel = m.f; render(); await Board.sleep(Board.pace(380));   /* show which piece the computer picked */
-    if (g !== gen) return;
+    if (g !== genId) return;
     await Board.glide(el(m.f), el(m.t), 480);                  /* slide it across the board */
-    if (g !== gen) return;
+    if (g !== genId) return;
     sel = -1; thinking = false; play(m);
   });
 }

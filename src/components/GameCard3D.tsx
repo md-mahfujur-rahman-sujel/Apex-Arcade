@@ -2,6 +2,10 @@ import React, { useState, useRef } from 'react';
 import { GameInfo } from '../types/game';
 import { CardScenePreview } from './CardScenePreview';
 import { Play, BookOpen, Star, Sparkles, Terminal } from 'lucide-react';
+import { audio } from '../services/audioSynthesizer';
+import { prefetchGameDocument } from '../services/performanceHints';
+import { Card } from './ui/Card';
+import { ScreenBezel } from './ui/ScreenBezel';
 
 interface GameCard3DProps {
   game: GameInfo;
@@ -9,7 +13,18 @@ interface GameCard3DProps {
   onToggleFavorite: (id: string) => void;
   onLaunchGame: (game: GameInfo) => void;
   onOpenDossier: (game: GameInfo) => void;
+  searchQuery?: string;
+  progress?: { completed: number; total: number };
 }
+
+const HighlightedText: React.FC<{ text: string; query?: string }> = ({ text, query }) => {
+  const normalizedQuery = query?.trim();
+  if (!normalizedQuery) return <>{text}</>;
+  const fragments = text.split(new RegExp(`(${normalizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'ig'));
+  return <>{fragments.map((fragment, index) => fragment.toLowerCase() === normalizedQuery.toLowerCase()
+    ? <mark key={index} className="rounded bg-amber-300/25 px-0.5 text-inherit">{fragment}</mark>
+    : <React.Fragment key={index}>{fragment}</React.Fragment>)}</>;
+};
 
 export const GameCard3D: React.FC<GameCard3DProps> = ({
   game,
@@ -17,6 +32,8 @@ export const GameCard3D: React.FC<GameCard3DProps> = ({
   onToggleFavorite,
   onLaunchGame,
   onOpenDossier,
+  searchQuery,
+  progress,
 }) => {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [rotateX, setRotateX] = useState(0);
@@ -24,7 +41,7 @@ export const GameCard3D: React.FC<GameCard3DProps> = ({
   const [isHovered, setIsHovered] = useState(false);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!cardRef.current || 'ontouchstart' in window) return;
+    if (!cardRef.current || 'ontouchstart' in window || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const rect = cardRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
@@ -39,8 +56,12 @@ export const GameCard3D: React.FC<GameCard3DProps> = ({
   };
 
   const handleMouseEnter = () => {
-    setIsHovered(true);
+    setIsHovered(!window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    audio.playHover();
+    prefetchGameDocument(game.htmlPath);
   };
+
+  const handleFocus = () => prefetchGameDocument(game.htmlPath);
 
   const handleMouseLeave = () => {
     setIsHovered(false);
@@ -49,26 +70,41 @@ export const GameCard3D: React.FC<GameCard3DProps> = ({
   };
 
   return (
-    <div
+    <Card
+      interactive
+      data-game-id={game.id}
       ref={cardRef}
       onMouseMove={handleMouseMove}
       onMouseEnter={handleMouseEnter}
+      onFocus={handleFocus}
       onMouseLeave={handleMouseLeave}
       style={{
+        '--game-accent': game.accentColor,
         transform: isHovered
           ? `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateY(-5px)`
           : 'perspective(1000px) rotateX(0deg) rotateY(0deg) translateY(0px)',
         transition: isHovered ? 'transform 0.08s ease-out' : 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-        borderColor: isHovered ? game.accentColor : 'rgba(255, 255, 255, 0.08)',
+        borderColor: isHovered ? game.accentColor : 'var(--line)',
         boxShadow: isHovered
           ? `0 20px 40px -15px ${game.accentColor}35, 0 0 0 1px ${game.accentColor}50`
           : '0 4px 20px -2px rgba(0, 0, 0, 0.5)',
-      }}
-      className="group relative flex flex-col bg-[#0F1322] border rounded-2xl overflow-hidden text-left transition-all cursor-pointer"
+      } as React.CSSProperties}
+      className="group flex flex-col bg-card text-left transition-all cursor-pointer focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
       onClick={() => onLaunchGame(game)}
+      tabIndex={0}
+      role="group"
+      aria-label={`${game.title}, press Enter to play`}
+      data-ui-open
+      data-catalog-card
+      onKeyDown={(event) => {
+        if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          onLaunchGame(game);
+        }
+      }}
     >
       {/* Visual Live Preview Viewport powered by card-scenes.js */}
-      <div className="relative w-full overflow-hidden bg-[#070912] border-b border-white/5">
+      <ScreenBezel data-card-preview className="w-full border-b border-line">
         <CardScenePreview game={game} isHovered={isHovered} />
 
         {/* Favorite toggle button */}
@@ -78,88 +114,103 @@ export const GameCard3D: React.FC<GameCard3DProps> = ({
             onToggleFavorite(game.id);
           }}
           aria-label="Toggle Favorite"
-          className="absolute top-2.5 right-2.5 z-20 p-1.5 rounded-lg bg-black/60 hover:bg-black/90 backdrop-blur-md border border-white/10 text-slate-400 hover:text-amber-400 transition-colors cursor-pointer"
+          data-card-favorite
+          className="absolute right-2.5 top-2.5 z-20 grid min-h-11 min-w-11 place-items-center rounded-lg border border-white/15 bg-black/60 text-white/75 backdrop-blur-md transition-colors cursor-pointer hover:bg-black/90 hover:text-amber-300 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         >
           <Star
-            className={`w-3.5 h-3.5 ${isFavorite ? 'fill-amber-400 text-amber-400' : 'text-slate-400'}`}
+            className={`w-3.5 h-3.5 ${isFavorite ? 'fill-amber-300 text-amber-300' : 'text-current'}`}
           />
         </button>
 
         {/* 2.5D Badge indicator if custom 3D canvas engine exists */}
         {game.playableEngineId && (
-          <div className="absolute bottom-2.5 right-2.5 z-20 flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-md border border-cyan-500/40 text-cyan-300 text-[10px] font-mono font-bold tracking-tight">
-            <Sparkles className="w-2.5 h-2.5 text-cyan-400" />
+          <div data-engine-badge className="absolute bottom-2.5 right-2.5 z-20 flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-md border border-white/15 text-white text-[10px] font-mono font-bold tracking-tight">
+            <Sparkles className="w-2.5 h-2.5 text-accent" />
             <span>3D Engine</span>
           </div>
         )}
-      </div>
+      </ScreenBezel>
 
       {/* Card Body Area */}
-      <div className="flex flex-col flex-1 p-4 sm:p-5">
+      <div data-card-body className="flex flex-col flex-1 p-4 sm:p-5">
         {/* Header line with inspiration */}
         <div className="flex items-baseline justify-between gap-2 mb-1.5">
-          <span className="text-[11px] font-mono font-semibold text-slate-400 truncate">
+          <span className="text-[11px] font-mono font-semibold text-fg-muted truncate">
             {game.of ? (
               <>
-                <span className="text-slate-500">inspired by</span>{' '}
-                <span className="text-slate-200 font-medium">{game.of}</span>
+                <span className="text-fg-muted">inspired by</span>{' '}
+                <span className="text-fg font-medium"><HighlightedText text={game.of} query={searchQuery} /></span>
               </>
             ) : (
               game.genre
             )}
           </span>
-          <span
-            className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-white/10"
-            style={{ color: game.accentColor }}
-          >
-            {game.difficulty}
+          <span className="flex shrink-0 items-center gap-1.5">
+            {game.status === 'enhanced' && <span className="rounded border border-accent/30 bg-accent-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-accent">Enhanced</span>}
+            <span
+              data-card-difficulty
+              className="rounded border border-accent/30 bg-accent-soft px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider"
+              style={{ color: game.accentColor }}
+            >
+              {game.difficulty}
+            </span>
           </span>
         </div>
 
         {/* Title */}
-        <h3 className="text-lg font-bold text-white tracking-tight group-hover:text-cyan-300 transition-colors mb-2">
-          {game.title}
+        <h3 data-card-title className="text-lg font-bold text-fg tracking-tight group-hover:text-accent transition-colors mb-2">
+          <HighlightedText text={game.title} query={searchQuery} />
         </h3>
 
         {/* Blurb Description */}
-        <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed mb-4 flex-1">
-          {game.description || game.tagline}
+        <p data-card-description className="text-xs text-fg-muted line-clamp-2 leading-relaxed mb-4 flex-1">
+          <HighlightedText text={game.description || game.tagline} query={searchQuery} />
         </p>
 
+        {progress && progress.total > 0 && <div data-card-progress className="mb-3 flex items-center gap-2.5 text-[10px] text-fg-muted" aria-label={`${progress.completed} of ${progress.total} levels complete`}>
+          <span className="grid h-8 w-8 place-items-center rounded-full" style={{ background: `conic-gradient(${game.accentColor} ${Math.round((progress.completed / progress.total) * 360)}deg, var(--line) 0deg)` }}>
+            <span className="grid h-6 w-6 place-items-center rounded-full bg-card text-[8px] font-bold text-fg">{progress.completed}</span>
+          </span>
+          <span><span className="block font-mono text-fg">{progress.completed}/{progress.total} levels</span><span>{Math.ceil((progress.completed / progress.total) * 3)} / 3 stars</span></span>
+        </div>}
+
         {/* Keybindings Shortcut Bar */}
-        <div className="pt-2.5 pb-3 border-t border-white/5 flex items-center gap-2 text-[11px] font-mono text-slate-400 truncate">
-          <Terminal className="w-3 h-3 text-cyan-400 shrink-0" />
-          <span className="truncate text-slate-300/80">{game.keys}</span>
+        <div data-card-shortcut className="pt-2.5 pb-3 border-t border-line flex items-center gap-2 text-[11px] font-mono text-fg-muted truncate">
+          <Terminal className="w-3 h-3 text-accent shrink-0" />
+          <span className="truncate text-fg-muted">{game.keys}</span>
         </div>
 
         {/* Interactive Action Zone */}
-        <div className="flex items-center gap-2 pt-2 border-t border-white/5">
+        <div className="flex items-center gap-2 pt-2 border-t border-line">
           <button
+            data-game-action
             onClick={(e) => {
               e.stopPropagation();
               onLaunchGame(game);
             }}
             style={{
               backgroundColor: game.accentColor,
+              color: '#07111a',
             }}
-            className="flex-1 flex items-center justify-center gap-2 py-2 px-3 text-slate-950 font-bold text-xs rounded-xl shadow transition-transform active:scale-95 cursor-pointer hover:brightness-110"
+            className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold shadow transition-transform cursor-pointer hover:brightness-110 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
             <span>Play Game</span>
           </button>
 
           <button
+            data-card-dossier
             onClick={(e) => {
               e.stopPropagation();
               onOpenDossier(game);
             }}
-            className="p-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl transition-colors cursor-pointer"
+            className="min-h-11 min-w-11 rounded-xl border border-line bg-surface-2 p-2 text-fg-muted transition-colors cursor-pointer hover:bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
             title="View History & Lore"
           >
             <BookOpen className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
-    </div>
+    </Card>
   );
 };

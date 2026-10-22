@@ -246,7 +246,8 @@
   /* ---------- the game shell ---------- */
   A.game = function (cfg) {
     const W = cfg.w || 800, H = cfg.h || 480;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // Use perf-kit DPR cap if available, otherwise clamp to 2
+    const dpr = (window.Perf && window.Perf.dpr) ? window.Perf.dpr : Math.min(window.devicePixelRatio || 1, 2);
 
     /* DOM */
     const style = document.createElement('style');
@@ -301,14 +302,27 @@
     /* state */
     let hi = 0;
     const hiKey = 'arcade-hi-' + (cfg.id || cfg.title);
-    try { hi = +localStorage.getItem(hiKey) || 0; } catch (e) {}
+    if (window.Save && typeof window.Save.load === 'function') {
+      const s = window.Save.load(cfg.id || cfg.title);
+      hi = (s.stats && s.stats.bestScore) || 0;
+    } else {
+      try { hi = +localStorage.getItem(hiKey) || 0; } catch (e) {}
+    }
     const G = {
       cfg, w: W, h: H, ctx, canvas, state: 'ready', score: 0, hi, t: 0, clock: 0, stateT: 0,
       particles: [], popups: [], shakeAmt: 0, freezeN: 0, fxDrawn: false,
       title: '', sub: '', hudL: undefined, hudR: undefined,
     };
     A.G = G;
-    const saveHi = () => { try { localStorage.setItem(hiKey, String(G.hi)); } catch (e) {} };
+    /* Apex score bridge: auto-report session start, score and end when score-bridge.js is loaded */
+    const rep = (type, extra) => { try { if (window.Apex && typeof window.Apex.report === 'function') window.Apex.report(Object.assign({ gameId: cfg.id || cfg.title, type }, extra || {})); } catch (e) {} };
+    let lastRep = 0;
+    const saveHi = () => {
+      if (window.Save && typeof window.Save.update === 'function') {
+        window.Save.update(cfg.id || cfg.title, { stats: { bestScore: G.hi } });
+      }
+      try { localStorage.setItem(hiKey, String(G.hi)); } catch (e) {}
+    };
 
     /* difficulty scaling (easy = 0.8x, normal = 1.0x, hard = 1.35x + 1.25x score) */
     A.difficulty = 'normal';
@@ -337,15 +351,57 @@
       const mult = A.difficulty === 'hard' ? 1.25 : 1.0;
       const pts = Math.round(n * mult);
       G.score += pts;
-      if (G.score > G.hi) G.hi = G.score;
+      const nowMs = Date.now();
+      if (nowMs - lastRep > 1000) { lastRep = nowMs; rep('score', { score: G.score }); }
+      if (G.score > G.hi) {
+        G.hi = G.score;
+        if (window.Save && typeof window.Save.update === 'function') {
+          window.Save.update(cfg.id || cfg.title, { stats: { bestScore: G.hi } });
+        }
+      }
     };
     G.shake = (a) => { G.shakeAmt = Math.max(G.shakeAmt, a); };
     G.freeze = (n) => { G.freezeN = Math.max(G.freezeN, n); };
-    G.over = (title, sub) => { if (G.state !== 'playing') return; G.state = 'over'; G.stateT = 0; G.title = title || 'Game Over'; G.sub = sub || ''; saveHi(); A.sfx('lose'); };
-    G.win = (title, sub) => { if (G.state !== 'playing') return; G.state = 'won'; G.stateT = 0; G.title = title || 'You Win!'; G.sub = sub || ''; saveHi(); A.sfx('win'); };
+    G.over = (title, sub) => {
+      if (G.state !== 'playing') return;
+      G.state = 'over'; G.stateT = 0; G.title = title || 'Game Over'; G.sub = sub || '';
+      saveHi();
+      if (window.Save && typeof window.Save.update === 'function') {
+        const cur = window.Save.load(cfg.id || cfg.title);
+        const plays = ((cur.stats && cur.stats.plays) || 0) + 1;
+        const dur = Math.max(1, Math.round((G.clock || 0) / 60));
+        const totalSec = ((cur.stats && cur.stats.secondsPlayed) || 0) + dur;
+        window.Save.update(cfg.id || cfg.title, {
+          stats: { plays, bestScore: Math.max((cur.stats && cur.stats.bestScore) || 0, G.hi), secondsPlayed: totalSec }
+        });
+      }
+      A.sfx('lose');
+      rep('session_end', { score: G.score });
+    };
+    G.win = (title, sub) => {
+      if (G.state !== 'playing') return;
+      G.state = 'won'; G.stateT = 0; G.title = title || 'You Win!'; G.sub = sub || '';
+      saveHi();
+      if (window.Save && typeof window.Save.update === 'function') {
+        const cur = window.Save.load(cfg.id || cfg.title);
+        const plays = ((cur.stats && cur.stats.plays) || 0) + 1;
+        const dur = Math.max(1, Math.round((G.clock || 0) / 60));
+        const totalSec = ((cur.stats && cur.stats.secondsPlayed) || 0) + dur;
+        window.Save.update(cfg.id || cfg.title, {
+          stats: { plays, bestScore: Math.max((cur.stats && cur.stats.bestScore) || 0, G.hi), secondsPlayed: totalSec }
+        });
+      }
+      A.sfx('win');
+      rep('session_end', { score: G.score });
+    };
     G.burst = (x, y, n, o) => {
       o = o || {};
-      for (let i = 0; i < n && G.particles.length < 1200; i++) {
+      // Respect perf-kit particle budget when available
+      const cap = (window.Perf && typeof window.Perf.budget === 'function')
+        ? window.Perf.budget(n)
+        : Math.min(n, 1200 - G.particles.length);
+      const allowedN = Math.min(cap, 1200 - G.particles.length);
+      for (let i = 0; i < allowedN; i++) {
         const a = (o.angle != null ? o.angle : A.rand(0, TAU)) + A.rand(-1, 1) * (o.spread != null ? o.spread : Math.PI);
         const s = A.rand(o.min || 0.4, o.speed || 3), life = A.rand(0.6, 1) * (o.life || 30);
         G.particles.push({ x: x + A.rand(-1, 1) * (o.jitter || 0), y: y + A.rand(-1, 1) * (o.jitter || 0), vx: Math.cos(a) * s, vy: Math.sin(a) * s, life, max: life, size: o.size || 3, color: Array.isArray(o.color) ? A.pick(o.color) : (o.color || '#fff'), grav: o.grav || 0, drag: o.drag == null ? 0.97 : o.drag, glow: !!o.glow, shape: o.shape || 'c', shrink: o.shrink !== false });
@@ -356,7 +412,10 @@
     G.drawFX = (c) => {
       G.fxDrawn = true;
       c = c || ctx;
-      for (let pass = 0; pass < 2; pass++) {
+      // In lite tier skip the expensive 'lighter' additive glow pass entirely
+      const skipGlow = (window.Perf && window.Perf.tier === 'lite');
+      const maxPasses = skipGlow ? 1 : 2;
+      for (let pass = 0; pass < maxPasses; pass++) {
         c.save();
         if (pass === 1) c.globalCompositeOperation = 'lighter';
         for (const p of G.particles) {
@@ -379,7 +438,9 @@
       for (const p of G.popups) {
         const k = p.life / p.max;
         c.save(); c.globalAlpha = Math.min(1, k * 2);
-        c.shadowColor = '#000'; c.shadowBlur = 4;
+        // Respect perf-kit shadow budget for popups
+        const blurAmt = (window.Perf && typeof window.Perf.blur === 'function') ? window.Perf.blur(4) : 4;
+        c.shadowColor = '#000'; c.shadowBlur = blurAmt;
         A.text(c, p.text, p.x, p.y, p.size, p.color, 'center', '800');
         c.restore();
       }
@@ -401,10 +462,11 @@
       G.score = 0; G.t = 0; G.stateT = 0; G.particles.length = 0; G.popups.length = 0;
       G.shakeAmt = 0; G.freezeN = 0; G.hudL = undefined; G.hudR = undefined; G.title = ''; G.sub = '';
       G.state = autostart ? 'playing' : 'ready';
+      if (autostart) rep('session_start');
       clearPressed();
       cfg.init(G);
     };
-    G.begin = () => { if (G.state === 'ready') { G.state = 'playing'; G.stateT = 0; ac(); if (cfg.onStart) cfg.onStart(G); } };
+    G.begin = () => { if (G.state === 'ready') { G.state = 'playing'; G.stateT = 0; ac(); rep('session_start'); if (cfg.onStart) cfg.onStart(G); } };
     G.pauseToggle = () => {
       if (G.state === 'playing') G.state = 'paused';
       else if (G.state === 'paused') { G.state = 'playing'; last = performance.now(); acc = 0; }
@@ -416,7 +478,15 @@
     window.addEventListener('keydown', (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (PREVENT.has(e.code)) e.preventDefault();
-      if (e.code === 'KeyM') { A.muted = !A.muted; try { localStorage.setItem('arcade-muted', A.muted ? '1' : '0'); } catch (x) {} syncMute(); return; }
+      if (e.code === 'KeyM') {
+        A.muted = !A.muted;
+        if (window.Save && typeof window.Save.update === 'function') {
+          window.Save.update(cfg.id || cfg.title, { settings: { musicVol: A.muted ? 0 : 0.8, sfxVol: A.muted ? 0 : 0.8 } });
+        }
+        try { localStorage.setItem('arcade-muted', A.muted ? '1' : '0'); } catch (x) {}
+        syncMute();
+        return;
+      }
       if (e.code === 'KeyP' || e.code === 'Escape') { if (!e.repeat) G.pauseToggle(); return; }
       if ((G.state === 'over' || G.state === 'won') && !e.repeat && (e.code === 'Enter' || e.code === 'KeyR' || (e.code === 'Space' && G.stateT > 40))) { G.restart(true); return; }
       if (!e.repeat) { pressed[e.code] = true; }
@@ -435,7 +505,14 @@
       const a = e.target.dataset && e.target.dataset.a;
       if (a === 'restart') G.restart(true);
       else if (a === 'pause') G.pauseToggle();
-      else if (a === 'mute') { A.muted = !A.muted; try { localStorage.setItem('arcade-muted', A.muted ? '1' : '0'); } catch (x) {} syncMute(); }
+      else if (a === 'mute') {
+        A.muted = !A.muted;
+        if (window.Save && typeof window.Save.update === 'function') {
+          window.Save.update(cfg.id || cfg.title, { settings: { musicVol: A.muted ? 0 : 0.8, sfxVol: A.muted ? 0 : 0.8 } });
+        }
+        try { localStorage.setItem('arcade-muted', A.muted ? '1' : '0'); } catch (x) {}
+        syncMute();
+      }
       else if (a === 'full') { if (document.fullscreenElement) document.exitFullscreen(); else if (wrap.requestFullscreen) wrap.requestFullscreen().catch(() => {}); }
       e.target.blur && e.target.blur();
     });
@@ -494,11 +571,14 @@
         A.text(ctx, G.hudR !== undefined ? G.hudR : 'BEST ' + G.hi, W - 14, 26, 16, '#fbbf24', 'right', '800', A.MONO);
         ctx.restore();
       }
-      overlay();
+      // UI-kit games provide their own transparent canvas overlay; preserve the legacy panel elsewhere.
+      if (!G.uiMounted) overlay();
     }
     function frame(now) {
       requestAnimationFrame(frame);
       const dt = Math.min(100, now - last); last = now;
+      // Feed perf-kit EMA tracker
+      if (window.Perf && typeof window.Perf.tick === 'function') window.Perf.tick(dt);
       pollPad();
       if (G.state === 'playing') {
         acc += dt * (A.speedMult || 1.0); let n = 0;

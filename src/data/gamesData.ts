@@ -1,6 +1,6 @@
 import { GameInfo } from '../types/game';
 
-export const GAMES_DATA: GameInfo[] = [
+const BASE_GAMES_DATA: GameInfo[] = [
   // ==========================================
   // ARCADE & CLASSICS (1 - 20)
   // ==========================================
@@ -26,6 +26,7 @@ export const GAMES_DATA: GameInfo[] = [
     htmlPath: '/assets/aistudio/01-flappy-bird.html',
     playableEngineId: 'cyber-flap',
     previewType: 'flappy',
+    status: 'enhanced',
   },
   {
     id: 'pong',
@@ -482,6 +483,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'chess',
     gameNumber: 21,
     title: 'Chess',
+    legacy: 'Chess endures as a benchmark for strategic thought: simple moves combine into a contest of planning, patience and foresight.',
     of: 'Strategy for two',
     year: 1475,
     era: 'Tabletop & Classics',
@@ -502,6 +504,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'snakes-ladders',
     gameNumber: 22,
     title: 'Snakes & Ladders',
+    legacy: 'Snakes and Ladders turns a race to the finish into a lesson in luck, where a single roll can bring a leap forward or a sudden setback.',
     of: 'Race to 100',
     year: 1892,
     era: 'Tabletop & Classics',
@@ -522,6 +525,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'ludo',
     gameNumber: 23,
     title: 'Ludo',
+    legacy: 'Ludo brings a race around the board to shared play, mixing safe routes, risky captures and the suspense of getting every piece home.',
     of: 'Race for 2–4',
     year: 1896,
     era: 'Tabletop & Classics',
@@ -542,6 +546,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'carrom',
     gameNumber: 24,
     title: 'Carrom',
+    legacy: 'Carrom makes angles and rebounds the heart of the game, rewarding a steady aim with the satisfying click of a pocketed disc.',
     of: 'Flick & pocket',
     year: 1900,
     era: 'Tabletop & Classics',
@@ -562,6 +567,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'tycoon-town',
     gameNumber: 25,
     title: 'Tycoon Town',
+    legacy: 'Property-trading board games make negotiation and risk part of the fun; this town-building race keeps that lively buying-and-building rhythm.',
     of: 'Property trading',
     year: 1935,
     era: 'Tabletop & Classics',
@@ -582,6 +588,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'checkers',
     gameNumber: 26,
     title: 'Checkers',
+    legacy: 'Checkers is a clear test of foresight: each capture reshapes the board, and a crowned piece can turn a quiet position into a threat.',
     of: 'Jump & crown',
     year: 1150,
     era: 'Tabletop & Classics',
@@ -602,6 +609,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'connect-four',
     gameNumber: 27,
     title: 'Connect Four',
+    legacy: 'Connect Four turns pattern spotting into a quick duel, where every move can build a winning line or quietly block one.',
     of: 'Drop four in a row',
     year: 1974,
     era: 'Tabletop & Classics',
@@ -622,6 +630,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'mancala',
     gameNumber: 28,
     title: 'Mancala',
+    legacy: 'Mancala makes counting ahead feel tangible: each handful of stones becomes a choice about timing, capture and control.',
     of: 'Sow & capture',
     year: 600,
     era: 'Tabletop & Classics',
@@ -642,6 +651,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'reversi',
     gameNumber: 29,
     title: 'Reversi',
+    legacy: 'Reversi packs a dramatic reversal into a small board: one placement can flip a chain of pieces and change who controls the corners.',
     of: 'Flip & capture',
     year: 1883,
     era: 'Tabletop & Classics',
@@ -662,26 +672,29 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'tic-tac-toe',
     gameNumber: 30,
     title: 'Tic-Tac-Toe',
-    of: 'Three in a row',
+    legacy: 'Tic-Tac-Toe is a compact exercise in reading an opponent, where the best move often prevents a loss before it creates a win.',
+    of: 'Three in a row — and beyond',
     year: 1300,
     era: 'Tabletop & Classics',
     genre: 'Quick Duel',
     category: 'board',
     developer: 'Ancient Tradition',
     originalPlatform: 'Paper & Pen',
-    tagline: 'Line up three marks — can you beat the computer?',
-    description: 'Quick 3x3 grid battle with smart CPU minimax AI and numpad shortcut support.',
-    controlsSummary: 'Click square or press numpad 1-9.',
-    keys: 'Click or press 1–9 (numpad layout)',
+    tagline: 'Pick your board, read the threats, and outplay the rival.',
+    description: 'A quick board-game duel with Classic 3×3, four-in-a-row 4×4, and linked Ultimate Tic-Tac-Toe, adjustable AI strength, local match stats, and achievements.',
+    controlsSummary: 'Choose a format and AI strength; click/tap a square or use 1–9.',
+    keys: 'Click/tap or press 1–9 (numpad layout) · U undo · N new match',
     accentColor: '#22D3EE',
     icon: '❌',
-    difficulty: 'Easy',
+    difficulty: 'Medium',
     htmlPath: '/assets/aistudio/30-tic-tac-toe.html',
+    status: 'enhanced',
   },
   {
     id: 'backgammon',
     gameNumber: 31,
     title: 'Backgammon',
+    legacy: 'Backgammon blends a race across the board with calculated risk, as dice, blocked points and exposed checkers keep each turn uncertain.',
     of: 'Race & hit',
     year: 3000,
     era: 'Tabletop & Classics',
@@ -702,6 +715,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'dots-boxes',
     gameNumber: 32,
     title: 'Dots & Boxes',
+    legacy: 'Dots and Boxes turns a spare grid into a contest of traps, chains and timing, where a harmless-looking line can hand over a whole run of boxes.',
     of: 'Close the box',
     year: 1889,
     era: 'Tabletop & Classics',
@@ -722,6 +736,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'go',
     gameNumber: 33,
     title: 'Go 9×9',
+    legacy: 'Go makes territory from open space: a simple placement rule grows into a careful balance of influence, connection and capture.',
     of: 'Surround & capture',
     year: 2000,
     era: 'Tabletop & Classics',
@@ -746,6 +761,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'solitaire',
     gameNumber: 34,
     title: 'Solitaire',
+    legacy: 'Solitaire made a single-player card table feel complete, turning a shuffled deck into a patient puzzle of sequencing and opportunity.',
     of: 'Klondike',
     year: 1800,
     era: 'Tabletop & Classics',
@@ -766,6 +782,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'memory-match',
     gameNumber: 35,
     title: 'Memory Match',
+    legacy: 'Memory Match brings a familiar memory challenge to a changing field of cards, where attention matters as much as a quick first guess.',
     of: 'Flip & remember',
     year: 1959,
     era: 'Tabletop & Classics',
@@ -786,6 +803,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'maths-dash',
     gameNumber: 36,
     title: 'Maths Dash',
+    legacy: 'Maths Dash turns short arithmetic problems into a timed score chase, giving mental practice the pace of an arcade round.',
     of: 'Speed arithmetic',
     year: 2010,
     era: 'Tabletop & Classics',
@@ -810,6 +828,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'pool',
     gameNumber: 37,
     title: '8-Ball Pool',
+    legacy: 'Pool is a study in touch and geometry: cue angle, spin and position matter as much as sinking the next ball.',
     of: 'Cue sports',
     year: 1900,
     era: 'Tabletop & Classics',
@@ -830,6 +849,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'bowling',
     gameNumber: 38,
     title: 'Bowling',
+    legacy: 'Bowling makes a single roll a small physics puzzle, balancing line and power to turn ten pins into a perfect frame.',
     of: 'Ten frames',
     year: 1895,
     era: 'Tabletop & Classics',
@@ -850,6 +870,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'basketball',
     gameNumber: 39,
     title: 'Basketball Hoops',
+    legacy: 'Basketball games capture the quick appeal of the shot: read the arc, time the release and keep the next attempt alive.',
     of: 'Shoot for the net',
     year: 1891,
     era: 'Tabletop & Classics',
@@ -870,6 +891,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'mini-golf',
     gameNumber: 40,
     title: 'Mini Golf',
+    legacy: 'Mini golf trades distance for invention, making each course a compact challenge in angles, obstacles and controlled power.',
     of: 'Nine holes',
     year: 1916,
     era: 'Tabletop & Classics',
@@ -890,6 +912,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'soccer-pool',
     gameNumber: 41,
     title: 'Soccer Pool',
+    legacy: 'Soccer pool borrows the geometry of billiards for a football contest, turning rebounds and careful positioning into scoring chances.',
     of: 'Flick & score',
     year: 2015,
     era: 'Tabletop & Classics',
@@ -910,6 +933,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'table-tennis',
     gameNumber: 49,
     title: 'Table Tennis',
+    legacy: 'Table tennis is built around fast reactions and precise placement, where a short exchange can become a test of timing and control.',
     of: 'Bat & spin',
     year: 1926,
     era: 'Tabletop & Classics',
@@ -934,6 +958,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: '2048',
     gameNumber: 42,
     title: 'Merge 2048',
+    legacy: 'Merge 2048 builds a puzzle from powers of two, rewarding space management and forward planning as the board fills.',
     of: 'Slide & merge',
     year: 2014,
     era: 'Modern Indie Masterpieces',
@@ -941,19 +966,28 @@ export const GAMES_DATA: GameInfo[] = [
     category: 'puzzle',
     developer: 'Gabriele Cirulli',
     originalPlatform: 'Web Game',
-    tagline: 'Slide the tiles, merge the twins, and chase 2048.',
-    description: 'Smooth sliding tile puzzle: slide tiles in 4 directions, merge identical numbers into their sum, and push past 2048.',
-    controlsSummary: 'Arrow keys or WASD to slide all tiles, U to undo.',
-    keys: '←↑↓→ or WASD · swipe · U undo',
+    tagline: 'Shape the Prime Core in the Elemental Foundry.',
+    description: 'A polished merge puzzle with 3×3–6×6 classic boards, 30 move-limited Foundry trials, a date-seeded Daily Core, browser-local resume and stats, achievements, and three difficulty settings.',
+    controlsSummary: 'Arrow/WASD or swipe; choose Classic, 30 Trials, or Daily Core; U undo.',
+    keys: '←↑↓→ or WASD · swipe · U undo · N new run · H help · M mute',
     accentColor: '#FBBF24',
     icon: '🔢',
     difficulty: 'Medium',
     htmlPath: '/assets/aistudio/42-2048.html',
+    usesDirectTouch: true,
+    players: '1P',
+    sessionMinutes: 8,
+    tags: ['merge', 'daily', 'logic', 'scores'],
+    modes: ['Classic', 'Foundry Trials', 'Daily Core'],
+    storyBlurb: 'The Foundry Keeper guides each run as elemental cores combine into the Prime Core.',
+    levelCount: 30,
+    status: 'enhanced',
   },
   {
     id: 'sudoku',
     gameNumber: 43,
     title: 'Sudoku',
+    legacy: 'Sudoku is a number-placement puzzle built on deduction: each entry narrows the possibilities without relying on arithmetic.',
     of: 'Logic grid',
     year: 1979,
     era: 'Tabletop & Classics',
@@ -974,6 +1008,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'minesweeper',
     gameNumber: 44,
     title: 'Minefield',
+    legacy: 'Minesweeper makes clues do the work, asking players to infer which hidden squares are safe before taking the next step.',
     of: 'Mine hunting',
     year: 1990,
     era: 'Arcade Pioneers',
@@ -994,6 +1029,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'sliding-puzzle',
     gameNumber: 45,
     title: 'Slide Tiles',
+    legacy: 'Sliding puzzles turn a scrambled picture into a sequence problem, where each move must make room for the one after it.',
     of: 'Sliding puzzle',
     year: 1874,
     era: 'Tabletop & Classics',
@@ -1014,6 +1050,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'nuts-bolts',
     gameNumber: 46,
     title: 'Nuts & Bolts',
+    legacy: 'Nuts and Bolts turns a crowded arrangement into a sorting challenge, rewarding players who plan where each piece can go.',
     of: 'Unscrew & match',
     year: 2023,
     era: 'Modern Indie Masterpieces',
@@ -1034,6 +1071,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'colour-sort',
     gameNumber: 47,
     title: 'Bubble Sort',
+    legacy: 'Colour sorting makes order visible: the challenge is to separate mixed stacks while preserving enough space to finish.',
     of: 'Pour & sort',
     year: 2020,
     era: 'Modern Indie Masterpieces',
@@ -1054,6 +1092,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'fruit-merge',
     gameNumber: 48,
     title: 'Orchard Drop',
+    legacy: 'Fruit merging gives each drop a chain reaction to aim for, balancing immediate space with the chance to build a larger fruit.',
     of: 'Drop & merge (Suika)',
     year: 2021,
     era: 'Modern Indie Masterpieces',
@@ -1074,6 +1113,7 @@ export const GAMES_DATA: GameInfo[] = [
     id: 'mahjong',
     gameNumber: 50,
     title: 'Jade Table',
+    legacy: 'Mahjong Solitaire reshapes familiar tile motifs into a quiet matching puzzle, where choosing a free pair can open or close the path ahead.',
     of: 'Mahjong solitaire',
     year: 1981,
     era: 'Tabletop & Classics',
@@ -1091,3 +1131,182 @@ export const GAMES_DATA: GameInfo[] = [
     htmlPath: '/assets/aistudio/50-mahjong.html',
   },
 ];
+
+/**
+ * Launcher-facing metadata is deliberately completed in one place instead of
+ * scattered through the archival game records above.  Every catalog title gets
+ * a complete, usable set of fields while the source records remain compatible
+ * with older callers that only need the core game data.
+ */
+type CompleteLauncherMetadata = Required<Pick<GameInfo,
+  'players' | 'sessionMinutes' | 'tags' | 'modes' | 'storyBlurb' | 'levelCount' | 'status'
+>> & Pick<GameInfo, 'inputs' | 'touchControls' | 'tier' | 'twoPlayer' | 'moods' | 'collections' | 'supportsDailySeed'>;
+
+const TIER_S_NUMBERS = new Set([1, 5, 6, 7, 12, 16, 21, 49]);
+const TIER_A_NUMBERS = new Set([2, 3, 4, 8, 9, 10, 11, 13, 14, 15, 17, 18, 19, 20, 25, 37, 40, 43, 44, 50]);
+const DAILY_SEED_GAME_NUMBERS = new Set([43, 44, 50]);
+const MOODS_BY_CATEGORY: Record<GameInfo['category'], string[]> = {
+  arcade: ['Adrenaline rush', '5-minute fun'],
+  board: ['With friends', 'Timeless classics'],
+  sports: ['With friends', 'Adrenaline rush'],
+  puzzle: ['Train your brain', 'Just relax'],
+  cards: ['Just relax', 'Timeless classics'],
+};
+const COLLECTIONS_BY_CATEGORY: Record<GameInfo['category'], string[]> = {
+  arcade: ['Retro tributes'],
+  board: ['Board night'],
+  sports: ['Board night'],
+  puzzle: ['Brain games'],
+  cards: ['Brain games', 'Board night'],
+};
+
+const ENHANCED_GAME_IDS = new Set(['flappy-bird', 'tic-tac-toe', '2048']);
+
+// Theater controls are deliberately declared per game. Titles whose primary
+// interaction is tapping or dragging keep their own native touch surface.
+const ARCADE_TOUCH_CONTROLS: Record<number, NonNullable<GameInfo['touchControls']>> = {
+  1: { mode: 'virtual', actions: [{ label: 'Flap', key: ' ' }] },
+  2: { mode: 'virtual', directions: { up: 'ArrowUp', down: 'ArrowDown' } },
+  3: { mode: 'virtual', directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' } },
+  4: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Fire', key: ' ' }] },
+  5: { mode: 'virtual', directions: { up: 'ArrowUp', left: 'ArrowLeft', right: 'ArrowRight', down: 'ArrowDown' }, actions: [{ label: 'Rotate', key: 'x' }, { label: 'Drop', key: ' ' }] },
+  6: { mode: 'virtual', directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' } },
+  7: { mode: 'virtual', directions: { up: 'ArrowUp', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Fire', key: ' ' }, { label: 'Warp', key: 'Shift' }] },
+  8: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight', down: 'ArrowDown' }, actions: [{ label: 'Jump', key: ' ' }] },
+  9: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Jump', key: ' ' }] },
+  10: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Jump', key: ' ' }] },
+  11: { mode: 'virtual', directions: { left: 'a', right: 'd', up: 'w', down: 's' }, actions: [{ label: 'Punch', key: 'f' }, { label: 'Kick', key: 'g' }, { label: 'Rush', key: 'h' }] },
+  12: { mode: 'virtual', directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Confirm', key: ' ' }, { label: 'Cancel', key: 'x' }] },
+  13: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Whip', key: 'x' }, { label: 'Axe', key: 'c' }] },
+  14: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Fire', key: 'x' }, { label: 'Missile', key: 'c' }] },
+  15: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight', down: 'ArrowDown' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Strike', key: 'x' }, { label: 'Dash', key: 'Shift' }] },
+  16: { mode: 'virtual', directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Dash', key: 'Shift' }] },
+  17: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Shoot', key: 'x' }, { label: 'Dash', key: 'Shift' }] },
+  18: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight', down: 'ArrowDown' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Attack', key: 'x' }, { label: 'Roll', key: 'Shift' }] },
+  19: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Dash', key: 'Shift' }, { label: 'Flare', key: 'x' }] },
+  20: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Punch', key: 'x' }] },
+};
+
+const getTouchControls = (game: GameInfo): NonNullable<GameInfo['touchControls']> =>
+  ARCADE_TOUCH_CONTROLS[game.gameNumber] || { mode: 'native' };
+
+const launcherDefaults: Record<GameInfo['category'], Omit<CompleteLauncherMetadata, 'tags' | 'storyBlurb' | 'status'>> = {
+  arcade: {
+    players: '1P',
+    sessionMinutes: 12,
+    modes: ['Arcade', 'Time Attack', 'Practice'],
+    levelCount: 10,
+  },
+  board: {
+    players: '1-2P',
+    sessionMinutes: 20,
+    modes: ['Solo vs CPU', 'Local Versus', 'Practice'],
+    levelCount: 1,
+  },
+  sports: {
+    players: '1-2P',
+    sessionMinutes: 10,
+    modes: ['Quick Match', 'Local Versus', 'Practice'],
+    levelCount: 9,
+  },
+  puzzle: {
+    players: '1P',
+    sessionMinutes: 10,
+    modes: ['Classic', 'Daily Challenge', 'Practice'],
+    levelCount: 20,
+  },
+  cards: {
+    players: '1P',
+    sessionMinutes: 12,
+    modes: ['Classic', 'Daily Challenge', 'Practice'],
+    levelCount: 12,
+  },
+};
+
+const launcherOverrides: Partial<Record<string, Partial<CompleteLauncherMetadata>>> = {
+  'flappy-bird': { sessionMinutes: 5, modes: ['Gauntlet', 'Endless Flight', 'Practice'], levelCount: 10 },
+  pong: { players: '1-2P', modes: ['Solo vs CPU', 'Local Versus', 'First to 11'] },
+  snake: { sessionMinutes: 8, modes: ['Campaign', 'Endless', 'Solid Walls'], levelCount: 10 },
+  tetris: { sessionMinutes: 15, modes: ['Marathon', 'Sprint', 'Ultra'], levelCount: 15 },
+  'street-fighter-ii': { players: '1-2P', sessionMinutes: 8, modes: ['Arcade Ladder', 'Local Versus', 'Training'], levelCount: 8 },
+  'chrono-trigger': { sessionMinutes: 30, modes: ['Story Quest', 'Boss Rush', 'Practice'], levelCount: 12 },
+  'castlevania-sotn': { sessionMinutes: 25, modes: ['Story Quest', 'Boss Rush', 'Practice'], levelCount: 14 },
+  'super-metroid': { sessionMinutes: 25, modes: ['Exploration', 'Boss Rush', 'Practice'], levelCount: 12 },
+  'hollow-knight': { sessionMinutes: 25, modes: ['Pilgrimage', 'Boss Rush', 'Practice'], levelCount: 14 },
+  celeste: { sessionMinutes: 15, modes: ['Summit Run', 'B-Sides', 'Practice'], levelCount: 8 },
+  cuphead: { sessionMinutes: 12, modes: ['Boss Rush', 'Run & Gun', 'Practice'], levelCount: 9 },
+  'dead-cells': { sessionMinutes: 20, modes: ['Roguelite Run', 'Daily Seed', 'Practice'], levelCount: 10 },
+  'ori-and-the-blind-forest': { sessionMinutes: 20, modes: ['Story Quest', 'Time Trial', 'Practice'], levelCount: 12 },
+  'rayman-legends': { players: '1-4P', sessionMinutes: 15, modes: ['Adventure', 'Time Trial', 'Practice'], levelCount: 10 },
+  chess: { sessionMinutes: 25, modes: ['Vs CPU', 'Local Versus', 'Puzzle Board'] },
+  'snakes-ladders': { players: '1-4P', sessionMinutes: 12, modes: ['Solo vs CPU', 'Local Versus', 'Quick Roll'] },
+  ludo: { players: '1-4P', sessionMinutes: 20, modes: ['Solo vs CPU', 'Local Versus', 'Quick Match'] },
+  carrom: { players: '1-2P', sessionMinutes: 15, modes: ['Solo vs CPU', 'Local Versus', 'Practice'] },
+  'tycoon-town': { players: '1-4P', sessionMinutes: 30, modes: ['Solo vs CPU', 'Local Versus', 'Quick Match'] },
+  checkers: { sessionMinutes: 20, modes: ['Vs CPU', 'Local Versus', 'Practice'] },
+  'connect-four': { sessionMinutes: 8, modes: ['Vs CPU', 'Local Versus', 'Quick Drop'] },
+  mancala: { sessionMinutes: 15, modes: ['Vs CPU', 'Local Versus', 'Practice'] },
+  reversi: { sessionMinutes: 20, modes: ['Vs CPU', 'Local Versus', 'Practice'] },
+  'tic-tac-toe': { sessionMinutes: 5, modes: ['Vs CPU', 'Local Versus', 'Hint Mode'] },
+  backgammon: { sessionMinutes: 25, modes: ['Vs CPU', 'Local Versus', 'Practice'] },
+  'dots-boxes': { sessionMinutes: 12, modes: ['Vs CPU', 'Local Versus', 'Quick Grid'] },
+  go: { sessionMinutes: 30, modes: ['Vs CPU', 'Local Versus', 'Practice'] },
+  solitaire: { sessionMinutes: 15, modes: ['Classic', 'Daily Deal', 'Practice'] },
+  'memory-match': { sessionMinutes: 6, modes: ['Classic', 'Time Trial', 'Daily Grid'], levelCount: 16 },
+  'maths-dash': { sessionMinutes: 8, modes: ['Sprint', 'Daily Drill', 'Practice'], levelCount: 20 },
+  pool: { sessionMinutes: 15, modes: ['Vs CPU', 'Local Versus', 'Practice'] },
+  bowling: { sessionMinutes: 10, modes: ['Ten Frames', 'Local Versus', 'Practice'] },
+  basketball: { sessionMinutes: 8, modes: ['Free Throw', 'Local Versus', 'Practice'] },
+  'mini-golf': { sessionMinutes: 15, modes: ['Course Run', 'Local Versus', 'Practice'], levelCount: 9 },
+  'soccer-pool': { sessionMinutes: 12, modes: ['Vs CPU', 'Local Versus', 'Practice'] },
+  'table-tennis': { sessionMinutes: 8, modes: ['Vs CPU', 'Local Versus', 'Practice'] },
+  2048: {
+    sessionMinutes: 8,
+    tags: ['merge', 'daily', 'logic', 'scores'],
+    modes: ['Classic', 'Foundry Trials', 'Daily Core'],
+    storyBlurb: 'The Foundry Keeper guides each run as elemental cores combine into the Prime Core.',
+    levelCount: 30,
+  },
+  sudoku: { sessionMinutes: 20, modes: ['Easy Grid', 'Classic', 'Daily Grid'], levelCount: 50 },
+  minesweeper: { sessionMinutes: 10, modes: ['Beginner', 'Intermediate', 'Daily Field'], levelCount: 30 },
+  'sliding-puzzle': { sessionMinutes: 8, modes: ['3×3', '4×4', 'Time Trial'], levelCount: 24 },
+  'nuts-bolts': { sessionMinutes: 10, modes: ['Workshop', 'Daily Puzzle', 'Practice'], levelCount: 30 },
+  'colour-sort': { sessionMinutes: 10, modes: ['Classic', 'Daily Sort', 'Practice'], levelCount: 30 },
+  'fruit-merge': { sessionMinutes: 10, modes: ['Orchard', 'Endless', 'Daily Basket'], levelCount: 20 },
+  mahjong: { sessionMinutes: 20, modes: ['Turtle Layout', 'Daily Layout', 'Practice'], levelCount: 40 },
+};
+
+const buildLauncherMetadata = (game: GameInfo): CompleteLauncherMetadata => {
+  const defaults = launcherDefaults[game.category];
+  const override = launcherOverrides[game.id];
+  const modes = override?.modes || defaults.modes;
+  const players = override?.players || defaults.players;
+  const controls = `${game.controlsSummary} ${game.keys}`.toLowerCase();
+  const inputs: NonNullable<GameInfo['inputs']> = [];
+  if (/keyboard|arrow|wasd|spacebar|press [a-z0-9]|keys?\b/.test(controls)) inputs.push('keyboard');
+  if (/mouse|click|pointer/.test(controls)) inputs.push('mouse');
+  if (/touch|tap|swipe/.test(controls)) inputs.push('touch');
+  return {
+    ...defaults,
+    tags: [game.category, game.genre.toLowerCase(), game.era.toLowerCase().replaceAll(' ', '-')],
+    storyBlurb: `${game.title}: ${game.description}`,
+    status: ENHANCED_GAME_IDS.has(game.id) ? 'enhanced' : 'classic',
+    inputs,
+    touchControls: getTouchControls(game),
+    tier: TIER_S_NUMBERS.has(game.gameNumber) ? 'S' : TIER_A_NUMBERS.has(game.gameNumber) ? 'A' : 'B',
+    twoPlayer: (() => {
+      const hasHotseat = players !== '1P' && modes.some((mode) => /local versus/i.test(mode));
+      const hasBot = players !== '1P' && modes.some((mode) => /vs cpu|vs computer|solo vs/i.test(mode));
+      return hasHotseat && hasBot ? 'both' : hasHotseat ? 'hotseat' : hasBot ? 'bot' : 'none';
+    })(),
+    supportsDailySeed: DAILY_SEED_GAME_NUMBERS.has(game.gameNumber),
+    moods: MOODS_BY_CATEGORY[game.category],
+    collections: COLLECTIONS_BY_CATEGORY[game.category],
+    ...override,
+  };
+};
+
+export const GAMES_DATA: GameInfo[] = BASE_GAMES_DATA.map((game) => ({
+  ...game,
+  ...buildLauncherMetadata(game),
+}));

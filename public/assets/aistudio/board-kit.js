@@ -51,10 +51,43 @@
       case 'error': tone(130, 0.15, 'square', 0.06); break;
       case 'win': [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.22, 'triangle', 0.09, i * 0.12)); break;
       case 'lose': [400, 330, 262, 196].forEach((f, i) => tone(f, 0.25, 'triangle', 0.08, i * 0.14)); break;
+      case 'start': [392, 523, 659].forEach((f, i) => tone(f, 0.12, 'sine', 0.055, i * 0.07)); break;
+      case 'place': tone(520, 0.055, 'triangle', 0.06); tone(780, 0.045, 'sine', 0.025, 0.018); break;
+      case 'threat': tone(440, 0.12, 'triangle', 0.05); tone(466, 0.14, 'triangle', 0.045, 0.1); break;
+      case 'block': tone(330, 0.07, 'square', 0.045); tone(494, 0.09, 'triangle', 0.055, 0.055); break;
+      case 'undo': tone(620, 0.1, 'sine', 0.05, 0, 390); break;
+      case 'draw': [392, 494, 587].forEach((f, i) => tone(f, 0.28, 'sine', 0.045, i * 0.02)); break;
+      case 'hint': tone(880, 0.16, 'sine', 0.045); tone(1175, 0.22, 'sine', 0.035, 0.08); break;
       default: tone(440, 0.06, 'sine', 0.05);
     }
   };
   B.muted = () => muted;
+
+  /* ---------- difficulty contract ----------
+     Strength is deliberately independent from the visible computer-thinking pace. */
+  let difficulty = 'normal', aiLevel = 2, syncDifficultyControl = () => {};
+  /* Public contract: level 1 = easy, 2 = normal, 3 = hard. */
+  const levelFor = (d) => d === 'easy' ? 1 : d === 'hard' ? 3 : 2;
+  const announceDifficulty = () => {
+    try { window.dispatchEvent(new CustomEvent('apex:board-difficulty', { detail: { difficulty, level: aiLevel, hints: difficulty === 'easy' } })); } catch (e) {}
+    syncDifficultyControl();
+  };
+  const setDifficulty = (d) => {
+    difficulty = d === 'easy' || d === 'hard' ? d : 'normal';
+    aiLevel = levelFor(difficulty);
+    announceDifficulty();
+    return aiLevel;
+  };
+  B.difficulty = () => difficulty;
+  B.hints = () => difficulty === 'easy';
+  B.level = (n) => {
+    if (n == null) return aiLevel;
+    aiLevel = Math.max(1, Math.min(3, Math.round(+n || 2)));
+    difficulty = aiLevel === 1 ? 'easy' : aiLevel === 3 ? 'hard' : 'normal';
+    announceDifficulty();
+    return aiLevel;
+  };
+  B.setDifficulty = setDifficulty;
 
   /* ---------- computer pacing ---------- */
   const PACE = { slow: 1.8, normal: 1, fast: 0.45 };
@@ -134,22 +167,19 @@ kbd{font:600 12px ui-monospace,Consolas,monospace;background:#0b0d16;border:1px 
     const seenKey = 'apex:help:' + o.id;
     if (!ls.get(seenKey)) { help.open = true; ls.set(seenKey, '1'); }
     const paint = () => { mute.textContent = muted ? '🔇 Sound off' : '🔊 Sound on'; };
-    const toggleMute = () => { muted = !muted; ls.set('apex:mute', muted ? '1' : '0'); paint(); };
+    const toggleMute = () => { muted = !muted; ls.set('apex:mute', muted ? '1' : '0'); if (window.Music && Music.setMuted) Music.setMuted(muted); paint(); };
+    if (window.Music && Music.setMuted) Music.setMuted(muted);
     mute.addEventListener('click', toggleMute); paint();
     const spd = document.getElementById('bk-spd');
     try {
       const q = new URLSearchParams(window.location.search).get('diff');
-      if (q === 'easy') ls.set('apex:cpu', 'slow');
-      else if (q === 'hard') ls.set('apex:cpu', 'fast');
-      else if (q === 'normal') ls.set('apex:cpu', 'normal');
+      if (q === 'easy' || q === 'hard' || q === 'normal') setDifficulty(q);
     } catch (e) {}
     if (spd) { spd.value = B.speed(); spd.onchange = () => { ls.set('apex:cpu', spd.value); spd.blur(); }; }
     window.addEventListener('message', (e) => {
       if (e.data && e.data.type === 'SET_DIFFICULTY') {
         const d = e.data.difficulty;
-        const spdVal = d === 'easy' ? 'slow' : d === 'hard' ? 'fast' : 'normal';
-        ls.set('apex:cpu', spdVal);
-        if (spd) spd.value = spdVal;
+        setDifficulty(d);
       }
     });
     document.addEventListener('keydown', (e) => {
@@ -157,7 +187,92 @@ kbd{font:600 12px ui-monospace,Consolas,monospace;background:#0b0d16;border:1px 
       if (e.key === 'm' || e.key === 'M') toggleMute();
       else if (e.key === 'h' || e.key === 'H') help.open = !help.open;
     });
-    return { main: document.getElementById('bk-main') };
+    const main = document.getElementById('bk-main');
+    const gameId = o.id || 'unknown';
+    syncDifficultyControl = () => {
+      const select = main.querySelector('#difficulty, #lvl, #size, #draw, #jump');
+      if (!select || [...select.options].some((option) => /contract\s*\(auto\)/i.test(option.textContent))) return false;
+      const options = [...select.options];
+      const wanted = difficulty === 'normal' ? /normal|medium/ : new RegExp(difficulty, 'i');
+      let option = options.find((item) => wanted.test(item.textContent));
+      if (!option && options.length >= 3) option = options[difficulty === 'easy' ? 0 : difficulty === 'normal' ? 1 : options.length - 1];
+      if (!option && options.length === 2) option = options[difficulty === 'easy' ? 0 : 1];
+      if (!option) return false;
+      if (select.value !== option.value) {
+        select.value = option.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      return true;
+    };
+    const difficultyObserver = new MutationObserver(() => {
+      if (syncDifficultyControl() || main.firstElementChild) difficultyObserver.disconnect();
+    });
+    difficultyObserver.observe(main, { childList: true, subtree: true });
+    syncDifficultyControl();
+    let startedAt = 0, sessionStarted = false, sessionEnded = false;
+
+    const readScore = (text) => {
+      const fromText = /\bscore\D{0,16}([\d,]+)/i.exec(String(text || ''));
+      if (fromText) return Math.max(0, parseInt(fromText[1].replaceAll(',', ''), 10) || 0);
+      const scoreNode = main.querySelector('[data-score], #score, #sc, .score b, .score');
+      const fromNode = scoreNode && /([\d,]+)/.exec(scoreNode.textContent || '');
+      return fromNode ? Math.max(0, parseInt(fromNode[1].replaceAll(',', ''), 10) || 0) : 0;
+    };
+    const report = (eventType, detail) => {
+      try {
+        if (window.Apex && typeof Apex.report === 'function') {
+          Apex.report(Object.assign({ gameId, type: eventType }, detail || {}));
+        }
+      } catch (e) {}
+    };
+    const startSession = () => {
+      if (sessionStarted || sessionEnded) return;
+      sessionStarted = true;
+      startedAt = Date.now();
+      try { if (window.Save && typeof Save.load === 'function') Save.load(gameId); } catch (e) {}
+      report('session_start');
+    };
+    const endSession = (title, body) => {
+      if (!sessionStarted || sessionEnded) return;
+      sessionEnded = true;
+      const score = readScore(`${title || ''} ${body || ''}`);
+      const durationSec = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+      report('score', { score });
+      report('session_end', { score, durationSec });
+      try {
+        if (window.Save && typeof Save.load === 'function' && typeof Save.update === 'function') {
+          const saved = Save.load(gameId);
+          Save.update(gameId, { stats: {
+            bestScore: Math.max(saved.stats?.bestScore || 0, score),
+            secondsPlayed: (saved.stats?.secondsPlayed || 0) + durationSec,
+            lastResult: String(title || 'exit').slice(0, 80),
+          } });
+        }
+      } catch (e) {}
+    };
+
+    const isGameplayInput = (target) => {
+      if (!target || !main.contains(target)) return false;
+      if (target.closest('input,select,textarea,button.bk-btn,[contenteditable="true"]')) return false;
+      return true;
+    };
+    document.addEventListener('pointerdown', (e) => {
+      if (e.isTrusted && isGameplayInput(e.target)) startSession();
+    }, true);
+    document.addEventListener('keydown', (e) => {
+      if (!e.isTrusted || /INPUT|SELECT|TEXTAREA/.test(e.target?.tagName || '')) return;
+      if (main.contains(e.target) || e.target === document.body) startSession();
+    }, true);
+    window.addEventListener('pagehide', () => endSession('exit'), { once: true });
+
+    const originalModal = B.modal;
+    const terminalResult = /you win|you won|\bwins!?|winner|victory|defeat|game over|time['’]?s up|time up|solved!?|cleared!?|\bdraw\b|bankrupt|basket full|tray full|checkmate|match over|run ended|trial ended|daily run ended|high score|new best time|all pairs found|prime core awakened|level\s+\d+\s+cleared/i;
+    B.modal = function (title, body, buttons) {
+      if (terminalResult.test(`${title || ''} ${body || ''}`)) endSession(title, body);
+      return originalModal(title, body, buttons);
+    };
+
+    return { main };
   };
 
   B.modal = (title, body, buttons) => {

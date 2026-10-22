@@ -6,17 +6,78 @@
 <title>Ion Rally</title>
 </head>
 <body>
+
+
+
+
+<script src="perf-kit.js"></script>
+<script src="save-kit.js"></script>
+<script src="meta-config.js"></script>
+<script src="meta-kit.js"></script>
 <script src="arcade-core.js"></script>
+<script src="score-bridge.js"></script>
+<script src="ui-kit.js"></script>
+<script src="fx-kit.js"></script>
 <script>
-/* Ion Rally — neon paddle duel. 1P vs adaptive CPU, or 2P (press 2). First to 7. */
+/* Ion Rally — neon paddle duel. 1P vs adaptive CPU, or 2P (press 2). First to 7.
+   Visual pass: baked synthwave backdrop + glass arena, energy-blade paddles with squash and afterimages,
+   comet ball that heats up with rally speed, reactive crowd lights, goal-zone flashes, animated score digits. */
 const A = Arcade;
 const W = 800, H = 480, TOP = 70, BOT = 432, PH = 80, PW = 14, R = 8, LX = 34, RX = W - 34 - PW, WIN = 7;
 let L, Rt, ball, trail, mode, sc, serveT, serveDir, level, rally, cpu, ripples;
+let scPop = [0, 0], edge = [0, 0], hitFlash = [0, 0], wallFlash = [0, 0], banner = null;
+
+/* ---------- baked art (drawn once, reused every frame) ---------- */
+function bgSprite() {
+  return Fx.bake('ion-bg', W, H, (c) => {
+    A.sky(c, W, H, ['#05031a', '#120a35', '#2b0e52', '#3d1060']);
+    for (let i = 0; i < 110; i++) {
+      const x = A.hash(i, 3) * W, y = A.hash(i, 9) * 54, s = A.hash(i, 5) * 1.3 + 0.4;
+      c.fillStyle = 'rgba(255,255,255,' + (0.25 + A.hash(i, 7) * 0.6).toFixed(2) + ')'; c.fillRect(x, y, s, s);
+    }
+    // moon glow
+    const mg = c.createRadialGradient(W * 0.82, 30, 2, W * 0.82, 30, 60);
+    mg.addColorStop(0, 'rgba(244,114,182,.55)'); mg.addColorStop(1, 'rgba(244,114,182,0)');
+    c.fillStyle = mg; c.fillRect(W * 0.82 - 60, 0, 120, 90);
+    // skyline
+    for (let x = 0; x < W;) {
+      const bw = 16 + A.hash(x, 1) * 28, bh = 8 + A.hash(x, 2) * 26;
+      c.fillStyle = '#0a0620'; c.fillRect(x, 56 - bh, bw, bh + 2);
+      for (let wy = 56 - bh + 4; wy < 52; wy += 6) for (let wx = x + 3; wx < x + bw - 3; wx += 6) {
+        const h = A.hash(wx, wy);
+        if (h > 0.72) { c.fillStyle = h > 0.88 ? 'rgba(249,168,212,.7)' : 'rgba(165,243,252,.65)'; c.fillRect(wx, wy, 2, 2); }
+      }
+      x += bw + 2;
+    }
+    // floor haze below the arena
+    const fg = c.createLinearGradient(0, BOT + 10, 0, H);
+    fg.addColorStop(0, 'rgba(34,211,238,.18)'); fg.addColorStop(1, 'rgba(10,6,32,.0)');
+    c.fillStyle = fg; c.fillRect(0, BOT + 10, W, H - BOT - 10);
+  });
+}
+function tableSprite() {
+  return Fx.bake('ion-table', W, BOT - TOP, (c, w, h) => {
+    c.fillStyle = A.vgrad(c, 0, h, ['#0a1b44', '#0c2658', '#081a3d']); c.fillRect(0, 0, w, h);
+    c.strokeStyle = 'rgba(103,232,249,.06)'; c.lineWidth = 1;
+    for (let x = 0; x <= w; x += 40) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke(); }
+    for (let y = 0; y <= h; y += 40) { c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke(); }
+    const sh = c.createLinearGradient(0, 0, w, h);
+    sh.addColorStop(0, 'rgba(255,255,255,.08)'); sh.addColorStop(0.45, 'rgba(255,255,255,0)'); sh.addColorStop(0.55, 'rgba(255,255,255,.03)'); sh.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = sh; c.fillRect(0, 0, w, h);
+    const gl = c.createLinearGradient(0, 0, 110, 0); gl.addColorStop(0, 'rgba(34,211,238,.30)'); gl.addColorStop(1, 'rgba(34,211,238,0)');
+    c.fillStyle = gl; c.fillRect(0, 0, 110, h);
+    const gr = c.createLinearGradient(w, 0, w - 110, 0); gr.addColorStop(0, 'rgba(244,114,182,.30)'); gr.addColorStop(1, 'rgba(244,114,182,0)');
+    c.fillStyle = gr; c.fillRect(w - 110, 0, 110, h);
+    c.strokeStyle = 'rgba(103,232,249,.14)'; c.lineWidth = 2; c.beginPath(); c.arc(w / 2, h / 2, 56, 0, A.TAU); c.stroke();
+    c.beginPath(); c.arc(w / 2, h / 2, 5, 0, A.TAU); c.fillStyle = 'rgba(103,232,249,.25)'; c.fill();
+  });
+}
 
 function resetMatch(G) {
   L = { x: LX, y: (TOP + BOT) / 2 - PH / 2, vy: 0 };
   Rt = { x: RX, y: (TOP + BOT) / 2 - PH / 2, vy: 0 };
   sc = [0, 0]; level = 1; rally = 0; trail = []; ripples = [];
+  scPop = [0, 0]; edge = [0, 0]; hitFlash = [0, 0]; wallFlash = [0, 0]; banner = null;
   cpu = { target: (TOP + BOT) / 2, err: 0, wait: 0 };
   serve(G, Math.random() < 0.5 ? 1 : -1);
 }
@@ -50,8 +111,12 @@ function pointScored(G, who) {
   sc[who]++;
   A.sfx('explode'); G.shake(10);
   const gx = who === 0 ? W - 10 : 10;
+  const col = who === 0 ? '#22d3ee' : '#f472b6';
   G.burst(gx, ball.y, 34, { color: who === 0 ? ['#22d3ee', '#a5f3fc'] : ['#f472b6', '#fbcfe8'], speed: 6, glow: true, life: 40, angle: who === 0 ? Math.PI : 0, spread: 1.2 });
-  G.ring(gx, ball.y, who === 0 ? '#22d3ee' : '#f472b6', 80);
+  G.ring(gx, ball.y, col, 80);
+  G.ring(gx, ball.y, '#fff', 46, 16);
+  scPop[who] = 1; edge[who === 0 ? 1 : 0] = 1;
+  banner = { text: (mode === 1 ? (who === 0 ? 'POINT!' : 'CPU SCORES') : (who === 0 ? 'LEFT SCORES' : 'RIGHT SCORES')), color: col, t: 0 };
   if (mode === 1 && who === 0) { G.addScore(100 + rally * 5); G.popup(W / 2, 150, 'POINT +' + (100 + rally * 5), '#fde68a', 22); }
   if (sc[who] >= WIN) {
     if (mode === 1) { G.addScore(500); return who === 0 ? G.win('You Win!', 'Final ' + sc[0] + ' – ' + sc[1]) : G.over('CPU Wins', 'Final ' + sc[0] + ' – ' + sc[1]); }
@@ -62,6 +127,7 @@ function pointScored(G, who) {
 }
 
 function paddleHit(G, p, dir) {
+  const idx = p === L ? 0 : 1;
   const off = A.clamp((ball.y - (p.y + PH / 2)) / (PH / 2), -1, 1);
   ball.sp = Math.min(11.5, ball.sp + 0.35);
   const ang = off * 1.05;
@@ -71,12 +137,24 @@ function paddleHit(G, p, dir) {
   A.sfx('blip'); G.freeze(2); G.shake(2 + ball.sp * 0.3);
   const col = dir > 0 ? '#22d3ee' : '#f472b6';
   G.burst(ball.x, ball.y, 10, { color: [col, '#fff'], speed: 3.5, glow: true, life: 24, angle: dir > 0 ? 0 : Math.PI, spread: 1 });
+  G.burst(ball.x, ball.y, 6, { color: '#fff', speed: 5, shape: 'l', life: 14, angle: dir > 0 ? 0 : Math.PI, spread: 0.9 });
   ripples.push({ x: ball.x, y: ball.y, t: 0, c: col });
+  hitFlash[idx] = 1;
+  Fx.squash.punch('pd' + idx, { sx: 1.5, sy: 0.92 });
   if (mode === 1 && dir > 0) G.addScore(10);
   if (rally > 0 && rally % 8 === 0) G.popup(W / 2, 120, 'Rally ' + rally + '!', '#fde68a', 20);
 }
 
+function wallHit(G, y, up) {
+  A.sfx('tick');
+  G.burst(ball.x, y, 5, { color: '#a5f3fc', speed: 2, glow: true, life: 16, angle: up ? Math.PI / 2 : -Math.PI / 2, spread: 0.8 });
+  wallFlash[up ? 0 : 1] = 1;
+}
+
 function update(G) {
+  Fx.update(1);
+  for (let i = 0; i < 2; i++) { scPop[i] *= 0.9; edge[i] = Math.max(0, edge[i] - 0.035); hitFlash[i] = Math.max(0, hitFlash[i] - 0.08); wallFlash[i] = Math.max(0, wallFlash[i] - 0.07); }
+  if (banner && ++banner.t > 60) banner = null;
   if (A.hit('Digit2') && mode !== 2) { mode = 2; resetMatch(G); G.score = 0; return; }
   if (A.hit('Digit1') && mode !== 1) { mode = 1; resetMatch(G); G.score = 0; return; }
   // paddles
@@ -101,60 +179,149 @@ function update(G) {
   }
   for (let s = 0; s < 2; s++) {
     ball.x += ball.vx / 2; ball.y += ball.vy / 2;
-    if (ball.y - R < TOP) { ball.y = TOP + R; ball.vy = Math.abs(ball.vy); A.sfx('tick'); G.burst(ball.x, TOP, 5, { color: '#a5f3fc', speed: 2, glow: true, life: 16, angle: Math.PI / 2, spread: 0.8 }); }
-    if (ball.y + R > BOT) { ball.y = BOT - R; ball.vy = -Math.abs(ball.vy); A.sfx('tick'); G.burst(ball.x, BOT, 5, { color: '#a5f3fc', speed: 2, glow: true, life: 16, angle: -Math.PI / 2, spread: 0.8 }); }
-    if (ball.vx < 0 && ball.x - R <= L.x + PW && ball.x + R >= L.x && ball.y > L.y - R * 0.6 && ball.y < L.y + PH + R * 0.6) { ball.x = L.x + PW + R; paddleHit(G, L, 1); }
-    if (ball.vx > 0 && ball.x + R >= Rt.x && ball.x - R <= Rt.x + PW && ball.y > Rt.y - R * 0.6 && ball.y < Rt.y + PH + R * 0.6) { ball.x = Rt.x - R; paddleHit(G, Rt, -1); }
+    if (ball.y - R < TOP) { ball.y = TOP + R; ball.vy = Math.abs(ball.vy); wallHit(G, TOP, true); }
+    if (ball.y + R > BOT) { ball.y = BOT - R; ball.vy = -Math.abs(ball.vy); wallHit(G, BOT, false); }
+    if (ball.vx < 0 && ball.x - R <= L.x + PW && ball.x >= L.x - 2 && ball.y > L.y - R * 0.6 && ball.y < L.y + PH + R * 0.6) { ball.x = L.x + PW + R; paddleHit(G, L, 1); }
+    if (ball.vx > 0 && ball.x + R >= Rt.x && ball.x <= Rt.x + PW + 2 && ball.y > Rt.y - R * 0.6 && ball.y < Rt.y + PH + R * 0.6) { ball.x = Rt.x - R; paddleHit(G, Rt, -1); }
     if (ball.x < 4) return pointScored(G, 1);
     if (ball.x > W - 4) return pointScored(G, 0);
   }
   trail.push({ x: ball.x, y: ball.y });
-  if (trail.length > 16) trail.shift();
+  if (trail.length > 22) trail.shift();
   for (const r of ripples) r.t++;
   ripples = ripples.filter((r) => r.t < 22);
   G.hudL = (mode === 1 ? 'YOU vs CPU' : '2 PLAYERS') + '  ·  first to ' + WIN;
 }
 
+/* ---------- drawing ---------- */
+const GLOW = { cool: 'rgba(103,232,249,.32)', warm: 'rgba(251,191,36,.32)', hot: 'rgba(251,113,133,.36)' };
+
+function drawPaddle(c, p, col, idx, t) {
+  const sq = Fx.squash.get('pd' + idx), hf = hitFlash[idx];
+  const cx = p.x + PW / 2, cy = p.y + PH / 2;
+  A.shadow(c, cx + 8, p.y + PH + 8, 14, 4, 0.3);
+  // afterimages while moving fast
+  if (Math.abs(p.vy) > 1.2) {
+    for (let k = 3; k >= 1; k--) {
+      c.save(); c.globalAlpha = 0.09 * (4 - k); c.fillStyle = col;
+      A.roundRect(c, p.x, p.y - p.vy * k * 1.8, PW, PH, 6); c.fill(); c.restore();
+    }
+  }
+  c.save();
+  c.translate(cx, cy); c.scale(sq.sx, sq.sy); c.translate(-cx, -cy);
+  // soft halo
+  Fx.glow(c, cx, cy, 52, idx === 0 ? 'rgba(34,211,238,.22)' : (mode === 2 ? 'rgba(244,114,182,.22)' : 'rgba(251,146,60,.22)'));
+  // depth side
+  c.fillStyle = A.shade(col, -0.45); A.roundRect(c, p.x + 5, p.y - 5, PW, PH, 6); c.fill();
+  // body
+  c.shadowColor = col; c.shadowBlur = 16 + hf * 18;
+  const g = c.createLinearGradient(p.x, 0, p.x + PW, 0);
+  g.addColorStop(0, A.shade(col, 0.35)); g.addColorStop(0.5, col); g.addColorStop(1, A.shade(col, -0.25));
+  c.fillStyle = g; A.roundRect(c, p.x, p.y, PW, PH, 6); c.fill();
+  c.shadowBlur = 0;
+  // energy core line, pulses and brightens on hit
+  c.fillStyle = 'rgba(255,255,255,' + (0.45 + hf * 0.5).toFixed(2) + ')';
+  A.roundRect(c, p.x + PW / 2 - 1.5, p.y + 6, 3, PH - 12, 2); c.fill();
+  // striking face light bar
+  const fx = idx === 0 ? p.x + PW - 3 : p.x;
+  c.fillStyle = 'rgba(255,255,255,' + (0.35 + hf * 0.6).toFixed(2) + ')'; c.fillRect(fx, p.y + 4, 3, PH - 8);
+  // travelling highlight
+  const hy = p.y + 8 + ((t * 0.9 + idx * 40) % (PH - 16));
+  c.fillStyle = 'rgba(255,255,255,.35)'; c.fillRect(p.x + 2, hy, PW - 4, 2);
+  c.restore();
+}
+
+function drawBall(c, t) {
+  const energy = A.clamp((ball.sp - 5) / 6.5, 0, 1);
+  const bucket = energy > 0.66 ? 'hot' : energy > 0.33 ? 'warm' : 'cool';
+  const core = energy > 0.66 ? '#fecdd3' : energy > 0.33 ? '#fde68a' : '#a5f3fc';
+  const rim = energy > 0.66 ? '#fb7185' : energy > 0.33 ? '#fbbf24' : '#22d3ee';
+  // comet ribbon
+  c.save(); c.globalCompositeOperation = 'lighter'; c.lineCap = 'round';
+  for (let i = 1; i < trail.length; i++) {
+    const k = i / trail.length;
+    c.strokeStyle = A.alpha(rim, k * 0.5); c.lineWidth = R * 2 * k * 0.95;
+    c.beginPath(); c.moveTo(trail[i - 1].x, trail[i - 1].y); c.lineTo(trail[i].x, trail[i].y); c.stroke();
+  }
+  c.restore();
+  Fx.glow(c, ball.x, ball.y, 38 + energy * 14, GLOW[bucket]);
+  A.shadow(c, ball.x + 7, ball.y + 11, R * 1.1, R * 0.5, 0.35);
+  c.save(); c.shadowColor = rim; c.shadowBlur = 20 + energy * 12;
+  const g = c.createRadialGradient(ball.x - 3, ball.y - 3, 1, ball.x, ball.y, R);
+  g.addColorStop(0, '#fff'); g.addColorStop(0.5, core); g.addColorStop(1, rim);
+  c.fillStyle = g; c.beginPath(); c.arc(ball.x, ball.y, R, 0, A.TAU); c.fill(); c.restore();
+  // spinning seam shows motion
+  c.save(); c.translate(ball.x, ball.y); c.rotate(t * 0.18 * (ball.vx >= 0 ? 1 : -1));
+  c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 1.5; c.beginPath(); c.arc(0, 0, R - 2.5, 0.3, 2.3); c.stroke(); c.restore();
+}
+
 function draw(G, c) {
-  const t = G.clock;
-  A.sky(c, W, H, ['#07051a', '#150b38', '#2a0f4d']);
-  A.grid3d(c, W, H, 56, t, 'rgba(244,114,182,.28)');
-  // table
-  c.fillStyle = A.vgrad(c, TOP, BOT, ['#0a1736', '#0c2350']); c.fillRect(0, TOP, W, BOT - TOP);
-  c.save(); c.shadowColor = '#22d3ee'; c.shadowBlur = 14;
+  const t = G.clock, still = Fx.reducedMotion('ion-rally');
+  const energy = A.clamp((ball.sp - 5) / 6.5, 0, 1);
+  c.drawImage(bgSprite(), 0, 0, W, H);
+  // twinkling highlights over baked stars
+  if (!still) for (let i = 0; i < 14; i++) {
+    const x = A.hash(i, 21) * W, y = A.hash(i, 22) * 52, a = 0.2 + 0.6 * Math.abs(Math.sin(t * 0.03 + i * 1.7));
+    c.fillStyle = 'rgba(255,255,255,' + a.toFixed(2) + ')'; c.fillRect(x, y, 1.6, 1.6);
+  }
+  A.grid3d(c, W, H, 56, still ? 0 : t, 'rgba(244,114,182,.28)');
+  // crowd lights
+  for (let i = 0; i < 40; i++) {
+    const x = 10 + i * (W - 20) / 39, pulse = 0.35 + 0.4 * Math.abs(Math.sin(t * 0.045 + i * 0.7)) + energy * 0.25;
+    const colr = i % 2 ? '244,114,182' : '34,211,238';
+    c.fillStyle = 'rgba(' + colr + ',' + A.clamp(pulse, 0, 1).toFixed(2) + ')'; c.fillRect(x - 2, TOP - 20, 4, 3);
+    c.fillRect(x - 2, BOT + 18, 4, 3);
+  }
+  // arena
+  c.drawImage(tableSprite(), 0, TOP, W, BOT - TOP);
+  // rails (glow scales with rally energy; flash where the ball just touched)
+  c.save(); c.shadowColor = energy > 0.5 ? '#fb7185' : '#22d3ee'; c.shadowBlur = 14 + energy * 14;
   A.block3d(c, 0, TOP - 12, W, 12, 6, '#155e75'); A.block3d(c, 0, BOT, W, 12, 6, '#155e75');
   c.restore();
-  c.strokeStyle = 'rgba(103,232,249,.35)'; c.lineWidth = 3; c.setLineDash([14, 14]); c.lineDashOffset = -t * 0.3;
+  if (wallFlash[0] > 0) { c.fillStyle = 'rgba(165,243,252,' + (wallFlash[0] * 0.5).toFixed(2) + ')'; c.fillRect(0, TOP - 3, W, 3); }
+  if (wallFlash[1] > 0) { c.fillStyle = 'rgba(165,243,252,' + (wallFlash[1] * 0.5).toFixed(2) + ')'; c.fillRect(0, BOT, W, 3); }
+  // centre line with flowing energy
+  c.strokeStyle = 'rgba(103,232,249,' + (0.3 + energy * 0.2).toFixed(2) + ')'; c.lineWidth = 3; c.setLineDash([14, 14]); c.lineDashOffset = still ? 0 : -t * 0.4;
   c.beginPath(); c.moveTo(W / 2, TOP); c.lineTo(W / 2, BOT); c.stroke(); c.setLineDash([]);
-  c.strokeStyle = 'rgba(103,232,249,.12)'; c.lineWidth = 2; c.beginPath(); c.arc(W / 2, (TOP + BOT) / 2, 56, 0, A.TAU); c.stroke();
-  // big scores
-  c.save(); c.globalAlpha = 0.28;
-  A.text(c, String(sc[0]), W / 2 - 90, 230, 110, '#22d3ee', 'center', '900');
-  A.text(c, String(sc[1]), W / 2 + 90, 230, 110, '#f472b6', 'center', '900');
-  c.restore();
-  for (const r of ripples) { c.strokeStyle = A.alpha(r.c, 1 - r.t / 22); c.lineWidth = 2; c.beginPath(); c.arc(r.x, r.y, 8 + r.t * 1.6, 0, A.TAU); c.stroke(); }
-  // trail
+  // goal-zone proximity glow + point flashes
   c.save(); c.globalCompositeOperation = 'lighter';
-  trail.forEach((p, i) => { c.fillStyle = 'rgba(165,243,252,' + (i / trail.length * 0.5) + ')'; c.beginPath(); c.arc(p.x, p.y, R * (0.35 + i / trail.length * 0.65), 0, A.TAU); c.fill(); });
+  const nearL = ball.vx < 0 ? A.clamp(1 - ball.x / 220, 0, 1) : 0, nearR = ball.vx > 0 ? A.clamp(1 - (W - ball.x) / 220, 0, 1) : 0;
+  const gl = c.createLinearGradient(0, 0, 150, 0); gl.addColorStop(0, 'rgba(34,211,238,' + (nearL * 0.35 + edge[0] * 0.8).toFixed(2) + ')'); gl.addColorStop(1, 'rgba(34,211,238,0)');
+  c.fillStyle = gl; c.fillRect(0, TOP, 150, BOT - TOP);
+  const gr = c.createLinearGradient(W, 0, W - 150, 0); gr.addColorStop(0, 'rgba(244,114,182,' + (nearR * 0.35 + edge[1] * 0.8).toFixed(2) + ')'); gr.addColorStop(1, 'rgba(244,114,182,0)');
+  c.fillStyle = gr; c.fillRect(W - 150, TOP, 150, BOT - TOP);
   c.restore();
-  // paddles
-  for (const [p, col] of [[L, '#22d3ee'], [Rt, mode === 2 ? '#f472b6' : '#fb923c']]) {
-    A.shadow(c, p.x + PW / 2 + 8, p.y + PH + 8, 14, 4, 0.3);
-    c.save(); c.shadowColor = col; c.shadowBlur = 18; A.block3d(c, p.x, p.y, PW, PH, 7, col); c.restore();
+  // big scores with pop
+  for (let i = 0; i < 2; i++) {
+    c.save(); c.globalAlpha = 0.26 + scPop[i] * 0.4;
+    const sx = W / 2 + (i ? 90 : -90), s = 1 + scPop[i] * 0.4;
+    c.translate(sx, 190); c.scale(s, s);
+    A.text(c, String(sc[i]), 0, 40, 110, i ? '#f472b6' : '#22d3ee', 'center', '900');
+    c.restore();
   }
-  // ball with floor shadow
-  A.shadow(c, ball.x + 7, ball.y + 11, R * 1.1, R * 0.5, 0.35);
-  c.save(); c.shadowColor = '#fff'; c.shadowBlur = 22;
-  const g = c.createRadialGradient(ball.x - 3, ball.y - 3, 1, ball.x, ball.y, R); g.addColorStop(0, '#fff'); g.addColorStop(1, '#67e8f9');
-  c.fillStyle = g; c.beginPath(); c.arc(ball.x, ball.y, R, 0, A.TAU); c.fill(); c.restore();
+  for (const r of ripples) { c.strokeStyle = A.alpha(r.c, 1 - r.t / 22); c.lineWidth = 2; c.beginPath(); c.arc(r.x, r.y, 8 + r.t * 1.6, 0, A.TAU); c.stroke(); }
+  drawPaddle(c, L, '#22d3ee', 0, t);
+  drawPaddle(c, Rt, mode === 2 ? '#f472b6' : '#fb923c', 1, t);
+  drawBall(c, t);
+  // serve countdown with pulsing ring
   if (serveT > 0 && G.state === 'playing') {
-    const n = Math.ceil(serveT / 33);
+    const n = Math.ceil(serveT / 33), ph = (serveT % 33) / 33;
+    c.save(); c.strokeStyle = A.alpha('#fde68a', ph * 0.8); c.lineWidth = 3; c.beginPath(); c.arc(W / 2, (TOP + BOT) / 2, 30 + (1 - ph) * 50, 0, A.TAU); c.stroke(); c.restore();
     A.glowText(c, String(n), W / 2, (TOP + BOT) / 2 - 40, 64, '#fde68a', 'center', 20);
   }
   if (rally > 3 && G.state === 'playing') A.text(c, 'RALLY ' + rally, W / 2, BOT - 14, 14, '#fde68a', 'center', '800', A.MONO);
+  if (G.state === 'playing' && (sc[0] === WIN - 1 || sc[1] === WIN - 1)) {
+    c.save(); c.globalAlpha = 0.55 + 0.4 * Math.sin(t * 0.12);
+    A.text(c, 'MATCH POINT', W / 2, TOP + 26, 14, '#fda4af', 'center', '800', A.MONO); c.restore();
+  }
+  if (banner) {
+    const k = banner.t / 60, a = k < 0.15 ? k / 0.15 : 1 - Math.max(0, (k - 0.6) / 0.4);
+    c.save(); c.globalAlpha = A.clamp(a, 0, 1); A.glowText(c, banner.text, W / 2, TOP + 70 - k * 14, 30, banner.color, 'center', 18); c.restore();
+  }
   A.text(c, mode === 1 ? 'Press 2 for two players' : 'Press 1 to play the CPU', W / 2, H - 12, 12, '#8b93b3', 'center', '600');
   if (mode === 1) A.text(c, 'CPU lv ' + level.toFixed(1), W - 150, 54, 13, '#fb923c', 'center', '800', A.MONO);
-  A.vignette(c, W, H, 0.3);
+  Fx.bloom(c, W, H, 0.45);
+  Fx.vignette(c, W, H, 0.34);
   G.drawFX(c);
 }
 

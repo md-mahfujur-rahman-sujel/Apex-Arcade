@@ -5,6 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Apex Arcade — 50 Retro Video Games, Board Games &amp; Puzzles</title>
     <meta name="description" content="Interactive 2.5D web arcade celebrating 50 legendary 2D games, tabletop classics, and brain puzzles with animated live previews, playable engines, and real-time telemetry." />
+    <meta name="theme-color" content="#08090e" />
+    <script src="/assets/aistudio/meta-config.js"></script>
+    <script src="/assets/aistudio/meta-kit.js"></script>
+    <script>
+      (() => {
+        let preference = 'system';
+        try {
+          const stored = localStorage.getItem('apex-arcade-theme');
+          if (stored === 'light' || stored === 'dark' || stored === 'system') preference = stored;
+        } catch { /* Use the system setting when storage is unavailable. */ }
+
+        const systemPrefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+        const theme = preference === 'system' ? (systemPrefersLight ? 'light' : 'dark') : preference;
+        const root = document.documentElement;
+        root.dataset.theme = theme;
+        root.style.colorScheme = theme;
+        document.querySelector('meta[name="theme-color"]').content = theme === 'light' ? '#f2f1ed' : '#08090e';
+      })();
+    </script>
+    <style>
+      ::selection { background-color: #06b6d4; color: #000; }
+      html[data-theme='light'] ::selection { background-color: #0e7490; color: #f8fafc; }
+    </style>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/apex-icon.svg" type="image/svg+xml" />
     <meta property="og:title" content="Apex Arcade — 50 Retro Video Games, Board Games &amp; Puzzles" />
     <meta property="og:description" content="Interactive 2.5D web arcade celebrating 50 legendary 2D games, tabletop classics, and brain puzzles with animated live previews, playable engines, and real-time telemetry." />
     <meta property="og:type" content="website" />
@@ -13,9 +38,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   </head>
-  <body class="bg-[#08090E] text-slate-100 antialiased selection:bg-cyan-500 selection:text-black">
+  <body class="bg-[#08090E] text-slate-100 antialiased">
     <div id="root"></div>
-    <script src="/assets/aistudio/card-scenes.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

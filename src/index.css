@@ -1,8 +1,89 @@
 @import "tailwindcss";
 
-@theme {
+@theme inline {
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
+  --color-apex-ink: var(--bg);
+  --color-apex-panel: var(--surface);
+  --color-apex-elevated: var(--surface-2);
+  --color-apex-accent: var(--accent);
+  --color-apex-text: var(--fg);
+  --color-apex-muted: var(--fg-muted);
+  --color-apex-line: var(--line);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-card: var(--card);
+  --color-sunken: var(--sunken);
+  --color-stage: var(--stage);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --shadow-card: var(--apex-shadow-card);
+  --shadow-pop: var(--apex-shadow-pop);
+}
+
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #08090e;
+  --surface: #0d111d;
+  --surface-2: #131826;
+  --card: #0f1322;
+  --sunken: #080b14;
+  --stage: #070912;
+  --line: rgb(255 255 255 / 10%);
+  --line-strong: rgb(255 255 255 / 18%);
+  --fg: #f1f5f9;
+  --fg-muted: #94a3b8;
+  --fg-subtle: #64748b;
+  --accent: #22d3ee;
+  --accent-hover: #67e8f9;
+  --accent-fg: #06222b;
+  --accent-soft: rgb(34 211 238 / 12%);
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #fb7185;
+  --apex-shadow-card: 0 12px 28px rgb(0 0 0 / 35%);
+  --apex-shadow-pop: 0 20px 50px -12px rgb(0 0 0 / 60%);
+  --apex-radius-card: 1rem;
+  --apex-radius-control: 0.625rem;
+  --apex-motion-fast: 140ms;
+  --apex-motion-standard: 200ms;
+  --apex-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+html[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f2f1ed;
+  --surface: #f8f7f3;
+  --surface-2: #eeede8;
+  --card: #fffdf9;
+  --sunken: #e7e5de;
+  --stage: #0b1020;
+  --line: #d8ddd8;
+  --line-strong: #c4cbc6;
+  --fg: #202a3b;
+  --fg-muted: #58677f;
+  --fg-subtle: #7a8699;
+  --accent: #0e7490;
+  --accent-hover: #155e75;
+  --accent-fg: #f8fafc;
+  --accent-soft: rgb(14 116 144 / 10%);
+  --success: #15803d;
+  --warning: #b45309;
+  --danger: #be123c;
+  --apex-shadow-card: 0 1px 2px rgb(31 41 55 / 6%), 0 8px 20px rgb(31 41 55 / 8%);
+  --apex-shadow-pop: 0 20px 50px -12px rgb(31 41 55 / 28%);
 }
 
 @layer base {
@@ -12,8 +93,8 @@
   }
   body {
     font-family: var(--font-sans);
-    background-color: #08090e;
-    color: #f1f5f9;
+    background-color: var(--color-apex-ink);
+    color: var(--color-apex-text);
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -21,20 +102,123 @@
   }
 }
 
+/* Component exceptions preserve dark preview stages and authored game visuals. */
+
+html[data-theme='light'] [data-card-preview] {
+  border-color: #d8ddd8 !important;
+  background: var(--stage) !important;
+}
+
+html[data-theme='light'] [data-card-scene] {
+  /* Every hand-authored scene assumes a dark display stage for transparent
+     regions, white highlights, particle trails, and small HUD lettering. */
+  background: radial-gradient(circle at 50% 0%, #1e293b 0%, #0b1020 72%) !important;
+}
+
+html[data-theme='light'] [data-card-scene-grid] {
+  opacity: .4 !important;
+}
+
+html[data-theme='light'] [data-card-scene-canvas] {
+  /* Scene palettes are hand-authored per game. Do not wash their pixels through
+     a global light-mode filter; this preserves every game's outlines and HUD. */
+  opacity: 1 !important;
+  filter: none;
+  /* Match the native dark-theme card framing: visual action fills the viewport. */
+  object-fit: cover !important;
+  image-rendering: auto;
+}
+
+html[data-theme='light'] [data-card-scene-category] {
+  background: rgb(255 253 249 / 88%) !important;
+  border-color: rgb(31 41 55 / 12%) !important;
+  box-shadow: 0 2px 7px rgb(31 41 55 / 10%);
+}
+
+html[data-theme='light'] [data-card-scene-category] span:last-child,
+html[data-theme='light'] [data-card-scene-year] {
+  color: #496171 !important;
+}
+
+html[data-theme='light'] [data-card-scene-number] {
+  opacity: .32 !important;
+}
+
+html[data-theme='light'] [data-recommendation-card] {
+  border-color: #d8ddd8 !important;
+  background: #fffdf9 !important;
+  box-shadow: 0 7px 18px rgb(31 41 55 / 7%);
+}
+
+html[data-theme='light'] [data-recommendation-card]:hover {
+  border-color: #6da4ad !important;
+  box-shadow: 0 13px 26px rgb(15 118 110 / 12%);
+}
+
+html[data-theme='light'] [data-recommendation-preview] {
+  background:
+    radial-gradient(circle at 78% 36%, color-mix(in srgb, var(--game-accent) 24%, transparent) 0%, transparent 39%),
+    linear-gradient(135deg, #eef5f2 0%, #f9f2e8 100%) !important;
+  border-bottom: 1px solid #d8ddd8;
+  filter: none;
+}
+
+html[data-theme='light'] [data-recommendation-body] {
+  background: #fffdf9;
+}
+
+html[data-theme='light'] [data-recommendation-title] {
+  color: #1f3342 !important;
+}
+
+html[data-theme='light'] [data-recommendation-meta] {
+  color: #69788a !important;
+}
+
+html[data-theme='light'] [data-daily-card] {
+  border-color: #ead9b6 !important;
+  background: linear-gradient(145deg, #fffaf0, #f7eedf) !important;
+  box-shadow: 0 8px 20px rgb(126 85 16 / 9%);
+}
+
+html[data-theme='light'] [data-card-difficulty] {
+  color: var(--accent) !important;
+}
+
+html[data-theme='light'] [data-game-action] {
+  background-color: var(--accent) !important;
+  color: var(--accent-fg) !important;
+}
+
+html[data-theme='light'] [data-profile-avatar] {
+  border-color: var(--line) !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 80%), 0 5px 12px rgb(14 116 144 / 11%);
+  color: var(--accent) !important;
+}
+
+/* The hero preview stage stays dark in both themes: scenes are authored for a dark backdrop. */
+html[data-theme='light'] [data-hero-stage] {
+  background: #0b1020 !important;
+}
+
 /* Custom subtle scrollbars */
+html {
+  scrollbar-color: color-mix(in srgb, var(--color-apex-muted) 45%, var(--color-apex-ink)) var(--color-apex-ink);
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #08090e;
+  background: var(--color-apex-ink);
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
+  background: color-mix(in srgb, var(--color-apex-muted) 20%, var(--color-apex-ink));
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: color-mix(in srgb, var(--color-apex-muted) 38%, var(--color-apex-ink));
 }
 
 /* Hide scrollbar utility for clean mobile horizontal scroll strips */
@@ -54,4 +238,90 @@
 }
 .backface-hidden {
   backface-visibility: hidden;
+}
+
+/* Full-bleed theater controls stay clear of phone cutouts and home indicators. */
+.safe-area-top { padding-top: max(0.5rem, env(safe-area-inset-top)); }
+.safe-area-bottom { padding-bottom: max(0.5rem, env(safe-area-inset-bottom)); }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@media (orientation: landscape) and (max-width: 639px) {
+  .portrait-tip { display: none; }
+}
+
+/* Keep native theater controls aligned with the intentionally dark theater UI. */
+[data-theater] {
+  color-scheme: dark;
+}
+
+[data-theater] button {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+
+[data-theater] button:not(:disabled) {
+  cursor: pointer;
+  transition: filter 140ms ease, transform 140ms ease;
+}
+
+[data-theater] button:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+
+[data-theater] button:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+[data-theater] button:disabled {
+  cursor: not-allowed;
+}
+
+#playable-theater-stage { isolation: isolate; background: #05060d; }
+#playable-theater-modal[data-ambient-glow="true"] #playable-theater-stage {
+  box-shadow: inset 0 0 96px 12px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+#playable-theater-modal[data-crt="true"] #playable-theater-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, transparent 0 3px, rgb(0 0 0 / 20%) 4px);
+}
+#playable-theater-modal[data-pixel-perfect="true"] #playable-theater-stage iframe,
+#playable-theater-modal[data-pixel-perfect="true"] #playable-theater-stage canvas {
+  image-rendering: pixelated;
+}
+#playable-theater-modal[data-crt="true"] #playable-theater-stage canvas {
+  filter: contrast(1.08) saturate(1.08);
+}
+
+[data-theater] :where(button, a, input, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  :where(button, a, input, select, [tabindex]):focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px;
+    box-shadow: none !important;
+  }
+
+  :where(button, input, select) {
+    border-color: ButtonText;
+  }
+
+  html {
+    scrollbar-color: auto;
+  }
 }
