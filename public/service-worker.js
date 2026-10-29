@@ -1,4 +1,5 @@
-const CACHE_NAME = 'apex-arcade-v1';
+const CACHE_NAME = 'apex-arcade-v2';
+const BASE_PATH = new URL('.', self.location.href).pathname;
 const GAME_FILES = [
   '01-flappy-bird.html', '02-pong.html', '03-snake.html', '04-space-invaders.html', '05-tetris.html',
   '06-pac-man.html', '07-asteroids.html', '08-mario.html', '09-mario-world.html', '10-sonic.html',
@@ -11,17 +12,27 @@ const GAME_FILES = [
   '40-mini-golf.html', '41-soccer-pool.html', '42-2048.html', '43-sudoku.html', '44-minesweeper.html',
   '45-sliding-puzzle.html', '46-nuts-bolts.html', '47-colour-sort.html', '48-fruit-merge.html',
   '49-table-tennis.html', '50-mahjong.html',
-].map((file) => `/assets/aistudio/${file}`);
+].map((file) => `${BASE_PATH}assets/aistudio/${file}`);
 const GAME_KITS = [
   'perf-kit.js', 'arcade-core.js', 'board-kit.js', 'board-art.js', 'save-kit.js', 'score-bridge.js',
   'fx-kit.js', 'ui-kit.js', 'music-kit.js', 'card-scenes.js',
-].map((file) => `/assets/aistudio/${file}`);
-const APP_SHELL = ['/', '/manifest.webmanifest', '/apex-icon.svg'];
+].map((file) => `${BASE_PATH}assets/aistudio/${file}`);
+const APP_SHELL = [BASE_PATH, `${BASE_PATH}manifest.webmanifest`, `${BASE_PATH}apex-icon.svg`];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll([...APP_SHELL, ...GAME_FILES, ...GAME_KITS]))
+      .then(async (cache) => {
+        await cache.addAll(APP_SHELL);
+        const shell = await cache.match(BASE_PATH);
+        if (!shell) throw new Error('Apex Arcade shell could not be cached.');
+        const html = await shell.text();
+        const builtAssets = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
+          .map((match) => new URL(match[1], self.location.origin))
+          .filter((url) => url.origin === self.location.origin && url.pathname.startsWith(`${BASE_PATH}assets/`))
+          .map((url) => `${url.pathname}${url.search}`);
+        await cache.addAll([...new Set([...GAME_FILES, ...GAME_KITS, ...builtAssets])]);
+      })
       .then(() => self.skipWaiting()),
   );
 });
@@ -46,12 +57,12 @@ self.addEventListener('fetch', (event) => {
           if (response.ok) caches.open(CACHE_NAME).then((cache) => cache.put(request, response.clone()));
           return response;
         })
-        .catch(async () => (await caches.match(request)) || (await caches.match(`${url.origin}${url.pathname}`)) || (await caches.match('/'))),
+        .catch(async () => (await caches.match(request)) || (await caches.match(`${url.origin}${url.pathname}`)) || (await caches.match(BASE_PATH))),
     );
     return;
   }
 
-  if (url.pathname.startsWith('/assets/') || APP_SHELL.includes(url.pathname)) {
+  if (url.pathname.startsWith(`${BASE_PATH}assets/`) || APP_SHELL.includes(url.pathname)) {
     event.respondWith(
       caches.match(request).then(async (cached) => {
         if (cached) return cached;
