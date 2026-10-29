@@ -209,7 +209,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     sessionStartRef.current = Date.now();
     audio.playClick();
     if (viewMode === 'classic' && iframeRef.current) {
-      iframeRef.current.src = `${game.htmlPath}?diff=${difficulty}&level=${Math.max(1, Math.floor(startLevel))}${startSeed === undefined ? '' : `&seed=${Math.floor(startSeed)}`}&r=${Date.now()}`;
+      iframeRef.current.src = `${import.meta.env.BASE_URL}${game.htmlPath.replace(/^\/+/, '')}?diff=${difficulty}&level=${Math.max(1, Math.floor(startLevel))}${startSeed === undefined ? '' : `&seed=${Math.floor(startSeed)}`}&r=${Date.now()}`;
     }
   };
 
@@ -459,7 +459,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
 
             {game.htmlPath && (
               <a
-                href={game.htmlPath}
+                href={`${import.meta.env.BASE_URL}${game.htmlPath.replace(/^\/+/, '')}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="p-1.5 sm:p-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
@@ -562,7 +562,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
             renderEngine()
           ) : game.htmlPath ? (
             <div className="w-full h-full flex-1 flex flex-col items-center justify-center">
-              <iframe ref={iframeRef} src={`${game.htmlPath}?diff=${difficulty}&level=${Math.max(1, Math.floor(startLevel))}${startSeed === undefined ? '' : `&seed=${Math.floor(startSeed)}`}`} title={game.title} className={`w-full h-full min-h-[320px] rounded-none sm:rounded-xl border-0 sm:border border-white/10 bg-black shadow-2xl ${isPaused ? 'pointer-events-none' : ''}`} allow="gamepad; fullscreen; autoplay; clipboard-write; focus-without-user-activation" tabIndex={0} onLoad={() => {
+              <iframe ref={iframeRef} src={`${import.meta.env.BASE_URL}${game.htmlPath.replace(/^\/+/, '')}?diff=${difficulty}&level=${Math.max(1, Math.floor(startLevel))}${startSeed === undefined ? '' : `&seed=${Math.floor(startSeed)}`}`} title={game.title} className={`w-full h-full min-h-[320px] rounded-none sm:rounded-xl border-0 sm:border border-white/10 bg-black shadow-2xl ${isPaused ? 'pointer-events-none' : ''}`} allow="gamepad; fullscreen; autoplay; clipboard-write; focus-without-user-activation" tabIndex={0} onLoad={() => {
                 try {
                   const frame = iframeRef.current;
                   frame?.focus(); frame?.contentWindow?.focus();

@@ -6,6 +6,6 @@ export function prefetchGameDocument(path: string): void {
   const link = document.createElement('link');
   link.rel = 'prefetch';
   link.as = 'document';
-  link.href = path;
+  link.href = `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`;
   document.head.appendChild(link);
 }

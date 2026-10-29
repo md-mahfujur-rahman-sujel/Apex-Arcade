@@ -2,14 +2,14 @@
   "name": "Apex Arcade",
   "short_name": "Apex Arcade",
   "description": "A 50-game arcade of retro games, board classics, and puzzles.",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#08090e",
   "theme_color": "#08090e",
   "icons": [
     {
-      "src": "/apex-icon.svg",
+      "src": "./apex-icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"

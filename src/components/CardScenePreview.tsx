@@ -16,7 +16,7 @@ export function loadCardScenes(): Promise<void> {
   if (!cardScenesPromise) {
     cardScenesPromise = new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = '/assets/aistudio/card-scenes.js';
+      script.src = `${import.meta.env.BASE_URL}assets/aistudio/card-scenes.js`;
       script.async = true;
       script.onload = () => resolve();
       script.onerror = () => {
