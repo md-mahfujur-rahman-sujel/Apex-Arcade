@@ -60,7 +60,9 @@
 <script src="score-bridge.js"></script>
 <script src="ui-kit.js"></script>
 <script src="board-art.js"></script>
+<script src="fx-kit.js"></script>
 <script src="music-kit.js"></script>
+<script src="menu-kit.js"></script>
 <script>
 const ui = Board.shell({
   id: 'tic-tac-toe', cpu: true, title: 'Tic-Tac-Toe', subtitle: 'Line up three marks — can you beat the unbeatable computer?',
@@ -283,7 +285,7 @@ function play(i, fromCpu = false) {
     if (w && window.BoardArt) BoardArt.celebrate(bd, { color: w.p === 'x' ? '#32d5ef' : '#ffbd4a' });
     const t = !w ? 'Draw' : mode === 'two' ? over : w.p === mode ? 'You won!' : 'Computer wins';
     if (w) Board.sfx(mode === 'two' || w.p === mode ? 'win' : 'lose');
-    setTimeout(() => Board.modal(t, over, [['New game', newGame], ['Close']]), 650);
+    Board.after(650, () => Board.modal(t, over, [['New game', newGame], ['Close']]));
   } else cpu();
 }
 function announceAchievement(id, label) {
@@ -294,7 +296,7 @@ function announceAchievement(id, label) {
   let toast = document.getElementById('tt-achievement');
   if (!toast) { toast = document.createElement('div'); toast.id = 'tt-achievement'; toast.className = 'achievement-toast'; document.body.appendChild(toast); }
   toast.innerHTML = `Achievement unlocked: ${label}<small>${id.replace(/-/g, ' ')}</small>`;
-  clearTimeout(toast._timer); toast._timer = setTimeout(() => toast.remove(), 3000);
+  if (toast._timer) Board.cancel(toast._timer); toast._timer = Board.after(3000, () => toast.remove());
 }
 function recordMatch(w) {
   const saved = readSave(), old = saved.stats.ticTacToe || { x: 0, o: 0, draws: 0, wins: 0, losses: 0, streak: 0, bestStreak: 0 };
@@ -348,14 +350,14 @@ function undo() {
   for (const i of kept) applyMove(i);
   gen++; render(); cpu();
 }
-function resumeMatch() { const dialog = document.getElementById('bk-dlg'); if (dialog?.open) dialog.close(); paused = false; $('#pause').textContent = 'Pause'; render(); if (!over && !human()) cpu(); }
+function resumeMatch() { const dialog = document.getElementById('bk-dlg'); if (dialog?.open) dialog.close(); paused = false; Board.setPaused(false); $('#pause').textContent = 'Pause'; render(); if (!over && !human()) cpu(); }
 function togglePause() {
   if (paused) { const dialog = document.getElementById('bk-dlg'); if (dialog?.open) dialog.close(); resumeMatch(); return; }
   if (over) return;
   // Invalidate a pending CPU timer/search; resumeMatch starts it again if needed.
   if (busy) { gen++; busy = false; render(); }
-  paused = true; $('#pause').textContent = 'Resume';
-  Board.modal('Paused', 'Your match is safe. Resume when you are ready.', [['Resume', resumeMatch], ['New game', newGame]]);
+  paused = true; Board.setPaused(true); $('#pause').textContent = 'Resume';
+  if (!window.__apexTheaterEmbedded) Board.modal('Paused', 'Your match is safe. Resume when you are ready.', [['Resume', resumeMatch], ['New game', newGame]]);
   const dialog = document.getElementById('bk-dlg');
   if (dialog) dialog.addEventListener('cancel', (event) => { event.preventDefault(); resumeMatch(); }, { once: true });
 }
@@ -371,13 +373,108 @@ $('#rs').onclick = () => {
   render();
 };
 document.addEventListener('keydown', (e) => {
-  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (window.ApexMenuActive || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.toLowerCase(); if (k === 'escape') { e.preventDefault(); togglePause(); return; } if (paused) return;
   if (k === 'n') newGame(); else if (k === 'u') undo();
   else if (k >= '1' && k <= '9') go(KEY2IDX[+k]);
 });
 syncContractLevel();
 newGame();
+window.ApexMenuActive = true;
+Board.setSfxVolume((Save.load(GAME_ID).settings || {}).sfxVol);
+Board.setDifficulty((Save.load(GAME_ID).settings || {}).difficulty || Board.difficulty());
+
+function ticTacToeMenuScene(c, frame) {
+  const w = frame.width, h = frame.height, t = frame.time;
+  const bg = c.createLinearGradient(0, 0, w, h);
+  bg.addColorStop(0, '#111923'); bg.addColorStop(0.55, '#172630'); bg.addColorStop(1, '#0d1721');
+  c.fillStyle = bg; c.fillRect(0, 0, w, h);
+  const glow = c.createRadialGradient(w * 0.76, h * 0.48, 0, w * 0.76, h * 0.48, Math.max(w, h) * 0.55);
+  glow.addColorStop(0, 'rgba(103,232,249,.13)'); glow.addColorStop(1, 'rgba(17,25,35,0)'); c.fillStyle = glow; c.fillRect(0, 0, w, h);
+  const paperW = Math.min(w * 0.42, h * 0.54), paperH = paperW, px = w * 0.72 - paperW / 2, py = h * 0.48 - paperH / 2;
+  c.save(); c.translate(px + paperW / 2, py + paperH / 2); c.rotate(-0.035); c.translate(-paperW / 2, -paperH / 2);
+  c.shadowColor = 'rgba(0,0,0,.4)'; c.shadowBlur = 25; c.shadowOffsetY = 12;
+  c.fillStyle = '#e8dfc9'; c.fillRect(0, 0, paperW, paperH); c.shadowColor = 'transparent';
+  c.strokeStyle = 'rgba(29,52,62,.19)'; c.lineWidth = 1;
+  for (let y = 18; y < paperH; y += 22) { c.beginPath(); c.moveTo(0, y); c.lineTo(paperW, y); c.stroke(); }
+  c.strokeStyle = 'rgba(29,52,62,.62)'; c.lineWidth = Math.max(2, paperW * 0.012);
+  const pad = paperW * 0.15, cell = paperW * 0.23;
+  for (let i = 1; i <= 2; i++) { const p = pad + cell * i; c.beginPath(); c.moveTo(p, pad); c.lineTo(p, paperW - pad); c.moveTo(pad, p); c.lineTo(paperW - pad, p); c.stroke(); }
+  c.strokeStyle = '#13b8cf'; c.lineWidth = Math.max(3, paperW * 0.023); c.lineCap = 'round';
+  c.beginPath(); c.moveTo(pad + 10, pad + 10); c.lineTo(pad + cell - 10, pad + cell - 10); c.moveTo(pad + cell - 10, pad + 10); c.lineTo(pad + 10, pad + cell - 10); c.stroke();
+  c.strokeStyle = '#d99218'; c.beginPath(); c.arc(pad + cell * 1.5, pad + cell * 1.5, cell * 0.32 + Math.sin(t * 0.001) * 1.2, 0, Math.PI * 2); c.stroke();
+  c.restore();
+  // A small pencil rests outside the score sheet, away from menu labels.
+  c.save(); c.translate(w * 0.93, h * 0.78); c.rotate(-0.58); c.fillStyle = '#e0b86d'; c.fillRect(-4, -h * 0.12, 8, h * 0.24); c.fillStyle = '#263844'; c.fillRect(-4, -h * 0.12, 8, 8); c.fillStyle = '#f3dfb5'; c.beginPath(); c.moveTo(-4, h * 0.12); c.lineTo(4, h * 0.12); c.lineTo(0, h * 0.145); c.closePath(); c.fill(); c.restore();
+}
+
+function menuSelect(id, value) {
+  const control = document.getElementById(id);
+  if (!control || control.value === value) return;
+  control.value = value;
+  control.dispatchEvent(new Event('change', { bubbles: true }));
+}
+function menuChoice(doc, label, controlId, value) {
+  const button = doc.createElement('button'), control = document.getElementById(controlId);
+  button.type = 'button'; button.className = 'apex-menu-control-button'; button.textContent = label;
+  button.dataset.menuControl = controlId; button.dataset.menuValue = value;
+  button.setAttribute('aria-pressed', String(!!control && control.value === value));
+  button.addEventListener('click', function () {
+    menuSelect(controlId, value);
+    Array.from(button.parentNode.querySelectorAll('[data-menu-control="' + controlId + '"]')).forEach(function (choice) { choice.setAttribute('aria-pressed', String(choice === button)); });
+  });
+  return button;
+}
+const ticTacToeMenu = Menu.mount({
+  gameId: GAME_ID, title: 'Tic-Tac-Toe', tagline: 'A pencil-drawn challenge for the cafe table.',
+  archetype: 'paper', items: ['play', 'modes', 'options', 'about', 'stats', 'exit'],
+  theme: {
+    frame: 'notebook-rule', button: 'paper-banner',
+    palette: { bg: '#111923', panel: '#172630', accent: '#67e8f9', button: '#f3dfb5', buttonText: '#18242b', text: '#f5f7fa' },
+    type: { title: 'system-ui, sans-serif', body: 'system-ui, sans-serif' },
+    scene: ticTacToeMenuScene, sceneFallback: ticTacToeMenuScene,
+    music: { tempo: 72, root: 48, scale: 'pentatonic', layers: ['pad', 'lead'] },
+    sfx: { hover: 'click', select: 'place', back: 'click' }
+  },
+  options: { difficulty: Board.difficulty() },
+  onSettingChange: function (key, value) { if (key === 'difficulty') Board.setDifficulty(value); },
+  onPlay: function () {
+    window.ApexMenuActive = false;
+    const help = document.getElementById('bk-help'); if (help) help.open = false;
+    Music.play(MUSIC);
+  },
+  onPause: function (shouldPause) {
+    if (shouldPause && !paused) togglePause();
+    if (shouldPause) { const dialog = document.getElementById('bk-dlg'); if (dialog?.open) dialog.close(); }
+    if (!shouldPause && paused) resumeMatch();
+  },
+  onRestart: function () { newGame(); },
+  screens: {
+    modes: function (view) {
+      const doc = view.panel.ownerDocument, heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Choose a format'; view.panel.appendChild(heading);
+      const note = doc.createElement('p'); note.className = 'apex-menu-tagline'; note.textContent = 'Pick the board and who you play. Your choice is ready when you press Play.'; view.panel.appendChild(note);
+      const formatLabel = doc.createElement('p'); formatLabel.className = 'apex-menu-caption'; formatLabel.textContent = 'BOARD FORMAT'; view.panel.appendChild(formatLabel);
+      const formats = doc.createElement('div'); formats.className = 'apex-menu-choice-list'; view.panel.appendChild(formats);
+      [['Classic 3×3', 'classic'], ['Four in a row · 4×4', 'four'], ['Ultimate', 'ultimate']].forEach(function (item) { formats.appendChild(menuChoice(doc, item[0], 'format', item[1])); });
+      const playLabel = doc.createElement('p'); playLabel.className = 'apex-menu-caption'; playLabel.textContent = 'PLAY STYLE'; view.panel.appendChild(playLabel);
+      const playStyles = doc.createElement('div'); playStyles.className = 'apex-menu-choice-list'; view.panel.appendChild(playStyles);
+      [['Play as X', 'x'], ['Play as O', 'o'], ['Two players', 'two']].forEach(function (item) { playStyles.appendChild(menuChoice(doc, item[0], 'mode', item[1])); });
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    },
+    about: function (view) {
+      const doc = view.panel.ownerDocument, heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'How to play'; view.panel.appendChild(heading);
+      const rules = doc.createElement('p'); rules.className = 'apex-menu-tagline'; rules.textContent = 'Line up three marks on Classic, four on the 4×4 board, or win linked boards in Ultimate. Play against the computer or choose Two Players.'; view.panel.appendChild(rules);
+      const controls = doc.createElement('p'); controls.className = 'apex-menu-tagline'; controls.textContent = 'Click or tap a square, or press 1–9 using the displayed numpad layout. U undo · N new match · H help · M mute.'; view.panel.appendChild(controls);
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    },
+    stats: function (view) {
+      const doc = view.panel.ownerDocument, record = (readSave().stats.ticTacToe || {}), heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Match records'; view.panel.appendChild(heading);
+      const summary = doc.createElement('p'); summary.className = 'apex-menu-tagline'; summary.textContent = 'Matches: ' + (record.rounds || 0) + ' · Wins: ' + (record.wins || 0) + ' · Losses: ' + (record.losses || 0) + ' · Draws: ' + (record.draws || 0); view.panel.appendChild(summary);
+      const streak = doc.createElement('p'); streak.className = 'apex-menu-tagline'; streak.textContent = 'Current streak: ' + (record.streak || 0) + ' · Best streak: ' + (record.bestStreak || 0); view.panel.appendChild(streak);
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    }
+  }
+});
 </script>
 </body>
 </html>

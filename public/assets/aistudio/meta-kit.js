@@ -23,6 +23,87 @@
     { id: 'glowmoth:nebula-trail', gameId: 'glowmoth', slot: 'trail', name: 'Nebula Trail', rarity: 'epic', cost: 600 },
     { id: 'glowmoth:crystal-garden', gameId: 'glowmoth', slot: 'theme', name: 'Crystal Garden', rarity: 'rare', cost: 250 },
     { id: 'glowmoth:deep-night', gameId: 'glowmoth', slot: 'theme', name: 'Deep Night', rarity: 'common', cost: 100 },
+    { id: 'prism-stack:ion-blocks', gameId: 'prism-stack', slot: 'skin', name: 'Ion Blocks', rarity: 'common', cost: 100 },
+    { id: 'prism-stack:glass-blocks', gameId: 'prism-stack', slot: 'skin', name: 'Glass Blocks', rarity: 'rare', cost: 250 },
+    { id: 'prism-stack:forged-blocks', gameId: 'prism-stack', slot: 'skin', name: 'Forged Blocks', rarity: 'epic', cost: 600 },
+    { id: 'prism-stack:soft-blocks', gameId: 'prism-stack', slot: 'skin', name: 'Soft Blocks', rarity: 'common', cost: 100 },
+    { id: 'prism-stack:aurora-palette', gameId: 'prism-stack', slot: 'palette', name: 'Aurora Spectrum', rarity: 'common', cost: 100 },
+    { id: 'prism-stack:ember-palette', gameId: 'prism-stack', slot: 'palette', name: 'Ember Spectrum', rarity: 'rare', cost: 250 },
+    { id: 'prism-stack:mono-palette', gameId: 'prism-stack', slot: 'palette', name: 'Monochrome Marks', rarity: 'rare', cost: 250 },
+    { id: 'prism-stack:solar-palette', gameId: 'prism-stack', slot: 'palette', name: 'Solar Spectrum', rarity: 'epic', cost: 600 },
+    { id: 'prism-stack:cyan-ghost', gameId: 'prism-stack', slot: 'trail', name: 'Cyan Ghost', rarity: 'common', cost: 100 },
+    { id: 'prism-stack:prism-ghost', gameId: 'prism-stack', slot: 'trail', name: 'Prism Ghost', rarity: 'rare', cost: 250 },
+    { id: 'prism-stack:gold-ghost', gameId: 'prism-stack', slot: 'trail', name: 'Gold Ghost', rarity: 'epic', cost: 600 },
+    { id: 'prism-stack:deep-space', gameId: 'prism-stack', slot: 'theme', name: 'Deep Space', rarity: 'common', cost: 100 },
+    { id: 'prism-stack:violet-grid', gameId: 'prism-stack', slot: 'theme', name: 'Violet Grid', rarity: 'rare', cost: 250 },
+    { id: 'prism-stack:mint-grid', gameId: 'prism-stack', slot: 'theme', name: 'Mint Grid', rarity: 'epic', cost: 600 },
+    { id: 'prism-stack:crystal-grid', gameId: 'prism-stack', slot: 'theme', name: 'Crystal Grid', rarity: 'rare', cost: 250 },
+    { id: 'starfall-rift:ship-aurora', gameId: 'starfall-rift', slot: 'skin', name: 'Aurora Craft', rarity: 'common', cost: 100 },
+    { id: 'starfall-rift:ship-solar', gameId: 'starfall-rift', slot: 'skin', name: 'Solar Craft', rarity: 'rare', cost: 250 },
+    { id: 'starfall-rift:ship-jade', gameId: 'starfall-rift', slot: 'skin', name: 'Jade Craft', rarity: 'rare', cost: 250 },
+    { id: 'starfall-rift:ship-violet', gameId: 'starfall-rift', slot: 'skin', name: 'Violet Craft', rarity: 'epic', cost: 600 },
+    { id: 'starfall-rift:mint-spectrum', gameId: 'starfall-rift', slot: 'palette', name: 'Mint Spectrum', rarity: 'common', cost: 100 },
+    { id: 'starfall-rift:coral-spectrum', gameId: 'starfall-rift', slot: 'palette', name: 'Coral Spectrum', rarity: 'rare', cost: 250 },
+    { id: 'starfall-rift:solar-spectrum', gameId: 'starfall-rift', slot: 'palette', name: 'Solar Spectrum', rarity: 'epic', cost: 600 },
+    { id: 'starfall-rift:ice-spectrum', gameId: 'starfall-rift', slot: 'palette', name: 'Ice Spectrum', rarity: 'rare', cost: 250 },
+    { id: 'starfall-rift:ember-trail', gameId: 'starfall-rift', slot: 'trail', name: 'Ember Trail', rarity: 'common', cost: 100 },
+    { id: 'starfall-rift:ice-trail', gameId: 'starfall-rift', slot: 'trail', name: 'Ice Trail', rarity: 'rare', cost: 250 },
+    { id: 'starfall-rift:violet-trail', gameId: 'starfall-rift', slot: 'trail', name: 'Violet Trail', rarity: 'rare', cost: 250 },
+    { id: 'starfall-rift:jade-trail', gameId: 'starfall-rift', slot: 'trail', name: 'Jade Trail', rarity: 'epic', cost: 600 },
+    { id: 'starfall-rift:nebula-sky', gameId: 'starfall-rift', slot: 'theme', name: 'Nebula Sky', rarity: 'common', cost: 100 },
+    { id: 'starfall-rift:dawn-field', gameId: 'starfall-rift', slot: 'theme', name: 'Dawn Field', rarity: 'rare', cost: 250 },
+    { id: 'starfall-rift:ocean-field', gameId: 'starfall-rift', slot: 'theme', name: 'Ocean Field', rarity: 'epic', cost: 600 },
+    { id: 'skyfall-ridge:amber-parka', gameId: 'skyfall-ridge', slot: 'skin', name: 'Amber Parka', rarity: 'common', cost: 100 },
+    { id: 'skyfall-ridge:rose-parka', gameId: 'skyfall-ridge', slot: 'skin', name: 'Rose Parka', rarity: 'rare', cost: 250 },
+    { id: 'skyfall-ridge:jade-parka', gameId: 'skyfall-ridge', slot: 'skin', name: 'Jade Parka', rarity: 'rare', cost: 250 },
+    { id: 'skyfall-ridge:ice-parka', gameId: 'skyfall-ridge', slot: 'skin', name: 'Ice Parka', rarity: 'epic', cost: 600 },
+    { id: 'skyfall-ridge:glacier-scarf', gameId: 'skyfall-ridge', slot: 'palette', name: 'Glacier Palette', rarity: 'common', cost: 100 },
+    { id: 'skyfall-ridge:ember-scarf', gameId: 'skyfall-ridge', slot: 'palette', name: 'Ember Palette', rarity: 'rare', cost: 250 },
+    { id: 'skyfall-ridge:violet-scarf', gameId: 'skyfall-ridge', slot: 'palette', name: 'Violet Palette', rarity: 'epic', cost: 600 },
+    { id: 'skyfall-ridge:gold-scarf', gameId: 'skyfall-ridge', slot: 'palette', name: 'Summit Gold', rarity: 'rare', cost: 250 },
+    { id: 'skyfall-ridge:gold-shards', gameId: 'skyfall-ridge', slot: 'trail', name: 'Gold Shards', rarity: 'common', cost: 100 },
+    { id: 'skyfall-ridge:rose-shards', gameId: 'skyfall-ridge', slot: 'trail', name: 'Rose Shards', rarity: 'rare', cost: 250 },
+    { id: 'skyfall-ridge:mint-shards', gameId: 'skyfall-ridge', slot: 'trail', name: 'Mint Shards', rarity: 'epic', cost: 600 },
+    { id: 'skyfall-ridge:alpine-dawn', gameId: 'skyfall-ridge', slot: 'theme', name: 'Alpine Dawn', rarity: 'common', cost: 100 },
+    { id: 'skyfall-ridge:deep-night', gameId: 'skyfall-ridge', slot: 'theme', name: 'Deep Night', rarity: 'rare', cost: 250 },
+    { id: 'skyfall-ridge:violet-sky', gameId: 'skyfall-ridge', slot: 'theme', name: 'Violet Sky', rarity: 'epic', cost: 600 },
+    { id: 'glow-beetle:amber-shell', gameId: 'glow-beetle', slot: 'skin', name: 'Amber Shell', rarity: 'common', cost: 100 },
+    { id: 'glow-beetle:rose-shell', gameId: 'glow-beetle', slot: 'skin', name: 'Rose Shell', rarity: 'rare', cost: 250 },
+    { id: 'glow-beetle:ice-shell', gameId: 'glow-beetle', slot: 'skin', name: 'Ice Shell', rarity: 'epic', cost: 600 },
+    { id: 'glow-beetle:violet-shell', gameId: 'glow-beetle', slot: 'skin', name: 'Violet Shell', rarity: 'rare', cost: 250 },
+    { id: 'glow-beetle:ember-maze', gameId: 'glow-beetle', slot: 'palette', name: 'Ember Maze', rarity: 'common', cost: 100 },
+    { id: 'glow-beetle:ocean-maze', gameId: 'glow-beetle', slot: 'palette', name: 'Ocean Maze', rarity: 'rare', cost: 250 },
+    { id: 'glow-beetle:violet-maze', gameId: 'glow-beetle', slot: 'palette', name: 'Violet Maze', rarity: 'epic', cost: 600 },
+    { id: 'glow-beetle:monochrome-maze', gameId: 'glow-beetle', slot: 'palette', name: 'Monochrome Maze', rarity: 'rare', cost: 250 },
+    { id: 'glow-beetle:golden-pulse', gameId: 'glow-beetle', slot: 'trail', name: 'Golden Pulse', rarity: 'common', cost: 100 },
+    { id: 'glow-beetle:rose-pulse', gameId: 'glow-beetle', slot: 'trail', name: 'Rose Pulse', rarity: 'rare', cost: 250 },
+    { id: 'glow-beetle:violet-pulse', gameId: 'glow-beetle', slot: 'trail', name: 'Violet Pulse', rarity: 'epic', cost: 600 },
+    { id: 'glow-beetle:dawn-vault', gameId: 'glow-beetle', slot: 'theme', name: 'Dawn Vault', rarity: 'common', cost: 100 },
+    { id: 'glow-beetle:deep-vault', gameId: 'glow-beetle', slot: 'theme', name: 'Deep Vault', rarity: 'rare', cost: 250 },
+    { id: 'glow-beetle:star-vault', gameId: 'glow-beetle', slot: 'theme', name: 'Star Vault', rarity: 'epic', cost: 600 },
+    { id: 'ion-rally:ion-cyan', gameId: 'ion-rally', slot: 'palette', name: 'Ion Cyan', rarity: 'common', cost: 0 },
+    { id: 'ion-rally:magenta-pulse', gameId: 'ion-rally', slot: 'palette', name: 'Magenta Pulse', rarity: 'common', cost: 100 },
+    { id: 'ion-rally:solar-gold', gameId: 'ion-rally', slot: 'palette', name: 'Solar Gold', rarity: 'rare', cost: 250 },
+    { id: 'ion-rally:jade-current', gameId: 'ion-rally', slot: 'palette', name: 'Jade Current', rarity: 'rare', cost: 250 },
+    { id: 'ion-rally:prism-edge', gameId: 'ion-rally', slot: 'palette', name: 'Prism Edge', rarity: 'epic', cost: 600 },
+    { id: 'ion-rally:comet-tail', gameId: 'ion-rally', slot: 'trail', name: 'Comet Tail', rarity: 'common', cost: 100 },
+    { id: 'ion-rally:starfield-table', gameId: 'ion-rally', slot: 'theme', name: 'Starfield Table', rarity: 'rare', cost: 250 },
+    { id: 'ion-rally:rainlit-skyline', gameId: 'ion-rally', slot: 'theme', name: 'Rainlit Skyline', rarity: 'epic', cost: 600 },
+    { id: 'clockwork-dawn:amber-palette', gameId: 'clockwork-dawn', slot: 'palette', name: 'Amber Sunrise', rarity: 'common', cost: 100 },
+    { id: 'clockwork-dawn:rose-palette', gameId: 'clockwork-dawn', slot: 'palette', name: 'Roseglass Dawn', rarity: 'rare', cost: 250 },
+    { id: 'clockwork-dawn:jade-palette', gameId: 'clockwork-dawn', slot: 'palette', name: 'Jade Village', rarity: 'rare', cost: 250 },
+    { id: 'clockwork-dawn:ice-palette', gameId: 'clockwork-dawn', slot: 'palette', name: 'Frosted Morning', rarity: 'epic', cost: 600 },
+    { id: 'clockwork-dawn:violet-palette', gameId: 'clockwork-dawn', slot: 'palette', name: 'Violet Hour', rarity: 'epic', cost: 600 },
+    { id: 'clockwork-dawn:kai-brass', gameId: 'clockwork-dawn', slot: 'skin', name: 'Kai’s Brass Mantle', rarity: 'common', cost: 100 },
+    { id: 'clockwork-dawn:kai-rose', gameId: 'clockwork-dawn', slot: 'skin', name: 'Kai’s Rose Mantle', rarity: 'rare', cost: 250 },
+    { id: 'clockwork-dawn:kai-jade', gameId: 'clockwork-dawn', slot: 'skin', name: 'Kai’s Jade Mantle', rarity: 'rare', cost: 250 },
+    { id: 'clockwork-dawn:kai-violet', gameId: 'clockwork-dawn', slot: 'skin', name: 'Kai’s Violet Mantle', rarity: 'epic', cost: 600 },
+    { id: 'clockwork-dawn:sunwheel-gold', gameId: 'clockwork-dawn', slot: 'effect', name: 'Sunwheel Sparks', rarity: 'common', cost: 100 },
+    { id: 'clockwork-dawn:moonwheel-blue', gameId: 'clockwork-dawn', slot: 'effect', name: 'Moonwheel Flare', rarity: 'rare', cost: 250 },
+    { id: 'clockwork-dawn:gear-spark-jade', gameId: 'clockwork-dawn', slot: 'effect', name: 'Jade Gear Sparks', rarity: 'epic', cost: 600 },
+    { id: 'clockwork-dawn:autumn-hearthwick', gameId: 'clockwork-dawn', slot: 'theme', name: 'Autumn Hearthwick', rarity: 'common', cost: 100 },
+    { id: 'clockwork-dawn:moonlit-village', gameId: 'clockwork-dawn', slot: 'theme', name: 'Moonlit Village', rarity: 'rare', cost: 250 },
+    { id: 'clockwork-dawn:crystal-dawn', gameId: 'clockwork-dawn', slot: 'theme', name: 'Crystal Dawn', rarity: 'epic', cost: 600 },
   ];
 
   function copy(value) { return JSON.parse(JSON.stringify(value)); }
@@ -33,6 +114,12 @@
   function dayNumber(key) {
     var match = String(key || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
     return match ? Math.floor(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / 86400000) : NaN;
+  }
+  function localWeekKey(date) {
+    var d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+    var year = d.getFullYear(), first = new Date(year, 0, 1), week = Math.ceil((((d - first) / 86400000) + 1) / 7);
+    return year + '-W' + String(week).padStart(2, '0');
   }
   function normalize(input) {
     var state = copy(config.defaultState), source = input && typeof input === 'object' ? input : {};
@@ -257,5 +344,26 @@
     var xp = kind === 'weekly' ? config.weeklyQuestXp : config.dailyQuestXp;
     var state = readRaw(); applyReward(state, xp, Math.floor(xp / config.sessionSparksDivisor));
     return { xp: xp, sparks: Math.floor(xp / config.sessionSparksDivisor), state: write(state) };
+  };
+  Meta.recordSeasonScore = function (gameId, mode, score, targets, date) {
+    var state = readRaw(), now = date instanceof Date ? date : new Date(), gid = String(gameId || '').slice(0, 64), mid = String(mode || 'classic').slice(0, 48), value = Math.floor(nonNegative(score));
+    if (!gid || !Array.isArray(targets) || targets.length < 3) return { ok: false, state: state };
+    var week = localWeekKey(now), key = gid + ':' + mid, season = state.seasons[week] || {}, record = season[key] || { best: 0, trophy: '', board: [] };
+    var tier = value >= Number(targets[2]) ? 'gold' : value >= Number(targets[1]) ? 'silver' : value >= Number(targets[0]) ? 'bronze' : '';
+    record.best = Math.max(Number(record.best) || 0, value);
+    if (tier === 'gold' || (!record.trophy && tier) || (tier === 'silver' && record.trophy === 'bronze')) record.trophy = tier;
+    var entries = Array.isArray(record.board) ? record.board.slice() : [];
+    if (value > 0) entries.push({ score: value, at: now.toISOString() });
+    record.board = entries.sort(function (a, b) { return Number(b.score) - Number(a.score) || String(a.at).localeCompare(String(b.at)); }).slice(0, 10);
+    season[key] = record; state.seasons[week] = season;
+    if (tier) {
+      var trophyId = 'season:' + week + ':' + key + ':' + tier;
+      if (!state.trophies.some(function (item) { return (typeof item === 'string' ? item : item.id) === trophyId; })) state.trophies.push({ id: trophyId, gameId: gid, rarity: tier === 'gold' ? 'legendary' : tier === 'silver' ? 'epic' : 'rare', day: dayKey(now) });
+    }
+    return { ok: true, week: week, best: record.best, trophy: record.trophy, state: write(state) };
+  };
+  Meta.getSeasonLeaderboard = function (gameId, mode, date) {
+    var state = readRaw(), now = date instanceof Date ? date : new Date(), week = localWeekKey(now), key = String(gameId || '') + ':' + String(mode || 'classic'), record = state.seasons[week] && state.seasons[week][key];
+    return { week: week, local: true, entries: record && Array.isArray(record.board) ? record.board.slice(0, 10) : [], best: record ? Number(record.best) || 0 : 0, trophy: record ? record.trophy || '' : '' };
   };
 })();

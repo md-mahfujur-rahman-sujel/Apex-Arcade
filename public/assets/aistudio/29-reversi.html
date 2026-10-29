@@ -36,6 +36,7 @@
   .score b { display: block; font-size: 28px; color: var(--text); }
   .score .on { border-color: var(--cyan); }
 </style>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -158,7 +159,7 @@ function render(info) {
   /* flipped discs start in their old colour and turn over one after another */
   if (info) info.flipped.forEach((i, k) => {
     const e = sq[i].firstChild, nc = B[i] === 1 ? 'b' : 'w', oc = nc === 'b' ? 'w' : 'b';
-    setTimeout(() => { e.className = 'dk ' + oc + ' fl'; setTimeout(() => { e.className = 'dk ' + nc + ' fl2'; Board.sfx('step'); }, 280); }, Board.pace(300) + k * Board.pace(150));
+    Board.after(Board.pace(300) + k * Board.pace(150), () => { e.className = 'dk ' + oc + ' fl'; Board.after(280, () => { e.className = 'dk ' + nc + ' fl2'; Board.sfx('step'); }); });
   });
 }
 function play(i) {
@@ -178,8 +179,8 @@ function play(i) {
     const a = count(B, 1), b = count(B, 2), w = a > b ? 1 : b > a ? 2 : 0;
     Board.sfx(!w ? 'move' : mode === 'two' || w === mode ? 'win' : 'lose');
     const title = !w ? 'Draw' : mode === 'two' ? NAME[w] + ' wins!' : w === mode ? 'You won!' : 'Computer wins';
-    setTimeout(() => { if (g0 !== gen) return; busy = false; render(); Board.modal(title, over, [['New game', newGame], ['Close']]); }, settle + 300);
-  } else setTimeout(() => { if (g0 !== gen) return; busy = false; render(); cpu(); }, settle);
+    Board.after(settle + 300, () => { if (g0 !== gen) return; busy = false; render(); Board.modal(title, over, [['New game', newGame], ['Close']]); });
+  } else Board.after(settle, () => { if (g0 !== gen) return; busy = false; render(); cpu(); });
 }
 function cpu() {
   if (over || human()) return; busy = true; render();
@@ -213,5 +214,6 @@ document.addEventListener('keydown', (e) => {
 });
 newGame();
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

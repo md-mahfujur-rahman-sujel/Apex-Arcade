@@ -5,6 +5,12 @@
 (function () {
   'use strict';
   const A = (window.Arcade = {});
+  const THEATER_EMBEDDED = (function () {
+    try {
+      if (window.__apexTheaterEmbedded === true) return true;
+      return window.parent !== window && new URLSearchParams(window.location.search || '').get('embed') === 'theater';
+    } catch (error) { return false; }
+  })();
   /* on-screen error report: open any game in a browser and any JS error shows up here */
   window.addEventListener('error', (e) => {
     try {
@@ -66,7 +72,13 @@
   /* ---------- audio ---------- */
   let actx = null, noiseBuf = null;
   A.muted = false;
+  A.sfxVolume = 0.8;
   try { A.muted = localStorage.getItem('arcade-muted') === '1'; } catch (e) {}
+  window.addEventListener('message', (event) => {
+    const data = event.data;
+    if (event.source !== window.parent || event.origin !== window.location.origin || !data || data.type !== 'APEX_AUDIO_DEFAULTS') return;
+    if (typeof data.sfxVolume === 'number' && Number.isFinite(data.sfxVolume)) A.sfxVolume = A.clamp(data.sfxVolume, 0, 1);
+  });
   function ac() {
     if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
     if (actx.state === 'suspended') actx.resume().catch(() => {});
@@ -80,7 +92,7 @@
     o.type = type || 'square';
     o.frequency.setValueAtTime(f, t);
     if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, f + slide), t + d);
-    g.gain.setValueAtTime(vol || 0.06, t);
+    g.gain.setValueAtTime((vol || 0.06) * A.sfxVolume, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + d);
     o.connect(g); g.connect(a.destination);
     o.start(t); o.stop(t + d + 0.03);
@@ -96,7 +108,7 @@
     const t = a.currentTime + (delay || 0);
     const s = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
     s.buffer = noiseBuf; f.type = type || 'lowpass'; f.frequency.value = freq || 1200;
-    g.gain.setValueAtTime(vol || 0.08, t);
+    g.gain.setValueAtTime((vol || 0.08) * A.sfxVolume, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + d);
     s.connect(f); f.connect(g); g.connect(a.destination);
     s.start(t); s.stop(t + d + 0.03);
@@ -309,7 +321,7 @@
       try { hi = +localStorage.getItem(hiKey) || 0; } catch (e) {}
     }
     const G = {
-      cfg, w: W, h: H, ctx, canvas, state: 'ready', score: 0, hi, t: 0, clock: 0, stateT: 0,
+      cfg, w: W, h: H, ctx, canvas, state: 'ready', inputLocked: false, score: 0, hi, t: 0, clock: 0, stateT: 0,
       particles: [], popups: [], shakeAmt: 0, freezeN: 0, fxDrawn: false,
       title: '', sub: '', hudL: undefined, hudR: undefined,
     };
@@ -328,8 +340,10 @@
     A.difficulty = 'normal';
     A.speedMult = 1.0;
     function applyDifficulty(diff) {
-      if (!diff) return;
-      A.difficulty = diff.toLowerCase();
+      if (typeof diff !== 'string') return;
+      const normalized = diff.toLowerCase();
+      if (normalized !== 'easy' && normalized !== 'normal' && normalized !== 'hard') return;
+      A.difficulty = normalized;
       A.speedMult = A.difficulty === 'easy' ? 0.8 : A.difficulty === 'hard' ? 1.35 : 1.0;
     }
     try {
@@ -338,6 +352,7 @@
     } catch (e) {}
 
     window.addEventListener('message', (e) => {
+      if ((e.source !== window.parent && e.source !== window) || e.origin !== window.location.origin) return;
       if (e.data && e.data.type === 'SET_DIFFICULTY') {
         applyDifficulty(e.data.difficulty);
         if (G && G.popup && G.state === 'playing') {
@@ -348,7 +363,7 @@
     });
 
     G.addScore = (n) => {
-      const mult = A.difficulty === 'hard' ? 1.25 : 1.0;
+      const mult = (A.difficulty === 'hard' ? 1.25 : 1.0) * Math.max(0, Number(G.scoreMultiplier) || 1);
       const pts = Math.round(n * mult);
       G.score += pts;
       const nowMs = Date.now();
@@ -473,10 +488,12 @@
     };
 
     function onAnyInput(code) {
+      if (G.inputLocked) return;
       if (G.state === 'ready' && code !== 'KeyM' && code !== 'KeyP' && code !== 'Escape' && !/^(Shift|Control|Alt|Meta)/.test(code)) G.begin();
     }
     window.addEventListener('keydown', (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (G.inputLocked) return;
       if (PREVENT.has(e.code)) e.preventDefault();
       if (e.code === 'KeyM') {
         A.muted = !A.muted;
@@ -494,9 +511,10 @@
       if (!e.repeat) onAnyInput(e.code);
     });
     window.addEventListener('keyup', (e) => { kb[e.code] = false; });
-    window.addEventListener('blur', () => { for (const k in kb) kb[k] = false; if (G.state === 'playing') G.pauseToggle(); });
-    document.addEventListener('visibilitychange', () => { if (document.hidden && G.state === 'playing') G.pauseToggle(); });
+    window.addEventListener('blur', () => { for (const k in kb) kb[k] = false; if (!THEATER_EMBEDDED && G.state === 'playing') G.pauseToggle(); });
+    document.addEventListener('visibilitychange', () => { if (!THEATER_EMBEDDED && document.hidden && G.state === 'playing') G.pauseToggle(); });
     canvas.addEventListener('pointerdown', () => {
+      if (G.inputLocked) return;
       if (G.state === 'ready') G.begin();
       else if (G.state === 'over' || G.state === 'won') { if (G.stateT > 25) G.restart(true); }
       else if (G.state === 'paused') G.pauseToggle();
@@ -545,7 +563,7 @@
         L.push(['P pause  ·  M mute', 12, '#8b93b3', '600'], ['Press any key or tap to start', 16, A.alpha('#67e8f9', blink), '700'], ['BEST ' + G.hi, 13, '#8b93b3', '700']);
         panel(cfg.title, L, cfg.color || '#22d3ee');
       } else if (G.state === 'paused') {
-        panel('Paused', [['Press P or Esc to resume', 16, '#c8cde4']], '#fbbf24');
+        if (!THEATER_EMBEDDED) panel('Paused', [['Press P or Esc to resume', 16, '#c8cde4']], '#fbbf24');
       } else if (G.state === 'over' || G.state === 'won') {
         const win = G.state === 'won';
         const lines = [];
@@ -556,7 +574,7 @@
       }
     }
     function render() {
-      G.clock++; if (G.state !== 'playing') G.stateT++; else G.stateT++;
+      if (G.state !== 'paused') { G.clock++; G.stateT++; }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
       ctx.save();

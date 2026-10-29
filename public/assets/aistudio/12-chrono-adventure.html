@@ -18,6 +18,8 @@
 <script src="score-bridge.js"></script>
 <script src="ui-kit.js"></script>
 <script src="fx-kit.js"></script>
+<script src="music-kit.js"></script>
+<script src="menu-kit.js"></script>
 <script>
 /* Clockwork Dawn — a compact turn-based adventure. Explore the village and the wilds, fight in
    party battles (Attack / Skill / Item / Flee), shop and rest, then break the Clockwork Warden
@@ -28,13 +30,32 @@ const hit = (a) => A.hit.apply(null, a), held = (a) => A.held.apply(null, a);
 
 /* ---------- world ---------- */
 let map, mode, hero, party, inv, gold, flags, dlg, menu, bat, steps, cam, status, G0;
+let activeMode = 'story', difficulty = 'normal', shakeScale = 1, rngState = 1, dailySeed = 0, runStarted = 0, mistakes = false, scenePalette = 'hearthwick', effectColor = '#67e8f9', heroSkin = '';
+function seedForToday() { const d = new Date(), key = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); let x = key ^ 0x6d2b79f5; for (const ch of 'clockwork-dawn') x = Math.imul(x ^ ch.charCodeAt(0), 16777619); return x >>> 0 || 1; }
+function random01() { if (activeMode !== 'daily-dawn') return Math.random(); rngState ^= rngState << 13; rngState ^= rngState >>> 17; rngState ^= rngState << 5; return (rngState >>> 0) / 4294967296; }
+function randomInt(min, max) { return min + Math.floor(random01() * (max - min + 1)); }
+function randomPick(items) { return items[Math.floor(random01() * items.length)]; }
+function award(id, label) { const saved = Save.load('clockwork-dawn') || {}, earned = Array.isArray(saved.achievements) ? saved.achievements : []; if (earned.includes(id)) return; Save.update('clockwork-dawn', { achievements: [id] }); if (window.Apex && Apex.unlockAchievement) Apex.unlockAchievement(id, 'clockwork-dawn'); UI.toast(label || id.replace(/-/g, ' '), { color: '#fbbf24' }); }
+function awardScore(G, amount) { G.addScore(Math.round(amount)); }
+function setMode(id) {
+  if (id === 'new-dawn-plus') { const saved = Save.load('clockwork-dawn') || {}; if (!(Number(saved.stats && saved.stats.storyCompletions) > 0)) { UI.toast('Complete Story Journey to unlock New Dawn+', { color: '#fbbf24' }); return false; } }
+  activeMode = id || 'story'; dailySeed = activeMode === 'daily-dawn' ? seedForToday() : 0; rngState = dailySeed || 1;
+  if (G0 && G0.state !== 'ready') G0.restart(true);
+  return true;
+}
+function applyCosmetic(slot, id) {
+  if (slot === 'theme') scenePalette = id.includes('moonlit') ? 'moonlit' : id.includes('autumn') ? 'autumn' : id.includes('crystal') ? 'crystal' : 'hearthwick';
+  if (slot === 'palette') scenePalette = id.includes('ice') ? 'ice' : id.includes('rose') ? 'rose' : id.includes('jade') ? 'jade' : id.includes('amber') ? 'autumn' : id.includes('violet') ? 'crystal' : 'hearthwick';
+  if (slot === 'skin') { heroSkin = id; if (party) party[0].col = id.includes('rose') ? '#fb7185' : id.includes('jade') ? '#34d399' : id.includes('ice') ? '#67e8f9' : id.includes('violet') ? '#a78bfa' : '#fbbf24'; }
+  if (slot === 'effect') effectColor = id.includes('rose') ? '#fb7185' : id.includes('gold') ? '#fbbf24' : id.includes('jade') ? '#34d399' : id.includes('violet') ? '#a78bfa' : '#67e8f9';
+}
 function buildMap() {
   map = Array.from({ length: MH }, (_, y) => Array.from({ length: MW }, (_, x) => (x === 0 || y === 0 || x === MW - 1 || y === MH - 1 ? '#' : '.')));
   const f = (x0, y0, x1, y1, ch) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) map[y][x] = ch; };
   f(2, 3, 13, 12, 'p'); f(3, 4, 6, 6, 'H'); map[7][4] = 'I'; f(9, 4, 12, 6, 'H'); map[7][10] = 'S';
   f(14, 1, 15, MH - 2, '~'); f(14, 11, 15, 12, 'b'); f(16, 2, 23, 21, ','); f(13, 11, 13, 12, 'p'); f(16, 11, 24, 12, 'p');
-  for (let i = 0; i < 40; i++) { const x = A.randi(2, 12), y = A.randi(13, 21); if (map[y][x] === '.') map[y][x] = '#'; }
-  for (let i = 0; i < 30; i++) { const x = A.randi(16, 23), y = A.randi(2, 21); if (map[y][x] === ',' && y !== 11 && y !== 12) map[y][x] = A.pick(['#', '.']); }
+  for (let i = 0; i < 40; i++) { const x = randomInt(2, 12), y = randomInt(13, 21); if (map[y][x] === '.') map[y][x] = '#'; }
+  for (let i = 0; i < 30; i++) { const x = randomInt(16, 23), y = randomInt(2, 21); if (map[y][x] === ',' && y !== 11 && y !== 12) map[y][x] = randomPick(['#', '.']); }
   f(25, 2, 38, 2, 'W'); f(25, 20, 38, 20, 'W'); f(25, 2, 25, 20, 'W'); f(38, 2, 38, 20, 'W'); f(26, 3, 37, 19, 'f'); map[11][25] = 'f'; map[12][25] = 'f';
   for (const [x, y] of [[29, 8], [29, 15], [34, 8], [34, 15], [32, 11]]) map[y][x] = 'W';
   map[2][31] = 'X';
@@ -74,9 +95,19 @@ function say(lines, after) { dlg = { lines, i: 0, after }; A.sfx('blip'); }
 function openMenu(title, opts) { menu = { title, opts, sel: 0 }; A.sfx('select'); }
 
 function init(G) {
-  G0 = G; buildMap(); party = newParty(); inv = { potion: 3, ether: 1 }; gold = 30; flags = { boss: false }; dlg = null; menu = null; bat = null; status = false; steps = 0; mode = 'field';
-  hero = { x: 8, y: 9, tx: 8, ty: 9, dir: 2, moving: false, mt: 0 }; cam = { x: 0, y: 0 }; place(true);
-  say(['Welcome, Kai. Elder Orrin is waiting in the village square.', 'Arrows / WASD to move · Space to talk · X for status.']);
+  G0 = G; dailySeed = activeMode === 'daily-dawn' ? seedForToday() : 0; rngState = dailySeed || 1; runStarted = Date.now(); mistakes = false;
+  buildMap(); party = newParty(); if (heroSkin) applyCosmetic('skin', heroSkin);
+  if (activeMode === 'new-dawn-plus') {
+    const prior = Save.load('clockwork-dawn') || {}, savedLevel = Math.max(2, Number(prior.stats && prior.stats.newDawnLevel) || 2);
+    for (const member of party) while (member.lvl < savedLevel) { member.lvl++; member.mhp += 8; member.mmp += 3; member.atk += 2; member.def += 1; member.mag += 2; }
+    for (const member of party) { member.hp = member.mhp; member.mp = member.mmp; }
+  }
+  inv = activeMode === 'warden-rematch' ? { potion: 5, ether: 3 } : { potion: 3, ether: 1 }; gold = activeMode === 'warden-rematch' ? 100 : 30;
+  flags = { boss: false }; dlg = null; menu = null; bat = null; status = false; steps = 0; mode = 'field';
+  hero = activeMode === 'warden-rematch' ? { x: 28, y: 6, tx: 28, ty: 6, dir: 3, moving: false, mt: 0 } : { x: 8, y: 9, tx: 8, ty: 9, dir: 2, moving: false, mt: 0 };
+  cam = { x: 0, y: 0 }; place(true);
+  if (activeMode === 'warden-rematch') { startBattle(G, ['boss'], true); return; }
+  say([activeMode === 'daily-dawn' ? 'Daily Dawn seed ' + dailySeed + '. This world and its encounters stay fixed for today.' : activeMode === 'new-dawn-plus' ? 'A new dawn begins. Your party returns stronger, and the Warden has grown.' : 'Welcome, Kai. Elder Orrin is waiting in the village square.', 'Arrows / WASD to move · Space to talk · X for status.']);
 }
 function place(snap) {
   const px = (hero.moving ? hero.x + (hero.tx - hero.x) * hero.mt / 9 : hero.x) * T + 16, py = (hero.moving ? hero.y + (hero.ty - hero.y) * hero.mt / 9 : hero.y) * T + 16;
@@ -123,15 +154,29 @@ function usePotion() { const m = party.filter((q) => q.hp > 0 && q.hp < q.mhp).s
 function useEther() { const m = party.filter((q) => q.mp < q.mmp).sort((a, b) => a.mp / a.mmp - b.mp / b.mmp)[0]; if (inv.ether > 0 && m) { inv.ether--; m.mp = Math.min(m.mmp, m.mp + 12); A.sfx('heal'); } }
 function stepEffects(G) {
   const ch = map[hero.y][hero.x]; steps++;
-  if (ch === 'O') { A.sfx('win'); G.addScore(1000 + gold * 5); G.win('The Dawn Returns', 'Party level ' + party[0].lvl + ' · ' + gold + ' gold · Score ' + G.score); return; }
+  if (ch === 'O') {
+    A.sfx('win'); awardScore(G, 1000 + gold * 5);
+    const elapsed = Date.now() - runStarted, prior = Save.load('clockwork-dawn') || {}, stats = prior.stats || {}, best = Math.max(Number(stats.bestScore) || 0, G.score);
+    award('first-run', 'First Run'); if (G.score >= 1000) award('steady-hand', 'Steady Hand'); if (elapsed <= 600000) award('quick-clear', 'Quick Clear');
+    if (G.score > (Number(stats.bestScore) || 0)) award('personal-best', 'Personal Best');
+    if (activeMode === 'daily-dawn') award('daily-player', 'Daily Player');
+    if (!mistakes) { award('no-mistakes', 'No Mistakes'); award('perfect-round', 'Perfect Round'); } if (steps >= 80) award('long-run', 'Long Run');
+    if (party[0].lvl >= 5) award('season-ace', 'Season Ace');
+    const patch = { stats: { bestScore: best, bestTime: Math.min(Number(stats.bestTime) || Infinity, elapsed), newDawnLevel: Math.max(Number(stats.newDawnLevel) || 1, party[0].lvl), newDawnCompletions: (Number(stats.newDawnCompletions) || 0) + (activeMode === 'new-dawn-plus' ? 1 : 0), storyCompletions: (Number(stats.storyCompletions) || 0) + (activeMode === 'story' ? 1 : 0), dailyBest: activeMode === 'daily-dawn' ? Math.max(Number(stats.dailyBest) || 0, G.score) : Number(stats.dailyBest) || 0 } };
+    if (!Number.isFinite(patch.stats.bestTime)) patch.stats.bestTime = elapsed;
+    Save.update('clockwork-dawn', patch);
+    G.win(activeMode === 'warden-rematch' ? 'Warden Rematch Cleared' : 'The Dawn Returns', 'Party level ' + party[0].lvl + ' · ' + gold + ' gold · Score ' + G.score); return;
+  }
   const rate = ch === ',' ? 0.1 : ch === 'f' ? 0.09 : 0;
-  if (rate && steps > 3 && Math.random() < rate) startBattle(G, ch === ',' ? [A.pick(['moss', 'wisp', 'bat']), ...(Math.random() < 0.6 ? [A.pick(['moss', 'wisp', 'bat'])] : []), ...(Math.random() < 0.25 ? ['moss'] : [])] : [A.pick(['gear', 'knight']), ...(Math.random() < 0.6 ? [A.pick(['gear', 'knight'])] : [])], false);
+  if (steps >= 80) award('long-run', 'Long Run');
+  if (rate && steps > 3 && random01() < rate) startBattle(G, ch === ',' ? [randomPick(['moss', 'wisp', 'bat']), ...(random01() < 0.6 ? [randomPick(['moss', 'wisp', 'bat'])] : []), ...(random01() < 0.25 ? ['moss'] : [])] : [randomPick(['gear', 'knight']), ...(random01() < 0.6 ? [randomPick(['gear', 'knight'])] : [])], false);
 }
 
 /* ---------- battle ---------- */
 function startBattle(G, kinds, boss) {
   A.sfx(boss ? 'charge' : 'wave'); G.shake(5);
   bat = { foes: kinds.map((k, i) => Object.assign({ k, hp: 0, flash: 0, dead: false, x: 130 + i * 110 - (kinds.length - 1) * 30 + (boss ? 60 : 0), y: 170 + (i % 2) * 40 }, ENEMY[k], { hp: ENEMY[k].hp, mhp: ENEMY[k].hp })), actor: 0, phase: 'menu', sel: 0, sel2: 0, tgt: 0, pend: null, wait: 0, log: boss ? ['The Clockwork Warden blocks the way!'] : ['Monsters appear!'], turn: 0, boss, eIdx: 0, enter: 24, rewards: null, zone: boss ? 2 : map[hero.y][hero.x] === 'f' ? 1 : 0 };
+  if (boss && activeMode === 'new-dawn-plus') for (const foe of bat.foes) { foe.hp = Math.round(foe.hp * 1.45); foe.mhp = foe.hp; foe.atk = Math.round(foe.atk * 1.2); }
   mode = 'battle'; nextActor(true);
 }
 const alive = (a) => a.filter((m) => m.hp > 0 && !m.dead);
@@ -151,10 +196,11 @@ function afterPlayer(G) {
   bat.wait = 36; bat.phase = 'wait';
 }
 function victory(G) {
-  const xp = bat.foes.reduce((a, f) => a + f.xp, 0), gd = bat.foes.reduce((a, f) => a + f.gold, 0); gold += gd; G.addScore(xp * 10);
+  const xp = bat.foes.reduce((a, f) => a + f.xp, 0), gd = bat.foes.reduce((a, f) => a + f.gold, 0); gold += gd; awardScore(G, xp * 10);
+  if (G.score >= 1000) award('steady-hand', 'Steady Hand');
   const ups = []; for (const m of party) if (m.hp > 0) { m.xp += xp; while (m.xp >= needXp(m)) { m.xp -= needXp(m); m.lvl++; m.mhp += 8; m.mmp += 3; m.atk += 2; m.def += 1; m.mag += 2; m.hp = Math.min(m.mhp, m.hp + 10); m.mp = Math.min(m.mmp, m.mp + 5); ups.push(m.n + ' → Lv ' + m.lvl); } }
   bat.phase = 'win'; G.burst(600, 200, 40, { color: ['#fde047', '#fff', '#a5f3fc'], speed: 6, glow: true, life: 40, grav: 0.05 }); G.ring(600, 230, '#fde047', 140, 28); bat.rewards = ['Victory!  +' + xp + ' XP  +' + gd + ' gold'].concat(ups); A.sfx('win');
-  if (bat.boss) { flags.boss = true; map[BOSS.y - 3][31] = 'O'; }
+  if (bat.boss) { flags.boss = true; award('mastery', 'Mastery'); map[BOSS.y - 3][31] = 'O'; }
 }
 function battleUpdate(G) {
   const b = bat; if (b.enter > 0) b.enter--; Fx.update(1); for (const f of b.foes) { if (f.flash > 0) f.flash--; if (f.lunge > 0) f.lunge--; } for (const m of party) if (m.lunge > 0) m.lunge--;
@@ -165,14 +211,15 @@ function battleUpdate(G) {
     if (b.eIdx >= b.foes.length) { b.turn++; nextActor(true); return; }
     const f = b.foes[b.eIdx++]; if (f.dead) return; f.lunge = 14;
     const targets = alive(party); if (!targets.length) return;
-    const tgt = A.pick(targets);
+    const tgt = randomPick(targets);
     if (f.boss) {
       const m = b.turn % 3;
-      if (m === 0) { const d = Math.max(2, Math.round(f.atk * A.rand(0.9, 1.15) - tgt.def)); tgt.hp = Math.max(0, tgt.hp - d); logMsg('Warden strikes ' + tgt.n + ' for ' + d + '!'); G.shake(6); G.popup(W - 180, 250, d, '#fca5a5', 20); }
-      else if (m === 1) { logMsg('Gear Storm hits everyone!'); for (const t of targets) { const d = Math.max(2, Math.round(f.atk * 0.6 * A.rand(0.9, 1.1) - t.def)); t.hp = Math.max(0, t.hp - d); } G.shake(8); }
-      else { const d = Math.max(3, Math.round(f.atk * 1.5 * A.rand(0.9, 1.1) - tgt.def)); tgt.hp = Math.max(0, tgt.hp - d); logMsg('Piston Slam crushes ' + tgt.n + ' for ' + d + '!'); G.shake(10); }
+      if (m === 0) { const d = Math.max(2, Math.round(f.atk * (difficulty === 'hard' ? 1.2 : difficulty === 'easy' ? 0.8 : 1) * (0.9 + random01() * 0.25) - tgt.def)); tgt.hp = Math.max(0, tgt.hp - d); logMsg('Warden strikes ' + tgt.n + ' for ' + d + '!'); G.shake(6); G.popup(W - 180, 250, d, '#fca5a5', 20); }
+      else if (m === 1) { logMsg('Gear Storm hits everyone!'); for (const t of targets) { const d = Math.max(2, Math.round(f.atk * (difficulty === 'hard' ? 0.72 : difficulty === 'easy' ? 0.48 : 0.6) * (0.9 + random01() * 0.2) - t.def)); t.hp = Math.max(0, t.hp - d); } G.shake(8); }
+      else { const d = Math.max(3, Math.round(f.atk * 1.5 * (difficulty === 'hard' ? 1.2 : difficulty === 'easy' ? 0.8 : 1) * (0.9 + random01() * 0.2) - tgt.def)); tgt.hp = Math.max(0, tgt.hp - d); logMsg('Piston Slam crushes ' + tgt.n + ' for ' + d + '!'); G.shake(10); }
       A.sfx('boom');
-    } else { const d = Math.max(1, Math.round(f.atk * A.rand(0.85, 1.15) - tgt.def)); tgt.hp = Math.max(0, tgt.hp - d); logMsg(f.n + ' attacks ' + tgt.n + ' for ' + d + '.'); A.sfx('hurt'); G.shake(3); }
+    } else { const d = Math.max(1, Math.round(f.atk * (difficulty === 'hard' ? 1.2 : difficulty === 'easy' ? 0.8 : 1) * (0.85 + random01() * 0.3) - tgt.def)); tgt.hp = Math.max(0, tgt.hp - d); logMsg(f.n + ' attacks ' + tgt.n + ' for ' + d + '.'); A.sfx('hurt'); G.shake(3); }
+    if (targets.some((member) => member.hp <= 0)) mistakes = true;
     b.wait = 44;
     if (!alive(party).length) { b.phase = 'lose'; b.wait = 60; }
     return;
@@ -187,7 +234,7 @@ function battleUpdate(G) {
       if (o === 'Attack') { b.pend = { type: 'atk' }; b.phase = 'target'; b.tgt = b.foes.findIndex((f) => !f.dead); }
       else if (o === 'Skill') { b.list = me.skills.filter((s) => s.lv <= me.lvl); b.sel2 = 0; b.phase = 'skill'; }
       else if (o === 'Item') { b.sel2 = 0; b.phase = 'item'; }
-      else { if (b.boss) logMsg('Cannot flee from the Warden!'); else if (Math.random() < 0.65) { logMsg('Got away safely!'); mode = 'field'; bat = null; A.sfx('step'); return; } else { logMsg('Could not escape!'); afterPlayer(G); } }
+      else { if (b.boss) logMsg('Cannot flee from the Warden!'); else if (random01() < 0.65) { logMsg('Got away safely!'); mode = 'field'; bat = null; A.sfx('step'); return; } else { logMsg('Could not escape!'); afterPlayer(G); } }
     }
   } else if (b.phase === 'skill') {
     if (hit(BACK)) b.phase = 'menu';
@@ -204,7 +251,7 @@ function battleUpdate(G) {
     if (step) { let i = b.tgt; do { i = (i + step + pool.length) % pool.length; } while ((ally ? pool[i].hp <= 0 && b.pend.type !== 'item' : pool[i].dead)); b.tgt = i; A.sfx('tick'); }
     if (hit(OK)) {
       const t = pool[b.tgt]; A.sfx('select');
-      if (b.pend.type === 'atk') { me.lunge = 14; const d = dmgFoe(G, t, me.atk * A.rand(0.9, 1.12), false); logMsg(me.n + ' attacks ' + t.n + ' for ' + d + '.'); A.sfx('slash'); afterPlayer(G); }
+      if (b.pend.type === 'atk') { me.lunge = 14; const d = dmgFoe(G, t, me.atk * (difficulty === 'hard' ? 1.1 : difficulty === 'easy' ? 1.05 : 1) * (0.9 + random01() * 0.22), false); logMsg(me.n + ' attacks ' + t.n + ' for ' + d + '.'); A.sfx('slash'); afterPlayer(G); }
       else if (b.pend.type === 'skill') doSkill(G, me, b.pend.s, t);
       else { inv[b.pend.k]--; if (b.pend.k === 'potion') { t.hp = Math.min(t.mhp, t.hp + 30); logMsg(me.n + ' uses a Potion on ' + t.n + '.'); } else { t.mp = Math.min(t.mmp, t.mp + 12); logMsg(me.n + ' uses an Ether on ' + t.n + '.'); } A.sfx('heal'); afterPlayer(G); }
     }
@@ -214,7 +261,7 @@ function doSkill(G, me, s, t) {
   me.mp -= s.cost; me.lunge = 14;
   if (s.heal) { t.hp = Math.min(t.mhp, t.hp + s.heal); logMsg(me.n + ' casts ' + s.n + ': ' + t.n + ' +' + s.heal + ' HP.'); A.sfx('heal'); G.ring(W - 160, 250, '#86efac', 60, 22); }
   else {
-    const base = (s.magic ? me.mag : me.atk) * s.pow * A.rand(0.92, 1.12), foes = s.t === 'all' ? alive(bat.foes) : [t];
+    const base = (s.magic ? me.mag : me.atk) * s.pow * (0.92 + random01() * 0.2), foes = s.t === 'all' ? alive(bat.foes) : [t];
     let total = 0; for (const f of foes) total += dmgFoe(G, f, base, !!s.magic);
     logMsg(me.n + ' uses ' + s.n + '! ' + total + ' damage.'); A.sfx(s.magic ? 'laser' : 'slash'); G.ring(W / 2 - 100, 220, s.magic ? '#c4b5fd' : '#fde047', 90, 22);
   }
@@ -306,14 +353,14 @@ function battleBackdrop(c, z, t) {
   c.strokeStyle = 'rgba(255,255,255,.08)'; c.lineWidth = 1; for (let i = -10; i <= 10; i++) { c.beginPath(); c.moveTo(W / 2 + i * 34, 300); c.lineTo(W / 2 + i * 90, 340); c.stroke(); }
 }
 function drawField(c, G) {
-  const t = G.clock; c.fillStyle = '#4a8f4a'; c.fillRect(0, 0, W, H);
+  const t = G.clock; c.fillStyle = scenePalette === 'moonlit' || scenePalette === 'ice' || scenePalette === 'crystal' ? '#3e6375' : scenePalette === 'autumn' ? '#8b7942' : scenePalette === 'jade' ? '#39785b' : scenePalette === 'rose' ? '#8b5c72' : '#4a8f4a'; c.fillRect(0, 0, W, H);
   c.save(); c.translate(-Math.round(cam.x), -Math.round(cam.y));
   const c0 = Math.max(0, Math.floor(cam.x / T)), c1 = Math.min(MW - 1, Math.ceil((cam.x + W) / T)), r0 = Math.max(0, Math.floor(cam.y / T)), r1 = Math.min(MH - 1, Math.ceil((cam.y + H) / T));
   for (let y = r0; y <= r1; y++) for (let x = c0; x <= c1; x++) {
     const ch = map[y][x], px = x * T, py = y * T, h = A.hash(x, y);
     if (ch === 'p' || ch === 'b') { c.fillStyle = ch === 'b' ? '#92400e' : '#d6b98a'; c.fillRect(px, py, T, T); c.fillStyle = 'rgba(0,0,0,.06)'; c.fillRect(px + (h * 20 | 0), py + 8, 6, 3); if (ch === 'b') { c.fillStyle = '#78350f'; for (let i = 0; i < 4; i++) c.fillRect(px, py + i * 8, T, 2); } continue; }
     if (ch === '~') { c.fillStyle = '#2b78c9'; c.fillRect(px, py, T, T); c.fillStyle = 'rgba(255,255,255,.25)'; c.fillRect(px + 4 + Math.sin(t * 0.05 + x) * 4, py + 10 + (y % 2) * 10, 14, 2); continue; }
-    if (ch === 'f' || ch === 'X' || ch === 'O') { c.fillStyle = (x + y) % 2 ? '#3b3358' : '#352e50'; c.fillRect(px, py, T, T); c.strokeStyle = 'rgba(167,139,250,.15)'; c.strokeRect(px + 0.5, py + 0.5, T - 1, T - 1); if (ch === 'X') { c.fillStyle = '#1f1a33'; c.fillRect(px + 4, py + 4, T - 8, T - 8); } if (ch === 'O') { c.save(); c.translate(px + 16, py + 16); c.rotate(t * 0.05); c.shadowColor = '#67e8f9'; c.shadowBlur = 18; c.strokeStyle = '#67e8f9'; c.lineWidth = 3; for (let i = 0; i < 3; i++) { c.beginPath(); c.arc(0, 0, 6 + i * 5, i, i + 4.5); c.stroke(); } c.restore(); } continue; }
+    if (ch === 'f' || ch === 'X' || ch === 'O') { c.fillStyle = (x + y) % 2 ? '#3b3358' : '#352e50'; c.fillRect(px, py, T, T); c.strokeStyle = 'rgba(167,139,250,.15)'; c.strokeRect(px + 0.5, py + 0.5, T - 1, T - 1); if (ch === 'X') { c.fillStyle = '#1f1a33'; c.fillRect(px + 4, py + 4, T - 8, T - 8); } if (ch === 'O') { c.save(); c.translate(px + 16, py + 16); c.rotate(t * 0.05); c.shadowColor = effectColor; c.shadowBlur = 18; c.strokeStyle = effectColor; c.lineWidth = 3; for (let i = 0; i < 3; i++) { c.beginPath(); c.arc(0, 0, 6 + i * 5, i, i + 4.5); c.stroke(); } c.restore(); } continue; }
     if (ch === 'W') { c.fillStyle = '#231d3a'; c.fillRect(px, py, T, T); c.fillStyle = '#2e2650'; c.fillRect(px, py, T, T - 6); c.fillStyle = '#463a78'; c.fillRect(px + 2, py + 2, T - 4, 4); continue; }
     c.fillStyle = ch === ',' ? '#2f7d3f' : '#4a8f4a'; c.fillRect(px, py, T, T);
     c.fillStyle = ch === ',' ? '#256a34' : '#43833f'; if (h > 0.4) c.fillRect(px + (h * 20 | 0), py + (h * 17 | 0), 3, 3);
@@ -385,13 +432,107 @@ function draw(G, c) {
   if (status) { panel(c, 120, 90, 560, 300); A.text(c, 'PARTY STATUS', 400, 124, 20, '#fde047', 'center', '800'); party.forEach((m, i) => { const y = 160 + i * 86; A.text(c, m.n + '  Lv ' + m.lvl + '   HP ' + m.hp + '/' + m.mhp + '   MP ' + m.mp + '/' + m.mmp, 150, y, 16, '#fff', 'left', '800'); A.text(c, 'ATK ' + m.atk + '  DEF ' + m.def + '  MAG ' + m.mag + '  XP ' + m.xp + '/' + needXp(m), 150, y + 24, 13, '#a5b4fc', 'left', '700'); }); A.text(c, 'Gold ' + gold + '   Potions ' + inv.potion + '   Ethers ' + inv.ether, 150, 340, 15, '#fff', 'left', '700'); A.text(c, '1: use Potion   2: use Ether   X: close', 150, 368, 13, '#9ca3af', 'left', '700'); }
 }
 
-Arcade.game({
+const clockworkDawnGame = Arcade.game({
   id: 'clockwork-dawn', title: 'Clockwork Dawn', subtitle: 'Explore · fight · level up · restart the sun', color: '#fbbf24', w: W, h: H,
   controls: [['← → ↑ ↓  /  WASD', 'Walk / move the cursor'], ['Space  /  Enter  /  Z', 'Talk, confirm, advance text'], ['X  /  Esc', 'Cancel — or open party status in the field'], ['Battle menu', 'Attack · Skill (MP) · Item · Flee'], ['Tall grass / Gear Gate', 'Random battles'], ['P / M', 'Pause / mute']],
   help: 'Arrows/WASD walk · Space talk & confirm · X status/cancel · tall grass and the Gear Gate hide monsters · shop and inn in the village · defeat the Clockwork Warden, then enter the portal',
   touchL: [['◀', 'ArrowLeft'], ['▶', 'ArrowRight'], ['▲', 'ArrowUp'], ['▼', 'ArrowDown']], touchR: [['OK', 'Space'], ['✕', 'KeyX']],
   init, update, draw,
 });
+
+function clockworkDawnMenuScene(c, frame) {
+  const w = frame.width, h = frame.height, moving = !frame.static && !frame.reducedMotion;
+  const sky = c.createLinearGradient(0, 0, 0, h);
+  sky.addColorStop(0, '#14172a'); sky.addColorStop(0.56, '#382b3d'); sky.addColorStop(1, '#6a3c25');
+  c.fillStyle = sky; c.fillRect(0, 0, w, h);
+  const dawn = c.createRadialGradient(w * 0.76, h * 0.48, 0, w * 0.76, h * 0.48, Math.max(w, h) * 0.6);
+  dawn.addColorStop(0, 'rgba(251,191,36,.25)'); dawn.addColorStop(0.46, 'rgba(217,119,6,.10)'); dawn.addColorStop(1, 'rgba(20,23,42,0)');
+  c.fillStyle = dawn; c.fillRect(0, 0, w, h);
+  for (let layer = 0; layer < Math.min(3, frame.quality.layers); layer++) {
+    const base = h * (0.62 + layer * 0.12), drift = moving ? frame.time * (0.00006 + layer * 0.000025) : 0;
+    c.beginPath(); c.moveTo(0, h);
+    for (let x = 0; x <= w + 5; x += Math.max(22, w / 32)) {
+      c.lineTo(x, base - (Math.sin(x / w * 8 + drift + layer) * 0.045 + Math.sin(x / w * 15 - drift) * 0.018) * h);
+    }
+    c.lineTo(w, h); c.closePath(); c.fillStyle = ['#51352d', '#352633', '#242236'][layer]; c.fill();
+  }
+  // Layer a village silhouette and one large, original dawn mechanism in the open right field.
+  c.fillStyle = 'rgba(24,23,35,.9)';
+  for (let i = 0; i < 7; i++) {
+    const x = w * (0.08 + i * 0.105), base = h * (0.72 + (i % 2) * 0.035), width = w * 0.065, height = h * (0.09 + (i % 3) * 0.025);
+    c.fillRect(x, base - height, width, height); c.beginPath(); c.moveTo(x - 5, base - height); c.lineTo(x + width * 0.5, base - height - h * 0.045); c.lineTo(x + width + 5, base - height); c.fill();
+    c.fillStyle = 'rgba(251,191,36,.55)'; c.fillRect(x + width * 0.22, base - height * 0.68, 4, 7); c.fillStyle = 'rgba(24,23,35,.9)';
+  }
+  c.save(); c.translate(w * 0.78, h * 0.48); c.rotate(moving ? frame.time * 0.00012 : 0);
+  const radius = Math.min(w, h) * 0.16, teeth = 12;
+  c.shadowColor = '#fbbf24'; c.shadowBlur = frame.quality.glow ? 18 : 5;
+  c.strokeStyle = 'rgba(251,191,36,.88)'; c.lineWidth = Math.max(3, radius * 0.12);
+  c.beginPath();
+  for (let i = 0; i < teeth * 2; i++) { const a = i * Math.PI / teeth, r = radius * (i % 2 ? 0.88 : 1.08); if (!i) c.moveTo(Math.cos(a) * r, Math.sin(a) * r); else c.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+  c.closePath(); c.stroke();
+  c.strokeStyle = 'rgba(255,237,173,.7)'; c.lineWidth = Math.max(2, radius * 0.045); c.beginPath(); c.arc(0, 0, radius * 0.66, 0, Math.PI * 2); c.stroke();
+  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; c.beginPath(); c.moveTo(Math.cos(a) * radius * 0.12, Math.sin(a) * radius * 0.12); c.lineTo(Math.cos(a) * radius * 0.65, Math.sin(a) * radius * 0.65); c.stroke(); }
+  c.fillStyle = '#fbbf24'; c.beginPath(); c.arc(0, 0, radius * 0.14, 0, Math.PI * 2); c.fill(); c.restore();
+  const dust = Math.min(frame.quality.particles, 24);
+  for (let i = 0; i < dust; i++) {
+    const x = ((i * 151.7 + 37) % 991) / 991 * w, drift = moving ? frame.time * (0.006 + i % 3 * 0.002) : 0;
+    const y = ((i * 173.1 + drift) % 997) / 997 * h;
+    c.globalAlpha = moving ? 0.2 + 0.3 * Math.abs(Math.sin(frame.time * 0.001 + i)) : 0.3;
+    c.fillStyle = i % 3 ? '#fbbf24' : '#fde68a'; c.fillRect(x, y, 2, 2);
+  }
+  c.globalAlpha = 1;
+}
+
+window.ClockworkDawnMenuScene = clockworkDawnMenuScene;
+clockworkDawnGame.ui = UI.mountGame(clockworkDawnGame, {
+  id: 'clockwork-dawn', title: 'Clockwork Dawn', subtitle: 'Carry the party beyond the last dark hour.', accent: '#fbbf24',
+  modes: [
+    { id: 'story', name: 'Story Journey', blurb: 'Explore Hearthwick and defeat the Warden.', seasonTargets: [1500, 4500, 9000] },
+    { id: 'daily-dawn', name: 'Daily Dawn', blurb: 'A seeded world and encounter route for today.', seeded: true, seasonTargets: [1200, 3500, 7500] },
+    { id: 'warden-rematch', name: 'Warden Rematch', blurb: 'Level 4 party · boss fight only.', seasonTargets: [1800, 5000, 10000] },
+    { id: 'new-dawn-plus', name: 'New Dawn+', blurb: 'Stronger party, stronger Warden · unlock after Story.', requires: { stat: 'storyCompletions', gte: 1 }, seasonTargets: [2500, 6500, 12000] },
+  ],
+  mutators: [
+    { id: 'gold-rush', name: 'Gold Rush', blurb: 'A risk-free score challenge; no combat rules change.', multiplier: 1.25 },
+  ],
+  settings: [
+    { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
+    { key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 },
+    { key: 'particles', label: 'Particles', type: 'select', options: ['lite', 'standard', 'ultra'], default: 'standard' },
+  ],
+  achievements: [
+    { id: 'first-run', name: 'First Run', desc: 'Complete one journey.', rarity: 'common' },
+    { id: 'steady-hand', name: 'Steady Hand', desc: 'Reach 1,000 score.', rarity: 'common' },
+    { id: 'quick-clear', name: 'Quick Clear', desc: 'Finish the journey within ten minutes.', rarity: 'common' },
+    { id: 'personal-best', name: 'Personal Best', desc: 'Set a new high score.', rarity: 'rare' },
+    { id: 'daily-player', name: 'Daily Player', desc: 'Complete the seeded Daily Dawn.', rarity: 'rare' },
+    { id: 'no-mistakes', name: 'No Mistakes', desc: 'Finish without a party member falling.', rarity: 'rare' },
+    { id: 'long-run', name: 'Long Run', desc: 'Take at least 80 steps.', rarity: 'rare' },
+    { id: 'perfect-round', name: 'Perfect Round', desc: 'Clear the Warden without losing a party member.', rarity: 'epic' },
+    { id: 'mastery', name: 'Mastery', desc: 'Defeat the Clockwork Warden.', rarity: 'epic' },
+    { id: 'season-ace', name: 'Season Ace', desc: 'Reach party level five.', rarity: 'legendary' },
+  ],
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Explore the village and speak with Elder Orrin to learn the route.', hold: 'ArrowRight' },
+    { text: 'Tall grass hides encounters. Fight to gain XP, gold, and supplies.', hold: 'Space' },
+    { text: 'Mira can heal the party. Rest at the inn and stock up before the Gear Gate.', hold: 'KeyX' },
+    { text: 'Defeat the Warden, then step through the portal to restore the dawn.', hold: 'ArrowRight' },
+  ] },
+  hooks: {
+    applyMode: (id) => setMode(id),
+    applySetting: (key, value) => {
+      if (key === 'difficulty') difficulty = value;
+      if (key === 'shake') shakeScale = Math.max(0, Math.min(1, Number(value)));
+      if (key === 'particles' && window.Perf && Perf.setTier) Perf.setTier(value);
+    },
+    applyCosmetic,
+    getResult: () => ({ score: clockworkDawnGame.score, win: clockworkDawnGame.state === 'won', mode: activeMode, level: party && party[0] ? party[0].lvl : 1 }),
+  },
+});
+const clockworkOriginalShake = clockworkDawnGame.shake.bind(clockworkDawnGame);
+clockworkDawnGame.shake = (amount) => clockworkOriginalShake(amount * shakeScale);
+clockworkDawnGame.inputLocked = true;
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

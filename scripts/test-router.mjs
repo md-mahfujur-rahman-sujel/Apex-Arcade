@@ -14,6 +14,9 @@ page.on('pageerror', (error) => errors.push(error.message));
 page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
 const check = async (hash, selector, text) => {
   await page.goto(`${origin}/${hash}`);
+  // A hash-only navigation keeps the previous document alive; reload so each
+  // check exercises a true direct load of the requested route.
+  await page.reload();
   await page.locator(selector).first().waitFor({ state: 'visible', timeout: 10000 });
   if (text && !(await page.locator(selector).first().innerText()).includes(text)) throw new Error(`${hash}: expected ${JSON.stringify(text)} in ${selector}`);
 };
@@ -22,9 +25,11 @@ try {
   await check('#/', '#catalog');
   await check('#/browse?mode=Classic&len=short&players=1P&input=keyboard&tag=logic&mood=elemental&q=2048', '#catalog');
   if (await page.getByPlaceholder('Search title, genre, rules…').inputValue() !== '2048') throw new Error('Browse q parameter did not initialize the search control');
-  const filters = page.locator('#catalog label select');
-  for (const [index, label, value] of [[1, 'Players', '1P'], [2, 'Session', 'short'], [3, 'Mode', 'Classic'], [4, 'Input', 'keyboard'], [5, 'Tag', 'logic']]) {
-    if (await filters.nth(index).inputValue() !== value) throw new Error(`Browse ${label} parameter did not initialize its control`);
+  if (await page.getByLabel('Players facet').inputValue() !== '1P') throw new Error('Browse Players parameter did not initialize its control');
+  if (await page.getByLabel('Session length facet').inputValue() !== 'short') throw new Error('Browse Session parameter did not initialize its control');
+  for (const [label, value] of [['Mode', 'Classic'], ['Input', 'keyboard'], ['Tag', 'logic']]) {
+    const ariaLabel = await page.locator(`#catalog summary[aria-label^="${label} filter:"]`).getAttribute('aria-label');
+    if (ariaLabel !== `${label} filter: ${value}`) throw new Error(`Browse ${label} parameter did not initialize its control (got ${JSON.stringify(ariaLabel)})`);
   }
   await page.getByText('Merge 2048', { exact: true }).first().waitFor({ state: 'visible' });
   await check('#/game/flappy-bird', 'h1', 'Glowmoth Gauntlet');
@@ -54,6 +59,18 @@ try {
   await page.waitForFunction(() => location.hash === '#/play/flappy-bird');
   await page.locator('#playable-theater-modal [data-ui-close]').click();
   await page.waitForFunction(() => location.hash === '#/game/flappy-bird');
+
+  await page.getByRole('button', { name: /play now/i }).click();
+  await page.locator('#playable-theater-modal [data-ui-open]').click();
+  await page.waitForFunction(() => {
+    const frame = document.querySelector('#playable-theater-modal iframe');
+    return frame?.contentWindow?.location.pathname.includes('01-flappy-bird.html') && frame.contentDocument?.readyState === 'complete';
+  });
+  await page.evaluate(() => { document.querySelector('#playable-theater-modal iframe').contentWindow.location.hash = '#history-probe'; });
+  await page.locator('#playable-theater-modal [data-ui-close]').click();
+  await page.waitForFunction(() => location.hash === '#/game/flappy-bird');
+  await page.locator('#playable-theater-modal').waitFor({ state: 'detached' });
+
   await page.getByRole('button', { name: /play now/i }).click();
   await page.waitForFunction(() => location.hash === '#/play/flappy-bird');
   await page.goBack();
@@ -66,10 +83,10 @@ try {
   await page.goto(`${origin}/#/settings`);
   await page.getByRole('button', { name: /current theme/i }).click();
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
-  await page.getByRole('button', { name: /return home/i }).click();
+  await page.getByRole('link', { name: 'Apex Arcade home' }).click();
   await page.waitForFunction(() => location.hash === '#/');
   if (errors.length) throw new Error(`Browser errors: ${errors.join(' | ')}`);
-  console.log('Router verification passed: direct route loads, legacy redirect, not-found states, back/forward, play close, and theme persistence across navigation.');
+  console.log('Router verification passed: direct route loads, legacy redirect, not-found states, back/forward, play close (including recovery from a game-frame history entry), and theme persistence across navigation.');
 } finally {
   await browser.close();
   await new Promise((resolve) => server.httpServer.close(resolve));

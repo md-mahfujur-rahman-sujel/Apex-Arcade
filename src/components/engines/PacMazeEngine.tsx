@@ -132,6 +132,7 @@ export const PacMazeEngine: React.FC<PacMazeEngineProps> = ({
   // Controls
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
+      if (isPaused) return;
       if (stateRef.current !== 'PLAYING') {
         if (e.code === 'Space') {
           e.preventDefault();
@@ -157,7 +158,7 @@ export const PacMazeEngine: React.FC<PacMazeEngineProps> = ({
 
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [startGame]);
+  }, [isPaused, startGame]);
 
   // Main Loop
   useEffect(() => {
@@ -211,17 +212,32 @@ export const PacMazeEngine: React.FC<PacMazeEngineProps> = ({
           }
         }
 
-        // Move Pac-Man if no wall ahead
-        const targetX = curCellX + pac.dir.x;
-        const targetY = curCellY + pac.dir.y;
-        const canMove =
-          targetX >= 0 && targetX < COLS && targetY >= 0 && targetY < ROWS
-            ? MAZE[targetY][targetX] === 0 || Math.hypot(pac.x - cellCenterX, pac.y - cellCenterY) > 2
-            : false;
+        // Move Pac-Man, but never into a wall. When the next cell is blocked,
+        // let him finish reaching the current cell's centre before stopping.
+        const aheadX = curCellX + pac.dir.x;
+        const aheadY = curCellY + pac.dir.y;
+        const aheadBlocked =
+          aheadX < 0 ||
+          aheadX >= COLS ||
+          aheadY < 0 ||
+          aheadY >= ROWS ||
+          MAZE[aheadY][aheadX] === 1;
 
-        if (canMove || Math.hypot(pac.x - cellCenterX, pac.y - cellCenterY) > 2) {
+        if (!aheadBlocked) {
           pac.x += pac.dir.x * pacSpeed;
           pac.y += pac.dir.y * pacSpeed;
+        } else if (pac.dir.x !== 0) {
+          pac.x =
+            pac.dir.x > 0
+              ? Math.min(pac.x + pacSpeed, cellCenterX)
+              : Math.max(pac.x - pacSpeed, cellCenterX);
+          pac.y = cellCenterY;
+        } else if (pac.dir.y !== 0) {
+          pac.y =
+            pac.dir.y > 0
+              ? Math.min(pac.y + pacSpeed, cellCenterY)
+              : Math.max(pac.y - pacSpeed, cellCenterY);
+          pac.x = cellCenterX;
         }
 
         // Chomp animation

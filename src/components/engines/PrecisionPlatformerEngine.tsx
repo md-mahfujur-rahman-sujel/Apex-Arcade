@@ -220,6 +220,7 @@ export const PrecisionPlatformerEngine: React.FC<PrecisionPlatformerEngineProps>
     const keys = new Set<string>();
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isPaused) return;
       keys.add(e.code);
       if (e.code === 'Space' || e.code === 'KeyW' || e.code === 'ArrowUp') {
         e.preventDefault();
@@ -239,7 +240,7 @@ export const PrecisionPlatformerEngine: React.FC<PrecisionPlatformerEngineProps>
     };
 
     const interval = setInterval(() => {
-      if (stateRef.current !== 'PLAYING') return;
+      if (isPaused || stateRef.current !== 'PLAYING') return;
       const p = playerRef.current;
       if (p.dashTimer > 0) return;
 
@@ -265,7 +266,7 @@ export const PrecisionPlatformerEngine: React.FC<PrecisionPlatformerEngineProps>
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [dash, difficulty, jump, startGame]);
+  }, [dash, difficulty, isPaused, jump, startGame]);
 
   // Main Loop
   useEffect(() => {

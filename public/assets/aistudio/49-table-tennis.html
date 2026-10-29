@@ -20,6 +20,7 @@
     #cv { border-radius: 10px; }
   }
 </style>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -430,7 +431,7 @@ function point(w, reason) {
   const hi = Math.max(...sc);
   if (hi >= 11 && Math.abs(sc[0] - sc[1]) >= 2) {
     over = true; state = 'over'; msg(); Board.sfx(sc[0] > sc[1] || mode === 3 ? 'win' : 'lose');
-    setTimeout(() => Board.modal(sc[0] > sc[1] ? (mode === 3 ? 'Player one wins' : 'You win!') : (mode === 3 ? 'Player two wins' : 'Computer wins'), sc[0] + ' – ' + sc[1] + ' · longest rally ' + bestRally, [['New match', newMatch], ['Close']]), 700);
+    Board.after(700, () => Board.modal(sc[0] > sc[1] ? (mode === 3 ? 'Player one wins' : 'You win!') : (mode === 3 ? 'Player two wins' : 'Computer wins'), sc[0] + ' – ' + sc[1] + ' · longest rally ' + bestRally, [['New match', newMatch], ['Close']]));
     return;
   }
   const t = sc[0] + sc[1]; srv = (sc[0] >= 10 && sc[1] >= 10) ? t % 2 : (t >> 1) % 2; msg();
@@ -743,7 +744,7 @@ function drawNet() {
 
 function drawGuide() {
   if (!guide || state !== 'rally' || hitter !== 1 || over) return;
-  const t = performance.now() / 1000;
+  const t = Board.now() / 1000;
   if (gd.bounce) {
     cx.beginPath();
     for (let i = 0; i < 16; i++) {
@@ -965,7 +966,7 @@ function drawHud() {
     cx.fillText(t, W / 2, H - 119); cx.restore();
   }
 
-  if (paused) {
+  if (paused && !window.__apexTheaterEmbedded) {
     cx.save(); cx.fillStyle = 'rgba(2,6,24,.65)'; cx.fillRect(0, 0, W, H);
     cx.fillStyle = '#fff'; cx.font = '800 54px "Segoe UI",system-ui,sans-serif';
     cx.textAlign = 'center'; cx.textBaseline = 'middle';
@@ -1026,7 +1027,7 @@ cv.addEventListener('pointermove', (e) => {
 cv.addEventListener('pointerdown', (e) => {
   const p = toCv(e);
   try { cv.setPointerCapture(e.pointerId); } catch (x) {}
-  if (paused) { togglePause(); return; }
+  if (paused) { if (!window.__apexTheaterEmbedded) togglePause(); return; }
   if (inSlider(p)) { sliding = true; setDepthFromY(p.y); return; }
   const adjustedY = e.pointerType === 'touch' ? p.y - 70 : p.y;
   ptr = { x: p.x, y: adjustedY };
@@ -1043,6 +1044,12 @@ cv.addEventListener('contextmenu', (e) => e.preventDefault());
 
 function syncPause() { $('#pause').textContent = paused ? 'Resume' : 'Pause'; }
 function togglePause() { if (over) return; paused = !paused; syncPause(); }
+window.ApexGameMenuActions = {
+  play: function () { paused = false; syncPause(); },
+  pause: function (value) { if (!over) paused = !!value; syncPause(); },
+  resume: function () { if (!over) paused = false; syncPause(); },
+  restart: function () { newMatch(); }
+};
 
 $('#new').onclick = (e) => { e.target.blur(); newMatch(); };
 $('#mode').onchange = (e) => { e.target.blur(); newMatch(); };
@@ -1051,13 +1058,15 @@ $('#guide').onchange = (e) => { guide = e.target.checked; gd.bounce = null; gd.h
 
 // Listen for theater modal difficulty and virtual touch control messages
 window.addEventListener('message', (e) => {
-  if (!e.data) return;
+  if ((e.source !== window.parent && e.source !== window) || e.origin !== window.location.origin || !e.data) return;
   if (e.data.type === 'SET_DIFFICULTY') {
     const d = e.data.difficulty;
     const modeIdx = d === 'easy' ? '0' : d === 'hard' ? '2' : '1';
+    const keepPaused = paused || window.ApexMenuActive;
     $('#mode').value = modeIdx;
     mode = +modeIdx;
     newMatch();
+    if (keepPaused) { paused = true; syncPause(); }
   } else if (e.data.type === 'KEY_EVENT') {
     const k = (e.data.key || '').toLowerCase();
     if (k) {
@@ -1089,9 +1098,11 @@ document.addEventListener('keydown', (e) => {
 });
 document.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
 window.addEventListener('blur', () => { keys = {}; });
-document.addEventListener('visibilitychange', () => { if (document.hidden && !paused && !over) togglePause(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && !paused && !over && !window.__apexTheaterEmbedded) togglePause(); });
 
 newMatch();
+paused = true;
+syncPause();
 
 /* ---------- deterministic fixed-timestep game loop ---------- */
 let lastTime = performance.now();
@@ -1116,5 +1127,6 @@ function loop(currentTime) {
 }
 requestAnimationFrame(loop);
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

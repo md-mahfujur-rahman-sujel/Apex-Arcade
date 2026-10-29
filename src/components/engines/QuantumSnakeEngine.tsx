@@ -68,6 +68,7 @@ export const QuantumSnakeEngine: React.FC<QuantumSnakeEngineProps> = ({
   // Keyboard navigation
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
+      if (isPaused) return;
       const cur = dirRef.current;
       if ((e.code === 'ArrowUp' || e.code === 'KeyW') && cur.y === 0) {
         e.preventDefault();
@@ -89,7 +90,7 @@ export const QuantumSnakeEngine: React.FC<QuantumSnakeEngineProps> = ({
 
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [startGame]);
+  }, [isPaused, startGame]);
 
   // Game tick interval
   useEffect(() => {
@@ -212,6 +213,11 @@ export const QuantumSnakeEngine: React.FC<QuantumSnakeEngineProps> = ({
     };
 
     const loop = () => {
+      if (isPaused) {
+        animId = requestAnimationFrame(loop);
+        return;
+      }
+
       t += 0.05;
       const width = canvas.width;
       const height = canvas.height;
@@ -291,7 +297,7 @@ export const QuantumSnakeEngine: React.FC<QuantumSnakeEngineProps> = ({
 
     animId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animId);
-  }, [GRID_SIZE]);
+  }, [GRID_SIZE, isPaused]);
 
   return (
     <div className="relative w-full max-w-[640px] mx-auto aspect-[4/3] bg-black rounded-xl overflow-hidden border border-white/10 shadow-2xl select-none">

@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @theme inline {
+  --breakpoint-xs: 26rem;
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
   --color-apex-ink: var(--bg);
@@ -30,6 +31,8 @@
   --color-danger: var(--danger);
   --shadow-card: var(--apex-shadow-card);
   --shadow-pop: var(--apex-shadow-pop);
+  --default-transition-duration: var(--apex-motion-fast);
+  --default-transition-timing-function: var(--apex-ease-standard);
 }
 
 :root,
@@ -57,8 +60,9 @@
   --apex-shadow-pop: 0 20px 50px -12px rgb(0 0 0 / 60%);
   --apex-radius-card: 1rem;
   --apex-radius-control: 0.625rem;
-  --apex-motion-fast: 140ms;
-  --apex-motion-standard: 200ms;
+  --apex-motion-fast: 120ms;
+  --apex-motion-base: 220ms;
+  --apex-motion-slow: 420ms;
   --apex-ease-standard: cubic-bezier(0.2, 0, 0, 1);
 }
 
@@ -85,6 +89,10 @@ html[data-theme='light'] {
   --apex-shadow-card: 0 1px 2px rgb(31 41 55 / 6%), 0 8px 20px rgb(31 41 55 / 8%);
   --apex-shadow-pop: 0 20px 50px -12px rgb(31 41 55 / 28%);
 }
+
+html[data-colour-blind='protan'] { --success: #0072b2; --danger: #e69f00; --warning: #e69f00; }
+html[data-colour-blind='deutan'] { --success: #0072b2; --danger: #d55e00; --warning: #e69f00; }
+html[data-colour-blind='tritan'] { --success: #009e73; --danger: #cc79a7; --warning: #d55e00; }
 
 @layer base {
   html {
@@ -252,6 +260,15 @@ html {
     animation: none !important;
     transition: none !important;
   }
+}
+
+[data-apex-reduced-motion='true'],
+[data-apex-reduced-motion='true'] *,
+[data-apex-reduced-motion='true'] *::before,
+[data-apex-reduced-motion='true'] *::after {
+  scroll-behavior: auto !important;
+  animation: none !important;
+  transition: none !important;
 }
 
 @media (orientation: landscape) and (max-width: 639px) {

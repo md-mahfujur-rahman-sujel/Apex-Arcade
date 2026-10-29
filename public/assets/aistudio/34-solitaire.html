@@ -26,6 +26,7 @@
   .panel .bk-status { flex: 1 1 280px; }
   .note { margin-top: 4px; color: var(--amber); font-weight: 600; font-size: 13px; }
 </style>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -61,7 +62,7 @@ function newGame() {
   Board.shuffle(d); tab = []; for (let c = 0; c < 7; c++) { tab.push(d.splice(0, c + 1)); tab[c][c].up = true; }
   stock = d; waste = []; found = [[], [], [], []]; moves = 0; wshow = 0; hist = []; sel = null; hint = null; note = ''; t0 = 0; secs = 0; won = false; busy = false; render();
 }
-const save = () => { hist.push(JSON.stringify({ stock, waste, found, tab, moves, wshow })); if (hist.length > 300) hist.shift(); if (!t0) t0 = Date.now(); };
+const save = () => { hist.push(JSON.stringify({ stock, waste, found, tab, moves, wshow })); if (hist.length > 300) hist.shift(); if (!t0) t0 = Board.now(); };
 function undo() {
   if (busy || !hist.length) return; const h = JSON.parse(hist.pop()); ({ stock, waste, found, tab, moves, wshow } = h); sel = null; hint = null; note = ''; won = false; render();
 }
@@ -88,7 +89,7 @@ function drawStock() {
   moves++; render();
 }
 function checkWin() {
-  if (found.every((f) => f.length === 13) && !won) { won = true; Board.sfx('win'); const m = Math.floor((Date.now() - t0) / 1000); setTimeout(() => Board.modal('You won!', `All four foundations complete in ${moves} moves and ${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}.`, [['New game', newGame], ['Close']]), 500); }
+  if (found.every((f) => f.length === 13) && !won) { won = true; Board.sfx('win'); const m = Math.floor((Board.now() - t0) / 1000); Board.after(500, () => Board.modal('You won!', `All four foundations complete in ${moves} moves and ${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}.`, [['New game', newGame], ['Close']])); }
 }
 function autoOk() { return !won && !stock.length && tab.every((c) => c.every((x) => x.up)) && (waste.length || tab.some((c) => c.length)); }
 function autoComplete() {
@@ -97,7 +98,7 @@ function autoComplete() {
     let did = false;
     const srcs = [{ z: 'waste' }, ...tab.map((c, i) => ({ z: 't' + i, i: c.length - 1 }))];
     for (const s of srcs) { if (s.z === 'waste' ? !waste.length : s.i < 0) continue; const c = stackFor(s)[0]; if (go(s, 'f' + c.s)) { did = true; break; } }
-    if (did && !won) setTimeout(step, 70); else busy = false;
+    if (did && !won) Board.after(70, step); else busy = false;
   })();
 }
 function findHint() {
@@ -161,7 +162,7 @@ $('#bd').addEventListener('dblclick', (e) => {
   const s = z === 'waste' ? { z } : { z, i }; if (z === 'waste' ? i !== waste.length - 1 : i !== tab[+z[1]].length - 1) return;
   const c = stackFor(s)[0]; sel = null; if (!go(s, 'f' + c.s)) { Board.sfx('error'); render(); }
 });
-setInterval(() => { if (t0 && !won) { secs = Math.floor((Date.now() - t0) / 1000); const m = secs; const el = $('#st b:nth-of-type(2)'); if (el) el.textContent = Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0'); } }, 1000);
+Board.every(1000, () => { if (t0 && !won) { secs = Math.floor((Board.now() - t0) / 1000); const m = secs; const el = $('#st b:nth-of-type(2)'); if (el) el.textContent = Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0'); } });
 $('#new').onclick = newGame; $('#undo').onclick = undo; $('#hint').onclick = showHint; $('#auto').onclick = autoComplete; $('#draw').onchange = newGame;
 document.addEventListener('keydown', (e) => {
   if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -169,5 +170,6 @@ document.addEventListener('keydown', (e) => {
 });
 newGame();
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

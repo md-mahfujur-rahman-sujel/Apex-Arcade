@@ -26,6 +26,7 @@
   .capt { color: var(--muted); line-height: 1.7; }
   .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
 </style>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -115,7 +116,7 @@ function play(c) {
   render(i);
   if (over) {
     const w = mode !== 'two' && wl && B[wl[0]] === mode; Board.sfx(!wl ? 'move' : mode === 'two' || w ? 'win' : 'lose');
-    setTimeout(() => Board.modal(!wl ? 'Draw' : mode === 'two' ? over : w ? 'You won!' : 'Computer wins', over, [['New game', newGame], ['Close']]), 700);
+    Board.after(700, () => Board.modal(!wl ? 'Draw' : mode === 'two' ? over : w ? 'You won!' : 'Computer wins', over, [['New game', newGame], ['Close']]));
   } else cpu();
 }
 function cpu() {
@@ -159,5 +160,6 @@ document.addEventListener('keydown', (e) => {
 });
 newGame();
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

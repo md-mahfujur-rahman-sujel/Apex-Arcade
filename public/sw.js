@@ -1,4 +1,4 @@
-const CACHE_NAME = 'apex-arcade-v2';
+const CACHE_NAME = 'apex-arcade-v15';
 const BASE_PATH = new URL('.', self.location.href).pathname;
 const GAME_FILES = [
   '01-flappy-bird.html', '02-pong.html', '03-snake.html', '04-space-invaders.html', '05-tetris.html',
@@ -14,26 +14,27 @@ const GAME_FILES = [
   '49-table-tennis.html', '50-mahjong.html',
 ].map((file) => `${BASE_PATH}assets/aistudio/${file}`);
 const GAME_KITS = [
-  'perf-kit.js', 'arcade-core.js', 'board-kit.js', 'board-art.js', 'save-kit.js', 'score-bridge.js',
-  'fx-kit.js', 'ui-kit.js', 'music-kit.js', 'card-scenes.js',
+  'meta-config.js', 'meta-kit.js', 'perf-kit.js', 'arcade-core.js', 'platform-kit.js', 'act-kit.js', 'board-kit.js', 'board-art.js', 'save-kit.js', 'score-bridge.js',
+  'fx-kit.js', 'ui-kit.js', 'music-kit.js', 'card-scenes.js', 'menu-kit.js', 'menu-kit.css', 'menu-bootstrap.js',
 ].map((file) => `${BASE_PATH}assets/aistudio/${file}`);
 const APP_SHELL = [BASE_PATH, `${BASE_PATH}manifest.webmanifest`, `${BASE_PATH}apex-icon.svg`];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(async (cache) => {
-        await cache.addAll(APP_SHELL);
-        const shell = await cache.match(BASE_PATH);
-        if (!shell) throw new Error('Apex Arcade shell could not be cached.');
-        const html = await shell.text();
-        const builtAssets = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
-          .map((match) => new URL(match[1], self.location.origin))
-          .filter((url) => url.origin === self.location.origin && url.pathname.startsWith(`${BASE_PATH}assets/`))
-          .map((url) => `${url.pathname}${url.search}`);
-        await cache.addAll([...new Set([...GAME_FILES, ...GAME_KITS, ...builtAssets])]);
-      })
-      .then(() => self.skipWaiting()),
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+      const shellResponse = await fetch(BASE_PATH);
+      if (!shellResponse.ok) throw new Error('Apex Arcade shell could not be cached.');
+      await cache.put(BASE_PATH, shellResponse.clone());
+      const html = await shellResponse.text();
+      const builtAssets = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
+        .map((match) => new URL(match[1], self.location.origin))
+        .filter((url) => url.origin === self.location.origin && url.pathname.startsWith(`${BASE_PATH}assets/`))
+        .map((url) => `${url.pathname}${url.search}`);
+      const precacheUrls = [...new Set([...APP_SHELL.slice(1), ...builtAssets, ...GAME_FILES, ...GAME_KITS])];
+      await cache.addAll(precacheUrls);
+      // Wait for the client to approve activation so the app can show an update prompt.
+    })(),
   );
 });
 
@@ -43,6 +44,10 @@ self.addEventListener('activate', (event) => {
       .then((keys) => Promise.all(keys.filter((key) => key.startsWith('apex-arcade-') && key !== CACHE_NAME).map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'APEX_SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('fetch', (event) => {

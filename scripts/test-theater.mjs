@@ -37,10 +37,33 @@ try {
   assert.equal(await theater.getAttribute('data-theme'), 'dark');
   assert.equal(await theater.getAttribute('data-touch-mode'), 'virtual');
   assert.equal(await page.locator('#playable-theater-stage').evaluate((stage) => getComputedStyle(stage).backgroundColor), 'rgb(5, 6, 13)', 'the theater stage remains dark');
+  const flappyFrame = page.frameLocator('#playable-theater-modal iframe');
+  await flappyFrame.locator('[data-menu-action="play"], [data-menu-action="continue"]').first().click({ timeout: 5000 });
+  await flappyFrame.locator('.apex-menu-root').waitFor({ state: 'hidden' });
+  await page.waitForFunction(() => {
+    const button = document.querySelector('#playable-theater-modal button[aria-label="Pause game"]');
+    return button instanceof HTMLButtonElement && !button.disabled;
+  });
   await page.getByRole('button', { name: 'Pause game' }).click();
   await page.getByRole('dialog', { name: 'Game paused' }).waitFor();
   await page.getByRole('button', { name: 'Resume', exact: true }).click();
   await page.getByRole('dialog', { name: 'Game paused' }).waitFor({ state: 'detached' });
+
+  // Gamepad Start toggles the same single host pause screen.
+  const pad = async (index, pressed) => {
+    await page.evaluate(({ index, pressed }) => { window.__theaterPad.buttons[index].pressed = pressed; }, { index, pressed });
+    await page.waitForTimeout(120);
+  };
+  await pad(9, true);
+  await page.getByRole('dialog', { name: 'Game paused' }).waitFor();
+  assert.equal(await page.locator('#playable-theater-modal [role="dialog"][aria-label="Game paused"]').count(), 1, 'gamepad Start opens exactly one pause screen');
+  await pad(9, false);
+  await pad(9, true);
+  await page.getByRole('dialog', { name: 'Game paused' }).waitFor({ state: 'detached' });
+  await pad(9, false);
+  await page.waitForFunction(() => document.querySelector('#playable-theater-modal iframe')?.contentWindow?.ApexGamePaused === false);
+  await page.waitForTimeout(250);
+  assert.equal(await page.locator('#playable-theater-modal [role="dialog"][aria-label="Game paused"]').count(), 0, 'gamepad Start resumes without immediately re-pausing');
 
   await page.getByRole('button', { name: 'Theater settings' }).click();
   const theaterVolume = page.getByRole('slider', { name: 'Theater volume' });
@@ -151,8 +174,45 @@ try {
     await page.getByRole('button', { name: 'Close Theater' }).click();
   }
 
+  // Escape owns pause for iframe games, and every overlay action routes correctly.
+  await page.evaluate(() => { location.hash = '#/game/flappy-bird'; });
+  await page.getByRole('button', { name: 'Play now' }).click();
+  await page.locator('#playable-theater-modal [data-ui-open]').click();
+  const pausedFlappy = page.frameLocator('#playable-theater-modal iframe');
+  await pausedFlappy.locator('[data-menu-action="play"], [data-menu-action="continue"]').first().click({ timeout: 5000 });
+  await pausedFlappy.locator('.apex-menu-root').waitFor({ state: 'hidden' });
+  await page.waitForFunction(() => {
+    const button = document.querySelector('#playable-theater-modal button[aria-label="Pause game"]');
+    return button instanceof HTMLButtonElement && !button.disabled;
+  });
+  await page.keyboard.press('Escape');
+  const actionDialog = page.getByRole('dialog', { name: 'Game paused' });
+  await actionDialog.waitFor();
+  await actionDialog.getByRole('button', { name: 'Settings', exact: true }).click();
+  await actionDialog.getByRole('heading', { name: 'Theater settings' }).waitFor();
+  await actionDialog.getByRole('button', { name: 'Back to pause' }).click();
+  await actionDialog.getByRole('button', { name: 'Restart', exact: true }).click();
+  await actionDialog.waitFor({ state: 'detached' });
+  await page.waitForFunction(() => {
+    const frame = document.querySelector('#playable-theater-modal iframe');
+    const menu = frame?.contentDocument?.querySelector('.apex-menu-root');
+    return frame?.contentWindow?.location.href.includes('r=') && frame.contentDocument?.readyState === 'complete' && menu && !menu.hidden;
+  });
+  await pausedFlappy.locator('.apex-menu-root').waitFor({ state: 'visible' });
+  await pausedFlappy.locator('[data-menu-action="play"], [data-menu-action="continue"]').first().click({ timeout: 5000 });
+  await pausedFlappy.locator('.apex-menu-root').waitFor({ state: 'hidden' });
+  await page.waitForFunction(() => {
+    const button = document.querySelector('#playable-theater-modal button[aria-label="Pause game"]');
+    return button instanceof HTMLButtonElement && !button.disabled;
+  });
+  await page.keyboard.press('Escape');
+  await actionDialog.waitFor();
+  await actionDialog.getByRole('button', { name: 'Exit to Arcade' }).click();
+  await page.locator('#playable-theater-modal').waitFor({ state: 'detached' });
+  assert.equal(await page.getByRole('button', { name: 'Play now' }).count(), 1, 'Exit to Arcade returns to the game page');
+
   if (errors.length) throw new Error(`Browser errors: ${errors.join(' | ')}`);
-  console.log('PASS production theater pause overlay, per-game touch input, live persisted display modes, fullscreen synchronization, gamepad menu navigation, dark theme, and native 2048 touch mode');
+  console.log('PASS production theater pause overlay, per-game touch input, live persisted display modes, fullscreen synchronization, gamepad Start pause/resume, Escape pause, and all overlay actions');
   console.log('PASS all 50 game records select their configured native or virtual touch layout');
   console.log('PASS zero browser errors');
 } finally {

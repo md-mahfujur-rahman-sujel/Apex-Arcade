@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { GameInfo } from '../types/game';
 import { CardScenePreview } from './CardScenePreview';
-import { Play, BookOpen, Star, Sparkles, Terminal } from 'lucide-react';
+import { Play, BookOpen, Star, Sparkles } from 'lucide-react';
 import { audio } from '../services/audioSynthesizer';
 import { prefetchGameDocument } from '../services/performanceHints';
 import { Card } from './ui/Card';
@@ -48,8 +48,8 @@ export const GameCard3D: React.FC<GameCard3DProps> = ({
     const centerX = rect.width / 2;
     const centerY = rect.height / 2;
 
-    const rotX = -((y - centerY) / centerY) * 7;
-    const rotY = ((x - centerX) / centerX) * 7;
+    const rotX = Math.max(-6, Math.min(6, -((y - centerY) / centerY) * 6));
+    const rotY = Math.max(-6, Math.min(6, ((x - centerX) / centerX) * 6));
 
     setRotateX(rotX);
     setRotateY(rotY);
@@ -83,7 +83,9 @@ export const GameCard3D: React.FC<GameCard3DProps> = ({
         transform: isHovered
           ? `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateY(-5px)`
           : 'perspective(1000px) rotateX(0deg) rotateY(0deg) translateY(0px)',
-        transition: isHovered ? 'transform 0.08s ease-out' : 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+        transition: isHovered
+          ? 'transform var(--apex-motion-fast) var(--apex-ease-standard)'
+          : 'transform var(--apex-motion-base) var(--apex-ease-standard)',
         borderColor: isHovered ? game.accentColor : 'var(--line)',
         boxShadow: isHovered
           ? `0 20px 40px -15px ${game.accentColor}35, 0 0 0 1px ${game.accentColor}50`
@@ -115,20 +117,13 @@ export const GameCard3D: React.FC<GameCard3DProps> = ({
           }}
           aria-label="Toggle Favorite"
           data-card-favorite
-          className="absolute right-2.5 top-2.5 z-20 grid min-h-11 min-w-11 place-items-center rounded-lg border border-white/15 bg-black/60 text-white/75 backdrop-blur-md transition-colors cursor-pointer hover:bg-black/90 hover:text-amber-300 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+          className="absolute bottom-2.5 right-2.5 z-20 grid min-h-11 min-w-11 place-items-center rounded-lg border border-white/15 bg-black/60 text-white/75 backdrop-blur-md transition-colors cursor-pointer hover:bg-black/90 hover:text-amber-300 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         >
           <Star
             className={`w-3.5 h-3.5 ${isFavorite ? 'fill-amber-300 text-amber-300' : 'text-current'}`}
           />
         </button>
 
-        {/* 2.5D Badge indicator if custom 3D canvas engine exists */}
-        {game.playableEngineId && (
-          <div data-engine-badge className="absolute bottom-2.5 right-2.5 z-20 flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-md border border-white/15 text-white text-[10px] font-mono font-bold tracking-tight">
-            <Sparkles className="w-2.5 h-2.5 text-accent" />
-            <span>3D Engine</span>
-          </div>
-        )}
       </ScreenBezel>
 
       {/* Card Body Area */}
@@ -158,9 +153,12 @@ export const GameCard3D: React.FC<GameCard3DProps> = ({
         </div>
 
         {/* Title */}
-        <h3 data-card-title className="text-lg font-bold text-fg tracking-tight group-hover:text-accent transition-colors mb-2">
-          <HighlightedText text={game.title} query={searchQuery} />
-        </h3>
+        <div className="mb-2 flex items-start justify-between gap-2">
+          <h3 data-card-title className="min-w-0 flex-1 text-lg font-bold text-fg tracking-tight group-hover:text-accent transition-colors">
+            <HighlightedText text={game.title} query={searchQuery} />
+          </h3>
+          {game.playableEngineId && <span data-engine-badge className="mt-1 flex shrink-0 items-center gap-1 rounded border border-accent/30 bg-accent-soft px-1.5 py-0.5 text-[9px] font-bold text-accent"><Sparkles className="h-2.5 w-2.5" />3D</span>}
+        </div>
 
         {/* Blurb Description */}
         <p data-card-description className="text-xs text-fg-muted line-clamp-2 leading-relaxed mb-4 flex-1">
@@ -174,14 +172,8 @@ export const GameCard3D: React.FC<GameCard3DProps> = ({
           <span><span className="block font-mono text-fg">{progress.completed}/{progress.total} levels</span><span>{Math.ceil((progress.completed / progress.total) * 3)} / 3 stars</span></span>
         </div>}
 
-        {/* Keybindings Shortcut Bar */}
-        <div data-card-shortcut className="pt-2.5 pb-3 border-t border-line flex items-center gap-2 text-[11px] font-mono text-fg-muted truncate">
-          <Terminal className="w-3 h-3 text-accent shrink-0" />
-          <span className="truncate text-fg-muted">{game.keys}</span>
-        </div>
-
         {/* Interactive Action Zone */}
-        <div className="flex items-center gap-2 pt-2 border-t border-line">
+        <div className="flex items-stretch gap-2 pt-2 border-t border-line">
           <button
             data-game-action
             onClick={(e) => {
@@ -192,7 +184,7 @@ export const GameCard3D: React.FC<GameCard3DProps> = ({
               backgroundColor: game.accentColor,
               color: '#07111a',
             }}
-            className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold shadow transition-transform cursor-pointer hover:brightness-110 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+            className="flex h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-xs font-bold shadow transition-transform cursor-pointer hover:brightness-110 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
             <span>Play Game</span>
@@ -204,7 +196,7 @@ export const GameCard3D: React.FC<GameCard3DProps> = ({
               e.stopPropagation();
               onOpenDossier(game);
             }}
-            className="min-h-11 min-w-11 rounded-xl border border-line bg-surface-2 p-2 text-fg-muted transition-colors cursor-pointer hover:bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-line bg-surface-2 text-fg-muted transition-colors cursor-pointer hover:bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
             title="View History & Lore"
           >
             <BookOpen className="w-3.5 h-3.5" />

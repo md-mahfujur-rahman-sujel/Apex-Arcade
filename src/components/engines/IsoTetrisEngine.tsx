@@ -278,6 +278,7 @@ export const IsoTetrisEngine: React.FC<IsoTetrisEngineProps> = ({
   // Controls
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isPaused) return;
       if (stateRef.current !== 'PLAYING') {
         if (e.code === 'Space') {
           e.preventDefault();
@@ -306,7 +307,7 @@ export const IsoTetrisEngine: React.FC<IsoTetrisEngineProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [startGame]);
+  }, [isPaused, startGame]);
 
   // Gravity Drop Interval
   useEffect(() => {

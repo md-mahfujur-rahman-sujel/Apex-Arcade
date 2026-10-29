@@ -38,7 +38,9 @@
 <script src="board-kit.js"></script>
 <script src="score-bridge.js"></script>
 <script src="ui-kit.js"></script>
+<script src="fx-kit.js"></script>
 <script src="music-kit.js"></script>
+<script src="menu-kit.js"></script>
 <script>
 const ui = Board.shell({
   id: '2048', title: 'Merge 2048', subtitle: 'The Elemental Foundry — shape the Prime Core',
@@ -47,7 +49,6 @@ const ui = Board.shell({
 });
 if (window.matchMedia('(max-width: 520px)').matches) document.getElementById('bk-help')?.removeAttribute('open');
 const MUSIC = { gameId: '2048', tempo: 92, root: 45, scale: 'minor', layers: ['bass', 'pad', 'lead', 'drums'] };
-Music.play(MUSIC); // Audio starts after the player's first gesture.
 ui.main.innerHTML = `
 <div class="g48">
   <div id="bd"></div>
@@ -69,7 +70,7 @@ const readSave = () => window.Save && Save.load ? Save.load(GAME_ID) : { achieve
 window.addEventListener('pagehide', () => {
   const durationSec = Math.max(0, Math.floor((Date.now() - SESSION_START) / 1000)), saved = readSave();
   if (window.Save && Save.update) Save.update(GAME_ID, { stats: { secondsPlayed: (saved.stats.secondsPlayed || 0) + durationSec } });
-  if (window.Apex && Apex.report) Apex.report({ gameId: GAME_ID, type: 'session_end', score: score || 0, durationSec });
+  if (window.Apex && Apex.report) Apex.report({ gameId: GAME_ID, type: 'session_end', score: typeof score === 'number' ? score : 0, durationSec });
 });
 const TRIALS = Array.from({ length: 30 }, (_, i) => ({ tile: [16, 32, 32, 64, 64, 64, 128, 128, 128, 256, 256, 256, 512, 512, 512, 512, 1024, 1024, 1024, 1024, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048][i], moves: 24 + i * 4 }));
 let N, G, score, best, hist, won, keep, over, id = 0, runId = 0, animating = false, paused = false, initialized = false;
@@ -95,7 +96,7 @@ function announceAchievement(id, label) {
   let toast = document.getElementById('core-achievement');
   if (!toast) { toast = document.createElement('div'); toast.id = 'core-achievement'; toast.className = 'core-toast'; document.body.appendChild(toast); }
   toast.innerHTML = `Achievement unlocked: ${label}<small>${id.replace(/-/g, ' ')}</small>`;
-  clearTimeout(toast._timer); toast._timer = setTimeout(() => toast.remove(), 3200);
+  if (toast._timer) Board.cancel(toast._timer); toast._timer = Board.after(3200, () => toast.remove());
 }
 function recordRun(result) {
   if (recorded) { if (window.Save && Save.update) Save.update(GAME_ID, { stats: { merge2048: { activeRun: null } } }); return; } recorded = true; recordedResult = result;
@@ -176,14 +177,14 @@ function move(dir) { /* 0 left 1 up 2 right 3 down; returns true if anything mov
   if (maxTile >= 2048) announceAchievement('prime-core', 'Prime Core');
   if (mergeCount >= 2) announceAchievement('chain-reaction', 'Chain Reaction');
   if (score > lastReportedScore && window.Apex && Apex.report) { lastReportedScore = score; Apex.report({ gameId: GAME_ID, type: 'score', score }); }
-  setTimeout(() => { if (thisRun !== runId) return; add(); Board.sfx('place'); draw(); check(); animating = false; $('#undo').disabled = !hist.length || undoUsed >= undoLimit() || recorded && recordedResult !== 'game-over'; $('#pause').disabled = over; if (!over && !(won && !keep)) saveRun(); }, 125);
+  Board.after(125, () => { if (thisRun !== runId) return; add(); Board.sfx('place'); draw(); check(); animating = false; $('#undo').disabled = !hist.length || undoUsed >= undoLimit() || recorded && recordedResult !== 'game-over'; $('#pause').disabled = over; if (!over && !(won && !keep)) saveRun(); });
   return true;
 }
 function draw(dead) {
   // Host difficulty updates may arrive while the resume prompt is open,
   // before a new board or the saved board has been installed.
   if (!Array.isArray(G)) return;
-  (dead || []).forEach((t) => { const e = document.getElementById('t' + t.id); if (e) { place(e, t.r, t.c); e.dataset.dy = 1; setTimeout(() => e.remove(), 130); } });
+  (dead || []).forEach((t) => { const e = document.getElementById('t' + t.id); if (e) { place(e, t.r, t.c); e.dataset.dy = 1; Board.after(130, () => e.remove()); } });
   [...bd.querySelectorAll('.tl')].forEach((e) => { if (!e.dataset.dy && !G.find((t) => 't' + t.id === e.id)) e.remove(); });
   for (const t of G) {
     let e = document.getElementById('t' + t.id);
@@ -230,36 +231,134 @@ function undo() {
 }
 const K = { arrowleft: 0, a: 0, arrowup: 1, w: 1, arrowright: 2, d: 2, arrowdown: 3, s: 3 };
 document.addEventListener('keydown', (e) => {
-  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || paused || document.getElementById('bk-dlg')?.open) return; const k = e.key.toLowerCase();
+  if (window.ApexMenuActive || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || paused || document.getElementById('bk-dlg')?.open) return; const k = e.key.toLowerCase();
   if (k in K) { e.preventDefault(); if (!over && !document.getElementById('bk-dlg')?.open && !move(K[k])) Board.sfx('error'); } else if (k === 'u') undo(); else if (k === 'n') newGame();
 });
 let sx0, sy0;
-bd.addEventListener('pointerdown', (e) => { sx0 = e.clientX; sy0 = e.clientY; });
-bd.addEventListener('pointerup', (e) => { if (sx0 == null) return; const dx = e.clientX - sx0, dy = e.clientY - sy0; sx0 = null; if (Math.max(Math.abs(dx), Math.abs(dy)) < 24 || over) return; if (!move(Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 0 : 2) : (dy < 0 ? 1 : 3))) Board.sfx('error'); });
-function resumeRun() { const dialog = document.getElementById('bk-dlg'); if (dialog?.open) dialog.close(); paused = false; $('#pause').textContent = 'Pause'; draw(); }
+bd.addEventListener('pointerdown', (e) => { if (window.ApexMenuActive) return; sx0 = e.clientX; sy0 = e.clientY; });
+bd.addEventListener('pointerup', (e) => { if (window.ApexMenuActive || sx0 == null) return; const dx = e.clientX - sx0, dy = e.clientY - sy0; sx0 = null; if (Math.max(Math.abs(dx), Math.abs(dy)) < 24 || over) return; if (!move(Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 0 : 2) : (dy < 0 ? 1 : 3))) Board.sfx('error'); });
+function resumeRun() { const dialog = document.getElementById('bk-dlg'); if (dialog?.open) dialog.close(); paused = false; Board.setPaused(false); $('#pause').textContent = 'Pause'; draw(); }
 function togglePause() {
   if (paused) { const dialog = document.getElementById('bk-dlg'); if (dialog?.open) dialog.close(); resumeRun(); return; }
-  if (animating || over) return;
-  paused = true; $('#pause').textContent = 'Resume';
-  Board.modal('Paused', 'Your Foundry board is saved. Resume when you are ready.', [['Resume', resumeRun], ['New run', newGame]]);
+  if (over) return;
+  paused = true; Board.setPaused(true); $('#pause').textContent = 'Resume';
+  if (!window.__apexTheaterEmbedded) Board.modal('Paused', 'Your Foundry board is saved. Resume when you are ready.', [['Resume', resumeRun], ['New run', newGame]]);
   const dialog = document.getElementById('bk-dlg');
   if (dialog) dialog.addEventListener('cancel', (event) => { event.preventDefault(); resumeRun(); }, { once: true });
 }
-$('#new').onclick = newGame; $('#pause').onclick = togglePause; $('#undo').onclick = undo; $('#stats').onclick = showStats; $('#mode').onchange = newGame; $('#stage').onchange = newGame; $('#difficulty').value = difficulty; $('#difficulty').onchange = (e) => { Board.setDifficulty(e.target.value); difficulty = e.target.value; undoUsed = 0; newGame(); }; window.addEventListener('apex:board-difficulty', (e) => { const next = e.detail?.difficulty; if (!['easy', 'normal', 'hard'].includes(next)) return; difficulty = next; $('#difficulty').value = difficulty; if (initialized && Array.isArray(G)) draw(); });
-$('#size').onchange = (e) => { e.target.blur(); newGame(); };
+$('#new').onclick = newGame; $('#pause').onclick = togglePause; $('#undo').onclick = undo; $('#stats').onclick = showStats; $('#mode').onchange = () => { if (!window.ApexMenuActive) newGame(); }; $('#stage').onchange = () => { if (!window.ApexMenuActive) newGame(); }; $('#difficulty').value = difficulty; $('#difficulty').onchange = (e) => { Board.setDifficulty(e.target.value); difficulty = e.target.value; undoUsed = 0; if (!window.ApexMenuActive) newGame(); }; window.addEventListener('apex:board-difficulty', (e) => { const next = e.detail?.difficulty; if (!['easy', 'normal', 'hard'].includes(next)) return; difficulty = next; $('#difficulty').value = difficulty; if (initialized && Array.isArray(G)) draw(); });
+$('#size').onchange = (e) => { e.target.blur(); if (!window.ApexMenuActive) newGame(); };
 const rawRun = readSave().stats.merge2048?.activeRun;
 let pendingRun = null;
 try { pendingRun = typeof rawRun === 'string' ? JSON.parse(rawRun) : rawRun; } catch (e) { pendingRun = null; }
-if (pendingRun && Array.isArray(pendingRun.G) && pendingRun.G.length && [3, 4, 5, 6].includes(+pendingRun.N)) {
-  Board.modal('Resume your run?', 'A saved board is waiting in the Foundry.', [['Resume', () => { initialized = true; restoreRun(pendingRun); }], ['New run', newGame]]);
-} else {
-  const requestedLevel = Math.max(1, Math.min(TRIALS.length, Number(new URLSearchParams(window.location.search).get('level')) || 1));
-  const firstVisit = !(readSave().stats.plays || 0);
-  $('#mode').value = requestedLevel > 1 ? 'trial' : 'classic';
-  $('#stage').value = String(requestedLevel - 1);
-  newGame();
-  if (firstVisit) Board.modal('The Foundry Keeper', 'Welcome, Core shaper. Slide matching elements together, build the Prime Core, and return whenever the Foundry calls.', [['Enter the Foundry']]);
+if (!pendingRun || !Array.isArray(pendingRun.G) || !pendingRun.G.length || ![3, 4, 5, 6].includes(+pendingRun.N)) pendingRun = null;
+const requestedLevel = Math.max(1, Math.min(TRIALS.length, Number(new URLSearchParams(window.location.search).get('level')) || 1));
+$('#mode').value = requestedLevel > 1 ? 'trial' : 'classic';
+$('#stage').value = String(requestedLevel - 1);
+const savedSettings = readSave().settings || {};
+if (['easy', 'normal', 'hard'].includes(savedSettings.difficulty)) { difficulty = savedSettings.difficulty; $('#difficulty').value = difficulty; Board.setDifficulty(difficulty); }
+Board.setSfxVolume(savedSettings.sfxVol);
+window.ApexMenuActive = true;
+
+function merge2048MenuScene(c, frame) {
+  const w = frame.width, h = frame.height, t = frame.time, quality = frame.quality || { layers: 3 };
+  const bg = c.createLinearGradient(0, 0, w, h);
+  bg.addColorStop(0, '#101421'); bg.addColorStop(.56, '#171b2a'); bg.addColorStop(1, '#0d1220');
+  c.fillStyle = bg; c.fillRect(0, 0, w, h);
+  const glow = c.createRadialGradient(w * .76, h * .28, 0, w * .76, h * .28, Math.max(w, h) * .7);
+  glow.addColorStop(0, 'rgba(167,139,250,.18)'); glow.addColorStop(.42, 'rgba(103,232,249,.055)'); glow.addColorStop(1, 'rgba(16,20,33,0)'); c.fillStyle = glow; c.fillRect(0, 0, w, h);
+  if (frame.static || quality.layers < 2) {
+    const cell = Math.min(w, h) * .105, left = w * .77 - cell * 1.5, top = h * .36 - cell * 1.5;
+    [['2','#eee4da'],['4','#ede0c8'],['8','#a78bfa']].forEach((tile, i) => {
+      const x = left + (i % 2) * cell, y = top + Math.floor(i / 2) * cell;
+      c.fillStyle = 'rgba(255,255,255,.07)'; c.strokeStyle = 'rgba(227,232,255,.24)'; c.lineWidth = 1;
+      c.beginPath(); c.roundRect(x, y, cell * .88, cell * .88, Math.max(4,cell*.14)); c.fill(); c.stroke();
+      c.fillStyle = tile[1]; c.globalAlpha = .86; c.beginPath(); c.roundRect(x + cell*.12, y + cell*.12, cell*.64, cell*.64, Math.max(4,cell*.1)); c.fill();
+      c.globalAlpha = .9; c.fillStyle = i < 2 ? '#39303b' : '#17222b'; c.font = '700 ' + Math.max(11,cell*.27) + 'px ui-monospace,monospace'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(tile[0], x + cell*.44, y + cell*.46);
+    });
+    c.globalAlpha = 1; return;
+  }
+  const unit = Math.min(w, h) * .11, drift = frame.reducedMotion ? 0 : Math.sin(t * .00035) * unit * .14;
+  const tiles = [[.78,.22,2,'#eee4da'],[.91,.34,4,'#ede0c8'],[.84,.47,8,'#a78bfa'],[.71,.39,16,'#67d9da']];
+  tiles.slice(0, Math.min(quality.layers + 1, tiles.length)).forEach((tile, i) => {
+    const size = unit * (i === 2 ? 1.08 : .82), x = w * tile[0] + (i % 2 ? -drift : drift), y = h * tile[1] + (frame.reducedMotion ? 0 : Math.cos(t * .00028 + i) * unit * .08);
+    c.save(); c.translate(x, y); c.rotate((i - 1.5) * .035); c.shadowColor = tile[3]; c.shadowBlur = quality.layers > 2 ? 18 : 0;
+    c.fillStyle = 'rgba(255,255,255,.075)'; c.strokeStyle = 'rgba(227,232,255,.3)'; c.lineWidth = 1;
+    c.beginPath(); c.roundRect(-size/2, -size/2, size, size, Math.max(5,size*.16)); c.fill(); c.stroke(); c.shadowBlur = 0;
+    c.fillStyle = tile[3]; c.globalAlpha = .86; c.beginPath(); c.roundRect(-size*.36, -size*.36, size*.72, size*.72, Math.max(4,size*.12)); c.fill();
+    c.globalAlpha = .84; c.fillStyle = i < 2 ? '#39303b' : '#17222b'; c.font = '700 ' + Math.max(11, size*.3) + 'px ui-monospace,monospace'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(String(tile[2]), 0, 1); c.restore();
+  });
 }
+
+function menuSelect(id, value) {
+  const control = document.getElementById(id);
+  if (!control || control.value === value) return;
+  control.value = value; control.dispatchEvent(new Event('change', { bubbles: true }));
+}
+function menuChoice(doc, label, controlId, value) {
+  const button = doc.createElement('button'), control = document.getElementById(controlId);
+  button.type = 'button'; button.className = 'apex-menu-control-button'; button.textContent = label;
+  button.dataset.menuControl = controlId; button.dataset.menuValue = value;
+  button.setAttribute('aria-pressed', String(!!control && control.value === value));
+  button.addEventListener('click', function () {
+    menuSelect(controlId, value);
+    Array.from(button.parentNode.querySelectorAll('[data-menu-control="' + controlId + '"]')).forEach(function (choice) { choice.setAttribute('aria-pressed', String(choice === button)); });
+  });
+  return button;
+}
+
+const mergeMenu = Menu.mount({
+  gameId: GAME_ID, title: 'Merge 2048', tagline: 'Shape the Prime Core in a quiet, luminous foundry.',
+  archetype: 'glass', items: pendingRun ? [{ id: 'continue', label: 'Continue Run' }, 'play', 'modes', 'options', 'about', 'stats', 'exit'] : ['play', 'modes', 'options', 'about', 'stats', 'exit'],
+  theme: {
+    frame: 'minimal-glass', button: 'raised-glass',
+    palette: { bg: '#101421', panel: 'rgba(24,30,48,0.84)', accent: '#a78bfa', button: '#b8f4ef', buttonText: '#17222b', text: '#f7f4ed' },
+    type: { title: 'system-ui, sans-serif', body: 'system-ui, sans-serif' },
+    scene: merge2048MenuScene, sceneFallback: merge2048MenuScene,
+    music: { tempo: 76, root: 45, scale: 'minor', layers: ['pad', 'bass'] },
+    sfx: { hover: 'step', select: 'place', back: 'undo' }
+  },
+  options: { difficulty: difficulty },
+  onSettingChange: function (key, value) { if (key === 'difficulty') Board.setDifficulty(value); },
+  onPlay: function (action) {
+    window.ApexMenuActive = false;
+    const help = document.getElementById('bk-help'); if (help) help.open = false;
+    if (action.action === 'continue' && pendingRun) { initialized = true; restoreRun(pendingRun); }
+    else newGame();
+    Music.play(MUSIC);
+  },
+  onPause: function (shouldPause) {
+    if (shouldPause && !paused) togglePause();
+    if (shouldPause) { const dialog = document.getElementById('bk-dlg'); if (dialog?.open) dialog.close(); }
+    if (!shouldPause && paused) resumeRun();
+  },
+  onRestart: function () { newGame(); },
+  screens: {
+    modes: function (view) {
+      const doc = view.panel.ownerDocument, heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Choose your run'; view.panel.appendChild(heading);
+      const note = doc.createElement('p'); note.className = 'apex-menu-tagline'; note.textContent = 'Select a foundry path and board size. Your choices take effect when you Play.'; view.panel.appendChild(note);
+      [['RUN TYPE','mode',[['Classic Run','classic'],['Foundry Trials','trial'],['Daily Core','daily']]],['BOARD SIZE · CLASSIC','size',[['Compact · 3×3','3'],['Classic · 4×4','4'],['Spacious · 5×5','5'],['Expansive · 6×6','6']]],['DIFFICULTY','difficulty',[['Easy','easy'],['Normal','normal'],['Hard','hard']]]].forEach(function (group) {
+        const label = doc.createElement('p'); label.className = 'apex-menu-caption'; label.textContent = group[0]; view.panel.appendChild(label);
+        const choices = doc.createElement('div'); choices.className = 'apex-menu-choice-list'; view.panel.appendChild(choices);
+        group[2].forEach(function (item) { choices.appendChild(menuChoice(doc, item[0], group[1], item[1])); });
+      });
+      const stageNote = doc.createElement('p'); stageNote.className = 'apex-menu-caption'; stageNote.textContent = 'Foundry Trials include 30 target-and-move challenges. Daily Core uses today’s seeded board.'; view.panel.appendChild(stageNote);
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back','true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    },
+    about: function (view) {
+      const doc = view.panel.ownerDocument, heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Shape the Prime Core'; view.panel.appendChild(heading);
+      const rules = doc.createElement('p'); rules.className = 'apex-menu-tagline'; rules.textContent = 'Slide matching cores together. Classic runs build toward 2048; Foundry Trials set a target and move limit; Daily Core gives everyone the same date-seeded board.'; view.panel.appendChild(rules);
+      const controls = doc.createElement('p'); controls.className = 'apex-menu-tagline'; controls.textContent = 'Arrow keys or WASD to slide · swipe to move · U undo · N new run · H controls · M mute. Difficulty changes spawn odds and undo limits only.'; view.panel.appendChild(controls);
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back','true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    },
+    stats: function (view) {
+      const doc = view.panel.ownerDocument, record = readSave().stats.merge2048 || {}, heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Foundry records'; view.panel.appendChild(heading);
+      const summary = doc.createElement('p'); summary.className = 'apex-menu-tagline'; summary.textContent = 'Runs started: ' + (record.runsStarted || 0) + ' · completed: ' + (record.runsCompleted || 0) + ' · wins: ' + (record.wins || 0) + '. Best tile: ' + (record.bestTile || 0) + ' · high score: ' + (readSave().stats.bestScore || 0) + '.'; view.panel.appendChild(summary);
+      const trials = doc.createElement('p'); trials.className = 'apex-menu-tagline'; trials.textContent = 'Trials cleared: ' + ((record.completedTrials || []).length) + ' of 30 · Daily completions: ' + (record.dailyCompletions || 0) + '.'; view.panel.appendChild(trials);
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back','true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    }
+  }
+});
 </script>
 </body>
 </html>

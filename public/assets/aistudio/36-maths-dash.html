@@ -25,6 +25,7 @@
   .side { display: grid; gap: 12px; }
   .capt { color: var(--muted); line-height: 1.7; font-size: 13px; }
 </style>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -84,7 +85,7 @@ function bestKey() { const op = $('#op').value; return 'apex:md:' + op + (op ===
 const bestVal = () => +(Board.ls.get(bestKey()) || 0);
 const mult = () => Math.min(5, 1 + Math.floor(Math.max(0, combo - 1) / 5));
 
-function flash(t, c) { const f = $('#fb'); f.textContent = t; f.className = 'fb ' + c; clearTimeout(fbT); fbT = setTimeout(() => { f.innerHTML = '&nbsp;'; f.className = 'fb'; }, 900); }
+function flash(t, c) { const f = $('#fb'); f.textContent = t; f.className = 'fb ' + c; Board.cancel(fbT); fbT = Board.after(900, () => { f.innerHTML = '&nbsp;'; f.className = 'fb'; }); }
 function paint() {
   $('#sc').textContent = score; $('#cb').textContent = combo; $('#mx').textContent = '×' + (combo ? mult() : 1);
   $('#q').textContent = run ? cur.t : (right + wrong ? 'Time!' : 'Ready?');
@@ -99,14 +100,14 @@ function paintTime() {
   const bar = $('#br'); $('#bf').style.width = Math.max(0, Math.min(100, tl / DUR * 100)) + '%'; bar.classList.toggle('low', tl < 10000);
 }
 function start() {
-  clearInterval(iv); run = true; tl = DUR; score = 0; combo = 0; bestC = 0; right = 0; wrong = 0; typed = ''; prevText = ''; next();
-  last = Date.now(); iv = setInterval(tick, 100); $('#go').textContent = 'Restart'; flash('Go!', 'g'); Board.sfx('click'); paint();
+  Board.cancel(iv); run = true; tl = DUR; score = 0; combo = 0; bestC = 0; right = 0; wrong = 0; typed = ''; prevText = ''; next();
+  last = Board.now(); iv = Board.every(100, tick); $('#go').textContent = 'Restart'; flash('Go!', 'g'); Board.sfx('click'); paint();
 }
 function reset() {
-  clearInterval(iv); run = false; tl = DUR; score = 0; combo = 0; right = 0; wrong = 0; typed = ''; $('#go').textContent = 'Start';
+  Board.cancel(iv); run = false; tl = DUR; score = 0; combo = 0; right = 0; wrong = 0; typed = ''; $('#go').textContent = 'Start';
   $('#tbl').style.display = $('#op').value === 'tt' ? '' : 'none'; $('#fb').innerHTML = '&nbsp;'; paint();
 }
-function tick() { const n = Date.now(); tl -= n - last; last = n; if (tl <= 0) { tl = 0; end(); } else paintTime(); }
+function tick() { const n = Board.now(); tl -= n - last; last = n; if (tl <= 0) { tl = 0; end(); } else paintTime(); }
 function good() {
   right++; combo++; bestC = Math.max(bestC, combo); const m = mult(), pts = 10 * m; score += pts;
   if (combo % 10 === 0) { tl += 2000; flash(`+${pts}  ·  +2s bonus!`, 'g'); } else flash('+' + pts, 'g');
@@ -123,7 +124,7 @@ function check(final) {
 function digit(k) { if (!run || typed.length >= 6) return; typed += k; check(false); }
 function back() { if (!run) return; typed = typed.slice(0, -1); paint(); }
 function end() {
-  clearInterval(iv); run = false; typed = ''; paint(); $('#go').textContent = 'Play again';
+  Board.cancel(iv); run = false; typed = ''; paint(); $('#go').textContent = 'Play again';
   const best = bestVal(), rec = score > best; if (rec) Board.ls.set(bestKey(), String(score));
   const tot = right + wrong, acc = tot ? Math.round(right / tot * 100) : 0, avg = right ? ((DUR - Math.min(tl, 0)) / 1000 / Math.max(1, tot)).toFixed(1) : '—';
   Board.sfx(rec && score > 0 ? 'win' : 'lose'); paint();
@@ -147,5 +148,6 @@ document.addEventListener('keydown', (e) => {
 });
 reset();
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

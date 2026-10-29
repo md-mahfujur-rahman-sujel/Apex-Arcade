@@ -27,6 +27,7 @@
   .stats .on { border-color: var(--cyan); }
   .capt { color: var(--muted); line-height: 1.7; font-size: 13px; }
 </style>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -66,7 +67,7 @@ let deck, S, up, matched, lock, moves, found, t0, elapsed, timer, player, scores
 
 function bestOf() { const v = Board.ls.get('apex:mm:' + sizeKey); if (!v) return null; const [t, m] = v.split('|').map(Number); return isNaN(t) ? null : { t, m }; }
 function newGame() {
-  clearInterval(timer); gen++;
+  Board.cancel(timer); gen++;
   mode = $('#mode').value; sizeKey = $('#size').value; S = SIZES[sizeKey];
   const faces = Board.shuffle(EM.slice()).slice(0, S.pairs);
   deck = Board.shuffle([...faces, ...faces]);
@@ -98,26 +99,26 @@ function paintStats() {
 }
 function flip(i) {
   if (lock || done || up.includes(i) || matched.has(i)) return;
-  if (mode === 'solo' && !t0) { t0 = Date.now(); timer = setInterval(() => { elapsed = Date.now() - t0; paintStats(); }, 250); }
+  if (mode === 'solo' && !t0) { t0 = Board.now(); timer = Board.every(250, () => { elapsed = Board.now() - t0; paintStats(); }); }
   up.push(i); Board.sfx('click'); paint();
   if (up.length === 2) {
     moves++; const [a, b] = up, g = gen; lock = true;
     if (deck[a] === deck[b]) {
-      setTimeout(() => {
+      Board.after(420, () => {
         if (g !== gen) return;
         matched.add(a); matched.add(b); up = []; found++; if (mode === 'two') scores[player]++;
         lock = false; Board.sfx('check'); paint(); if (found === S.pairs) finish();
-      }, 420);
+      });
     } else {
-      setTimeout(() => { if (g !== gen) return; up = []; lock = false; if (mode === 'two') player = 1 - player; paint(); }, 950);
+      Board.after(950, () => { if (g !== gen) return; up = []; lock = false; if (mode === 'two') player = 1 - player; paint(); });
     }
   }
   paintStats();
 }
 function finish() {
-  clearInterval(timer); done = true; let title, body;
+  Board.cancel(timer); done = true; let title, body;
   if (mode === 'solo') {
-    elapsed = Date.now() - t0; const best = bestOf(); const rec = !best || elapsed < best.t;
+    elapsed = Board.now() - t0; const best = bestOf(); const rec = !best || elapsed < best.t;
     if (rec) Board.ls.set('apex:mm:' + sizeKey, elapsed + '|' + moves);
     title = rec ? 'New best time!' : 'All pairs found!'; body = `Time ${fmt(elapsed)} in ${moves} moves.` + (rec ? '' : ` Your best is ${fmt(best.t)}.`);
     msg = title + ' ' + fmt(elapsed);
@@ -125,7 +126,7 @@ function finish() {
     const [a, b] = scores; title = a === b ? 'Draw' : (a > b ? 'Player 1' : 'Player 2') + ' wins!'; body = `Player 1: ${a} pairs · Player 2: ${b} pairs`; msg = title + ' ' + a + '–' + b;
   }
   Board.sfx('win'); paint();
-  setTimeout(() => Board.modal(title, body, [['New game', newGame], ['Close']]), 600);
+  Board.after(600, () => Board.modal(title, body, [['New game', newGame], ['Close']]));
 }
 bd.addEventListener('click', (e) => { const d = e.target.closest('.mc'); if (d) { foc = +d.dataset.i; flip(foc); } });
 $('#new').onclick = newGame; $('#mode').onchange = newGame; $('#size').onchange = newGame;
@@ -141,5 +142,6 @@ document.addEventListener('keydown', (e) => {
 });
 newGame();
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

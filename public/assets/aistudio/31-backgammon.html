@@ -24,6 +24,7 @@
   .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
   .dot.c { background: #06b6d4; } .dot.a { background: #f59e0b; }
 </style>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -152,7 +153,7 @@ function roll() {
   if (phase !== 'roll') return; const g = gen, a = 1 + Board.rand(6), b = 1 + Board.rand(6); Board.sfx('dice');
   dl = (a === b ? [a, a, a, a] : [a, b]).map((v) => ({ v, used: false })); turnSt = st; turnMoves = []; hintM = null; sel = null; lastMoves = []; note = '';
   const M = maxUse(st, turn, rem());
-  if (!M) { note = `${NAME[turn]} rolled ${a}-${b} and has no legal move.`; phase = 'stuck'; render(); setTimeout(() => { if (g === gen) endTurn(); }, 1500); return; }
+  if (!M) { note = `${NAME[turn]} rolled ${a}-${b} and has no legal move.`; phase = 'stuck'; render(); Board.after(1500, () => { if (g === gen) endTurn(); }); return; }
   if (M === 1 && a !== b) { const mx = Math.max(a, b); if (singles(st, turn, mx).length) { const j = dl.findIndex((d) => d.v !== mx); dl[j].used = true; dl[j].void = true; note = 'Only one die can be played — the larger.'; } }
   turnDl = dl.map((d) => ({ ...d })); phase = 'move'; autoSel(); render();
 }
@@ -162,7 +163,7 @@ function doMove(m) {
   turnMoves.push(m); st = apply(st, p, m); dl[dl.findIndex((d) => !d.used && d.v === m.d)].used = true; lastMoves.push(m); sel = null; hintM = null;
   Board.sfx(hit ? 'capture' : m.t === OFF ? 'ladder' : 'move');
   if (st.off[p] === 15) { phase = 'over'; render(); gameOver(p); return; }
-  if (!nextMoves(st, p, rem()).length) { phase = 'done'; render(); setTimeout(() => { if (g === gen) endTurn(); }, human() ? 550 : Board.pace(900)); return; }
+  if (!nextMoves(st, p, rem()).length) { phase = 'done'; render(); Board.after(human() ? 550 : Board.pace(900), () => { if (g === gen) endTurn(); }); return; }
   if (human()) autoSel(); render();
 }
 function endTurn() { turn = 3 - turn; phase = 'roll'; sel = null; turnMoves = []; hintM = null; if (!/no legal/.test(note)) note = ''; render(); cpuStart(); }
@@ -172,13 +173,13 @@ function gameOver(p) {
   const kind = ['', 'a single game', 'a gammon (double)', 'a backgammon (triple)'][mult];
   const msg = `${NAME[p]} wins ${kind} — ${mult} point${mult > 1 ? 's' : ''}`; $('#st').innerHTML = msg;
   Board.sfx(mode === 'two' || p === mode ? 'win' : 'lose');
-  setTimeout(() => Board.modal(mode === 'two' ? NAME[p] + ' wins!' : p === mode ? 'You won!' : 'Computer wins', msg, [['New game', newGame], ['Close']]), 600);
+  Board.after(600, () => Board.modal(mode === 'two' ? NAME[p] + ' wins!' : p === mode ? 'You won!' : 'Computer wins', msg, [['New game', newGame], ['Close']]));
 }
 
 /* ---- computer turn ---- */
 function cpuStart() {
   if (phase !== 'roll' || human()) return; busy = true; render(); const g = gen;
-  setTimeout(() => { if (g !== gen) return; busy = false; roll(); if (phase === 'move') cpuPlay(g); }, Board.pace(1100));
+  Board.after(Board.pace(1100), () => { if (g !== gen || Board.paused()) return; busy = false; roll(); if (phase === 'move') cpuPlay(g); });
 }
 function choose() {
   const p = turn, L = +$('#lvl').value, ps = plans(st, p, rem());
@@ -201,7 +202,7 @@ function cpuPlay(g) {
   busy = true; render();
   Board.think(() => choose(), 900).then((pl) => {
     if (g !== gen) return; busy = false; let k = 0;
-    (function step() { if (g !== gen || phase !== 'move' || k >= pl.moves.length) return; doMove(pl.moves[k++]); if (phase === 'move') setTimeout(step, Board.pace(950)); })();
+    (function step() { if (g !== gen || Board.paused() || phase !== 'move' || k >= pl.moves.length) return; doMove(pl.moves[k++]); if (phase === 'move') Board.after(Board.pace(950), step); })();
   });
 }
 function undo() { if (phase !== 'move' || !human() || !turnMoves.length) return; st = turnSt; dl = turnDl.map((d) => ({ ...d })); turnMoves = []; lastMoves = []; hintM = null; autoSel(); render(); }
@@ -277,5 +278,6 @@ document.addEventListener('keydown', (e) => {
 });
 newGame();
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

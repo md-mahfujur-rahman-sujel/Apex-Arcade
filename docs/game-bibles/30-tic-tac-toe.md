@@ -8,6 +8,21 @@ A quick-play cafe challenge: choose a format and outthink a friendly rival. Clas
 
 Use dark slate, cyan X marks, and warm amber O marks. Give the board subtle slate grain, thin cell borders, contact shadows, and an upper-left highlight. Keep marks crisp, not glassy. Use short placement motion, one gentle win-line pulse, and a small spark celebration. Respect reduced motion.
 
+## Menu Identity Card (M0)
+
+- **Archetype:** Paper and Ink.
+- **Mood:** A friendly late-evening cafe table where a pencil-drawn challenge is waiting; tactile and calm, with clear contrast between the two marks.
+- **Palette:** bg `#111923`; panel `#172630`; accent `#67e8f9`; button `#f3dfb5`; buttonText `#18242b`; text `#f5f7fa`. Preserve cyan X and warm amber O as the game’s identity colors.
+- **Type:** `system-ui` for title and body; `ui-monospace` for match details until the proposed self-hosted fonts are approved. Use CSS pencil strokes for handwritten character, not a third font dependency.
+- **Frame and buttons:** Thin notebook-rule frame with softly rounded paper corners, a subtle graphite edge, and compact paper banner buttons with pencil-underlined labels. Focus state uses a strong cyan outline; do not rely on the pencil texture to communicate state.
+- **Scene recipe (back to front):** Deep slate cafe backdrop; a softly lit timber tabletop; one lightly ruled score sheet; a crisp 3×3 grid with cyan X and amber O pieces; a small pencil resting outside the menu panel. Avoid adding motion that competes with move selection.
+- **Music and UI sounds:** Proposed quiet room tone with a few warm felt-piano notes; dry pencil tap on hover, light wooden placement tick on selection, soft paper brush on Back. Audio begins after user gesture.
+- **Menu items and order:** Play, Modes, Options, About, Stats, Exit. Modes offers the implemented Classic 3×3, 4×4, and Ultimate formats. About lists mouse, touch, number-key controls, undo, new match, help, and mute.
+- **Game-specific settings:** Starting side, AI strength, and chosen board format. Keep difficulty separate from thinking delay and retain visible keyboard focus.
+- **Customize:** Omit until implemented cosmetics can provide meaningful board paper, mark, or pencil choices.
+- **Lite fallback:** Static slate-and-paper tabletop with a still board; no grain animation, glow, or decorative particles.
+- **Originality:** Draw the grid, tabletop props, pencil marks, and sound cues as original Apex Arcade assets.
+
 ## Characters and story beats
 
 The player faces the Cafe Champion, represented by the opposing mark and concise status copy. Loop: choose mode and side → play → see the result and record → rematch or change mode. Wins build a streak; perfect play is a friendly challenge.

@@ -19,7 +19,7 @@ if (/html\[data-theme=['"]light['"]\]\s+button\.bg-/.test(stylesheet)) {
   failures.push('src/index.css contains a light-theme utility-button override selector.');
 }
 
-const allowedThemeIndependentFiles = new Set(['PlayableTheaterModal.tsx']);
+const allowedThemeIndependentFiles = new Set(['PlayableTheaterModal.tsx', 'TheaterPauseOverlay.tsx']);
 const rawColorUtility = /\b(?:bg|text|border)-\[#/;
 const walk = (directory) => {
   for (const entry of readdirSync(directory)) {

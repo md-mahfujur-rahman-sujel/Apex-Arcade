@@ -11,6 +11,7 @@
   #cv { --h: max(420px, min(100vh - 150px, 700px)); height: var(--h); width: calc(var(--h) * 480 / 640); max-width: calc(100vw - 36px); max-height: calc((100vw - 36px) * 640 / 480); display: block; border-radius: 14px; box-shadow: 0 20px 50px -20px #000; touch-action: manipulation; cursor: pointer; }
   .side { display: grid; gap: 12px; } .stats { display: flex; gap: 18px; color: var(--muted); font: 600 14px ui-monospace, Consolas, monospace; } .stats b { color: var(--text); }
 </style>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -103,16 +104,16 @@ function tap(x, y) {
 }
 function take(i, j) {
   const p = planks[i], h = p.h[j], slot = tray.indexOf(null); if (slot < 0) return;
-  h.on = false; const q = sp(p, h); const it = { c: h.c, t0: performance.now(), x0: q.x, y0: q.y }; tray[slot] = it; hist.push({ i, j, it });
-  if (!p.h.some((g) => g.on)) { p.gone = true; falling.push({ p, t0: performance.now() }); Board.sfx('capture'); } else Board.sfx('step');
+  h.on = false; const q = sp(p, h); const it = { c: h.c, t0: Board.now(), x0: q.x, y0: q.y }; tray[slot] = it; hist.push({ i, j, it });
+  if (!p.h.some((g) => g.on)) { p.gone = true; falling.push({ p, t0: Board.now() }); Board.sfx('capture'); } else Board.sfx('step');
   const same = tray.filter((t) => t && t.c === h.c && !t.pop);
-  if (same.length >= 3) { same.slice(0, 3).forEach((t) => { t.pop = true; }); hist.length = 0; setTimeout(() => { tray = tray.map((t) => (t && t.pop ? null : t)); Board.sfx('win'); chk(); }, 320); }
+  if (same.length >= 3) { same.slice(0, 3).forEach((t) => { t.pop = true; }); hist.length = 0; Board.after(320, () => { tray = tray.map((t) => (t && t.pop ? null : t)); Board.sfx('win'); chk(); }); }
   upd(); chk();
 }
 function chk() {
   if (state !== 'play') return;
-  if (left() === 0) { state = 'won'; upd(); const best = Math.max(+Board.ls.get('apex:nb:best') || 1, level + 1); Board.ls.set('apex:nb:best', best); Board.sfx('win'); setTimeout(() => Board.modal('Level ' + level + ' cleared!', 'Every plank is down.', [['Next level', () => start(level + 1)], ['Close']]), 600); }
-  else if (tray.every((t) => t && !t.pop)) { state = 'lost'; upd(); Board.sfx('lose'); setTimeout(() => Board.modal('Tray full', 'No match left to make. Undo a bolt or restart the level.', [['Restart', restart], ['Close']]), 400); }
+  if (left() === 0) { state = 'won'; upd(); const best = Math.max(+Board.ls.get('apex:nb:best') || 1, level + 1); Board.ls.set('apex:nb:best', best); Board.sfx('win'); Board.after(600, () => Board.modal('Level ' + level + ' cleared!', 'Every plank is down.', [['Next level', () => start(level + 1)], ['Close']])); }
+  else if (tray.every((t) => t && !t.pop)) { state = 'lost'; upd(); Board.sfx('lose'); Board.after(400, () => Board.modal('Tray full', 'No match left to make. Undo a bolt or restart the level.', [['Restart', restart], ['Close']])); }
 }
 function undo() { if (!hist.length || state === 'won') return; const h = hist.pop(), p = planks[h.i]; const k = tray.indexOf(h.it); if (k < 0) return; tray[k] = null; p.h[h.j].on = true; if (p.gone) { p.gone = false; falling = falling.filter((f) => f.p !== p); } state = 'play'; Board.sfx('click'); upd(); }
 
@@ -123,7 +124,8 @@ function drawPlank(p, ox, oy, rot, alpha) {
   cx.fillStyle = 'rgba(0,0,0,.3)'; cx.beginPath(); cx.roundRect(-p.l / 2 + 3, -p.w / 2 + 6, p.l, p.w, 10); cx.fill(); cx.fillStyle = g; cx.beginPath(); cx.roundRect(-p.l / 2, -p.w / 2, p.l, p.w, 10); cx.fill();
   cx.strokeStyle = 'rgba(80,40,10,.35)'; cx.lineWidth = 1.5; for (let k = -2; k <= 2; k += 2) { cx.beginPath(); cx.moveTo(-p.l / 2 + 12, k * 6); cx.lineTo(p.l / 2 - 12, k * 6); cx.stroke(); } cx.restore();
 }
-function draw(now) {
+function draw() {
+  const now = Board.now();
   const bg = cx.createLinearGradient(0, 0, 0, 640); bg.addColorStop(0, '#26304f'); bg.addColorStop(1, '#141a30'); cx.fillStyle = bg; cx.fillRect(0, 0, 480, 640);
   cx.fillStyle = 'rgba(255,255,255,.04)'; for (let y = 0; y < 480; y += 40) for (let x = (y / 40 % 2) * 20; x < 480; x += 40) cx.fillRect(x, y, 2, 2);
   planks.forEach((p) => {
@@ -140,11 +142,12 @@ function draw(now) {
     bolt(px, py, t.c, 12 + 8 * e, t.pop ? 1 + Math.sin(((now - (t.pt || (t.pt = now))) / 320) * 3.1) * 0.3 : 1);
   }
 }
-(function loop(now) { requestAnimationFrame(loop); draw(now); })(0);
+(function loop() { requestAnimationFrame(loop); if (!Board.paused()) draw(); })();
 cv.addEventListener('pointerdown', (e) => { const r = cv.getBoundingClientRect(); tap((e.clientX - r.left) * 480 / r.width, (e.clientY - r.top) * 640 / r.height); });
 $('#undo').onclick = undo; $('#rst').onclick = () => { restart(); }; $('#nxt').onclick = () => start(level); $('#jump').onchange = (e) => { start(+e.target.value); e.target.blur(); };
 document.addEventListener('keydown', (e) => { if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || document.getElementById('bk-dlg')?.open) return; const k = e.key.toLowerCase(); if (k === 'u') undo(); else if (k === 'r') restart(); else if (k === 'n') start(level); });
 start(Math.min(+Board.ls.get('apex:nb:best') || 1, 99));
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

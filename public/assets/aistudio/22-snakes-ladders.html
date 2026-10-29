@@ -19,6 +19,7 @@
   .pl i { width: 16px; height: 16px; border-radius: 50%; display: inline-block; border: 2px solid #fff; }
   .pl span { margin-left: auto; color: var(--muted); font: 600 13px ui-monospace, Consolas, monospace; }
 </style>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -131,7 +132,7 @@ function ui_update(msg) {
   $('#roll').disabled = busy || over || p.cpu;
   $('#plist').innerHTML = players.map((q, i) => `<div class="pl ${i === cur && !over ? 'on' : ''}"><i style="background:${q.col}"></i>${q.name}<span>${q.pos === 0 ? 'start' : 'square ' + q.pos}</span></div>`).join('');
 }
-function autoplay() { if (!over && players[cur].cpu) setTimeout(roll, Board.pace(1300)); }
+function autoplay() { if (!over && players[cur].cpu) Board.after(Board.pace(1300), () => { if (!over && !Board.paused() && players[cur].cpu) roll(); }); }
 async function roll() {
   if (busy || over) return; busy = true;
   const p = players[cur]; ui_update(p.name + ' rolls…');
@@ -172,5 +173,6 @@ document.addEventListener('keydown', (e) => {
 });
 newGame();
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

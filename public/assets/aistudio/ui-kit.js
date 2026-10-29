@@ -52,6 +52,23 @@
     try { if (window.Save && Save.load) return Save.load(gameId); } catch (e) {}
     return { level: 1, stars: {}, settings: { musicVol: .8, sfxVol: .8, reduceMotion: false, colorblind: 'none' } };
   }
+  function applyReducedMotion(enabled, gameId, persist, notifyParent) {
+    enabled = enabled === true;
+    if (document.documentElement) {
+      if (enabled) document.documentElement.setAttribute('data-apex-reduced-motion', 'true');
+      else document.documentElement.removeAttribute('data-apex-reduced-motion');
+    }
+    if (persist && gameId) save(gameId, { settings: { reduceMotion: enabled } });
+    if (notifyParent && window.parent !== window) {
+      try { window.parent.postMessage({ type: 'APEX_REDUCED_MOTION_CHANGED', reducedMotion: enabled }, window.location.origin); } catch (e) {}
+    }
+  }
+  window.addEventListener('message', function (event) {
+    var data = event.data;
+    if (event.source !== window.parent || event.origin !== window.location.origin || !data || data.type !== 'SET_ACCESSIBILITY' || typeof data.reducedMotion !== 'boolean') return;
+    var gameId = window.Arcade && Arcade.G && Arcade.G.cfg && Arcade.G.cfg.id || data.gameId;
+    applyReducedMotion(data.reducedMotion, gameId, true, false);
+  });
 
   UI.toast = function (message, opts) {
     opts = opts || {};
@@ -163,8 +180,11 @@
       if (key === 'musicVol' || key === 'sfxVol') s[key] = clamp((s[key] == null ? .8 : s[key]) + delta * .1, 0, 1);
       else if (key === 'reduceMotion') s[key] = !s[key];
       else { var modes = ['none', 'protan', 'deutan', 'tritan']; s[key] = modes[(modes.indexOf(s[key] || 'none') + (delta < 0 ? modes.length - 1 : 1)) % modes.length]; }
-      settings = save(opts.gameId, { settings: s }) || settings; UI.toast('Settings saved', { color: '#34d399' });
+      settings = save(opts.gameId, { settings: s }) || settings;
+      if (key === 'reduceMotion') applyReducedMotion(s.reduceMotion, opts.gameId, false, true);
+      UI.toast('Settings saved', { color: '#34d399' });
     }
+    if (settings.settings && settings.settings.reduceMotion) applyReducedMotion(true, opts.gameId, false, true);
     window.addEventListener('resize', fit); fit();
     window.addEventListener('keydown', function (e) {
       if (G.state !== 'paused') { settingsOpen = false; return; }
@@ -207,11 +227,38 @@
     var panelEl = document.createElement('div');
     panelEl.style.cssText = 'display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px;max-width:100%;padding:9px 12px;border:1px solid rgba(148,163,184,.35);border-radius:14px;background:rgba(7,12,25,.94);box-shadow:0 8px 32px rgba(0,0,0,.35);pointer-events:auto;';
     root.appendChild(panelEl); host.appendChild(root);
-    var selectedMode = modes[0].id, settingsOpen = false, customizeOpen = false, lastState = G.state, padPrev = {}, focusIndex = 0;
     var saved = getSave(config.id), currentSettings = Object.assign({}, saved.settings || {});
-    (config.settings || []).forEach(function (item) {
+    var selectedMode = modes.some(function (mode) { return mode.id === currentSettings.mode; }) ? currentSettings.mode : modes[0].id;
+    function modeUnlocked(mode) {
+      if (!mode || !mode.requires) return true;
+      var record = window.Save && typeof Save.load === 'function' ? Save.load(config.id) || {} : saved;
+      var stat = mode.requires.stat, required = Math.max(1, Number(mode.requires.gte) || 1);
+      return Number(record.stats && record.stats[stat]) >= required;
+    }
+    if (!modeUnlocked(modes.find(function (mode) { return mode.id === selectedMode; }))) {
+      var firstAvailableMode = modes.find(modeUnlocked);
+      selectedMode = firstAvailableMode ? firstAvailableMode.id : modes[0].id;
+    }
+    var mutators = Array.isArray(config.mutators) ? config.mutators : [], selectedMutator = mutators.some(function (item) { return item.id === currentSettings.mutator; }) ? currentSettings.mutator : 'none';
+    var settingsOpen = false, customizeOpen = false, tutorialOpen = false, tutorialInputLocked = null, achievementsOpen = false, tutorialIndex = 0, lastState = G.state, padPrev = {}, focusIndex = 0;
+    var gameSettings = (config.settings || []).slice();
+    if (!gameSettings.some(function (item) { return item.key === 'reduceMotion'; })) gameSettings.push({ key: 'reduceMotion', label: 'Reduced motion', type: 'toggle', default: false });
+    gameSettings.forEach(function (item) {
       if (currentSettings[item.key] == null && item.default != null) currentSettings[item.key] = item.default;
     });
+    if (typeof hooks.applySetting === 'function') gameSettings.forEach(function (item) {
+      if (currentSettings[item.key] != null) {
+        hooks.applySetting(item.key, currentSettings[item.key]);
+        if (item.key === 'difficulty') window.postMessage({ type: 'SET_DIFFICULTY', difficulty: currentSettings[item.key] }, window.location.origin);
+      }
+    });
+    if (currentSettings.reduceMotion === true) applyReducedMotion(true, config.id, false, true);
+    function applyMutator() {
+      var entry = mutators.find(function (item) { return item.id === selectedMutator; });
+      G.scoreMultiplier = entry ? Math.max(0.1, Number(entry.multiplier) || 1) : 1;
+      if (typeof hooks.applyMutator === 'function') hooks.applyMutator(entry || null);
+    }
+    applyMutator();
     if (window.Meta && typeof Meta.getCosmetics === 'function' && typeof hooks.applyCosmetic === 'function') {
       Meta.getCosmetics(config.id).forEach(function (item) { if (item.equipped) hooks.applyCosmetic(item.slot, item.id); });
     }
@@ -233,6 +280,8 @@
       var patch = { settings: {} }; patch.settings[item.key] = value;
       save(config.id, patch);
       if (typeof hooks.applySetting === 'function') hooks.applySetting(item.key, value);
+      if (item.key === 'difficulty') window.postMessage({ type: 'SET_DIFFICULTY', difficulty: value }, window.location.origin);
+      if (item.key === 'reduceMotion') applyReducedMotion(value, config.id, false, true);
     }
     function changeSetting(item, delta) {
       var value = currentSettings[item.key];
@@ -243,10 +292,103 @@
       } else value = clamp((Number(value == null ? item.default || 0 : value) || 0) + delta * (Number(item.step) || .1), Number(item.min) || 0, item.max == null ? 1 : Number(item.max));
       saveSetting(item, value); render();
     }
-    function play() { settingsOpen = false; customizeOpen = false; if (G.state === 'ready') G.begin(); else if (G.state === 'over' || G.state === 'won') G.restart(true); }
+    function applyMode(modeId) { return typeof hooks.applyMode !== 'function' || hooks.applyMode(modeId || selectedMode) !== false; }
+    function selectMode(modeId, shouldRender) {
+      var entry = modes.find(function (mode) { return mode.id === modeId; });
+      if (!entry || !modeUnlocked(entry) || !applyMode(modeId)) return false;
+      selectedMode = modeId;
+      save(config.id, { settings: { mode: selectedMode } });
+      if (shouldRender !== false) render();
+      return true;
+    }
+    function play() {
+      settingsOpen = false; customizeOpen = false;
+      if (!applyMode()) { UI.toast('This mode is still locked.', { color: '#fbbf24' }); return; }
+      if (window.Apex && typeof Apex.report === 'function') Apex.report({ gameId: config.id, type: 'mode_start', mode: selectedMode });
+      if (G.state === 'ready') G.begin(); else if (G.state === 'over' || G.state === 'won') G.restart(true);
+    }
     function pause() { customizeOpen = false; if (G.state === 'playing') G.pauseToggle(); }
     function resume() { if (G.state === 'paused') { settingsOpen = false; customizeOpen = false; G.pauseToggle(); } }
     function backToMenu() { settingsOpen = false; customizeOpen = false; G.restart(false); }
+    function setTutorialOpen(open) {
+      if (open) {
+        if (tutorialInputLocked === null) tutorialInputLocked = !!G.inputLocked;
+        G.inputLocked = true;
+        tutorialOpen = true;
+      } else {
+        tutorialOpen = false;
+        if (tutorialInputLocked !== null) G.inputLocked = tutorialInputLocked;
+        tutorialInputLocked = null;
+      }
+    }
+    function downloadResultMedia(blob, name) {
+      var url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = name; link.style.display = 'none'; document.body.appendChild(link); link.click(); link.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    }
+    function saveClip(buttonEl) {
+      var canvas = G.canvas, stamp = config.id.replace(/[^a-z0-9-]/gi, '-') + '-result';
+      function saveScreenshot() {
+        if (!canvas || typeof canvas.toBlob !== 'function') { buttonEl.disabled = false; buttonEl.textContent = 'Clip unavailable'; return; }
+        try {
+          canvas.toBlob(function (blob) {
+            if (blob) { downloadResultMedia(blob, stamp + '.png'); buttonEl.textContent = 'Saved screenshot card'; }
+            else buttonEl.textContent = 'Could not save result';
+            buttonEl.disabled = false;
+            setTimeout(function () { if (buttonEl.isConnected) buttonEl.textContent = 'Save result clip/card'; }, 2200);
+          }, 'image/png');
+        } catch (error) { buttonEl.disabled = false; buttonEl.textContent = 'Could not save result'; }
+      }
+      if (canvas && typeof canvas.captureStream === 'function' && typeof window.MediaRecorder === 'function') {
+        var stream = null;
+        try {
+          stream = canvas.captureStream(30);
+          var chunks = [], recorder = new MediaRecorder(stream), settled = false;
+          function finishClip(useScreenshot) {
+            if (settled) return;
+            settled = true;
+            stream.getTracks().forEach(function (track) { track.stop(); });
+            if (!useScreenshot && chunks.length) downloadResultMedia(new Blob(chunks, { type: recorder.mimeType || 'video/webm' }), stamp + '.webm');
+            if (useScreenshot || !chunks.length) { saveScreenshot(); return; }
+            buttonEl.disabled = false; buttonEl.textContent = 'Save 10s clip';
+          }
+          recorder.ondataavailable = function (event) { if (event.data && event.data.size) chunks.push(event.data); };
+          recorder.onerror = function () { finishClip(true); };
+          recorder.onstop = function () { finishClip(false); };
+          buttonEl.disabled = true; buttonEl.textContent = 'Recording 10 seconds…'; recorder.start(); setTimeout(function () { if (recorder.state === 'recording') recorder.stop(); }, 10000); return;
+        } catch (e) { if (stream) stream.getTracks().forEach(function (track) { track.stop(); }); /* Fall through to the screenshot card on unsupported recorders. */ }
+      }
+      saveScreenshot();
+    }
+    function renderTutorial() {
+      var steps = config.tutorial && Array.isArray(config.tutorial.steps) ? config.tutorial.steps : [];
+      var step = steps[tutorialIndex] || {};
+      var textEl = document.createElement('span'); textEl.style.cssText = 'max-width:460px;padding:7px;color:#e2e8f0;';
+      textEl.textContent = (tutorialIndex + 1) + '/' + steps.length + ' · ' + (step.text || 'Follow the controls shown on the game screen.') + (step.hold ? '  Press ' + step.hold + ' to continue.' : ''); panelEl.appendChild(textEl);
+      if (tutorialIndex > 0) button('Back', function () { tutorialIndex--; render(); });
+      button(tutorialIndex + 1 < steps.length ? 'Next' : 'Finish', function () {
+        if (tutorialIndex + 1 < steps.length) { tutorialIndex++; render(); return; }
+        setTutorialOpen(false); save(config.id, { settings: { tutorialComplete: true } }); render();
+      });
+      button('Skip tutorial', function () { setTutorialOpen(false); save(config.id, { settings: { tutorialComplete: true } }); render(); });
+      setFocus(0);
+    }
+    window.addEventListener('keydown', function (event) {
+      if (!tutorialOpen) return;
+      event.preventDefault(); event.stopPropagation();
+      var steps = config.tutorial && config.tutorial.steps || [], step = steps[tutorialIndex] || {};
+      if (!step.hold || step.hold === event.code || step.hold === event.key) {
+        if (tutorialIndex + 1 < steps.length) tutorialIndex++;
+        else { setTutorialOpen(false); save(config.id, { settings: { tutorialComplete: true } }); }
+        render();
+      }
+    }, true);
+    function renderAchievements() {
+      var savedGame = getSave(config.id), unlocked = Array.isArray(savedGame.achievements) ? savedGame.achievements : [];
+      (config.achievements || []).forEach(function (item) {
+        var row = document.createElement('span'); row.style.cssText = 'min-width:160px;padding:6px 8px;border:1px solid rgba(148,163,184,.22);border-radius:8px;color:' + (unlocked.indexOf(item.id) >= 0 ? '#fbbf24' : '#94a3b8') + ';';
+        row.textContent = (unlocked.indexOf(item.id) >= 0 ? '✓ ' : '◇ ') + item.name; row.title = item.desc || ''; panelEl.appendChild(row);
+      });
+      button('Back', function () { achievementsOpen = false; render(); });
+    }
     function renderCustomize() {
       var catalog = window.Meta && typeof Meta.getCosmetics === 'function' ? Meta.getCosmetics(config.id) : [];
       var wallet = window.Meta && typeof Meta.read === 'function' ? Meta.read().sparks : 0;
@@ -285,23 +427,35 @@
     function render() {
       panelEl.textContent = ''; panelEl.setAttribute('role', settingsOpen ? 'group' : 'toolbar');
       panelEl.setAttribute('aria-label', settingsOpen ? 'Game settings' : 'Game menu');
-      panelEl.style.maxHeight = customizeOpen ? '72%' : '';
-      panelEl.style.overflowY = customizeOpen ? 'auto' : '';
+      var expanded = customizeOpen || tutorialOpen || achievementsOpen;
+      panelEl.style.maxHeight = expanded ? '72%' : '';
+      panelEl.style.overflowY = expanded ? 'auto' : '';
       if (G.state === 'ready') {
-        if (customizeOpen) {
+        if (tutorialOpen) {
+          renderTutorial();
+        } else if (achievementsOpen) {
+          renderAchievements();
+        } else if (customizeOpen) {
           renderCustomize();
         } else if (modes.length > 1) {
           var select = document.createElement('select'); select.setAttribute('aria-label', 'Game mode');
           select.style.cssText = 'min-height:40px;padding:7px 10px;border-radius:9px;background:#172033;color:#fff;border:1px solid rgba(148,163,184,.45);';
-          modes.forEach(function (mode) { var option = document.createElement('option'); option.value = mode.id; option.textContent = mode.name; select.appendChild(option); });
-          select.value = selectedMode; select.addEventListener('change', function () { selectedMode = select.value; }); panelEl.appendChild(select);
+          modes.forEach(function (mode) { var option = document.createElement('option'); option.value = mode.id; option.textContent = mode.name + (modeUnlocked(mode) ? '' : ' · Locked'); option.disabled = !modeUnlocked(mode); select.appendChild(option); });
+          select.value = selectedMode; select.addEventListener('change', function () {
+            if (!selectMode(select.value, false)) select.value = selectedMode;
+          }); panelEl.appendChild(select);
         }
-        if (!customizeOpen) { button('Play', play); if (window.Meta && typeof Meta.getCosmetics === 'function' && Meta.getCosmetics(config.id).length) button('Customize', function () { customizeOpen = true; render(); }); }
+        if (!customizeOpen && !tutorialOpen && !achievementsOpen) {
+          button('Play', play);
+          if (config.tutorial && config.tutorial.steps && config.tutorial.steps.length) button('Tutorial', function () { setTutorialOpen(true); tutorialIndex = 0; render(); });
+          if (config.achievements && config.achievements.length) button('Achievements', function () { achievementsOpen = true; render(); });
+          if (window.Meta && typeof Meta.getCosmetics === 'function' && Meta.getCosmetics(config.id).length) button('Customize', function () { customizeOpen = true; render(); });
+        }
       } else if (G.state === 'playing') {
         button('Pause', pause);
       } else if (G.state === 'paused') {
         if (settingsOpen) {
-          (config.settings || []).forEach(function (item) {
+          gameSettings.forEach(function (item) {
             var wrap = document.createElement('label'); wrap.style.cssText = 'display:flex;align-items:center;gap:6px;min-height:40px;padding:0 4px;color:#e2e8f0;';
             var label = document.createElement('span'); label.textContent = item.label || item.key; wrap.appendChild(label);
             if (item.type === 'toggle') {
@@ -327,8 +481,8 @@
         }
       } else {
         var result = typeof hooks.getResult === 'function' ? hooks.getResult() : { score: G.score || 0, win: G.state === 'won' };
-        var score = document.createElement('span'); score.setAttribute('aria-live', 'polite'); score.textContent = 'Score ' + (result.score == null ? G.score || 0 : result.score); panelEl.appendChild(score);
-        button('Play again', play); button('Back to menu', backToMenu);
+        var score = document.createElement('span'); score.setAttribute('aria-live', 'polite'); var activeMutator = mutators.find(function (item) { return item.id === selectedMutator; }); score.textContent = 'Score ' + (result.score == null ? G.score || 0 : result.score) + (activeMutator ? ' · Mutator: ' + activeMutator.name + ' (×' + activeMutator.multiplier + ')' : ''); panelEl.appendChild(score);
+        button('Play again', play); var clipButton = button('Save result clip/card', function () { saveClip(clipButton); }); button('Back to menu', backToMenu);
       }
       controls().forEach(function (control, index) {
         control.addEventListener('keydown', function (event) {
@@ -344,10 +498,16 @@
     }
     function stateFrame() {
       if (G.state !== lastState) {
+        if ((G.state === 'won' || G.state === 'over') && window.Meta && typeof Meta.recordSeasonScore === 'function') {
+          var result = typeof hooks.getResult === 'function' ? hooks.getResult() : { score: G.score || 0 };
+          var modeEntry = modes.find(function (entry) { return entry.id === (result.mode || selectedMode); });
+          if (modeEntry && Array.isArray(modeEntry.seasonTargets)) Meta.recordSeasonScore(config.id, result.mode || selectedMode, result.score == null ? G.score || 0 : result.score, modeEntry.seasonTargets);
+        }
         if (G.state === 'paused' && typeof hooks.onPause === 'function') hooks.onPause();
         if (lastState === 'paused' && G.state === 'playing' && typeof hooks.onResume === 'function') hooks.onResume();
         lastState = G.state; settingsOpen = false; render();
       }
+      if (window.ApexMenuActive || (window.__apexTheaterEmbedded && window.ApexGamePaused) || document.querySelector('.apex-menu-root:not([hidden])')) { padPrev = {}; requestAnimationFrame(stateFrame); return; }
       var pads = [];
       try { pads = navigator.getGamepads ? navigator.getGamepads() : []; } catch (e) {}
       var now = {};
@@ -379,14 +539,19 @@
       }
       if (now.left && !padPrev.left) adjustFocused(-1);
       if (now.right && !padPrev.right) adjustFocused(1);
-      if ((now.accept && !padPrev.accept) || (now.start && !padPrev.start)) {
-        if (G.state === 'ready' || G.state === 'over' || G.state === 'won') play();
+      if ((now.accept && !padPrev.accept) || (!window.__apexTheaterEmbedded && now.start && !padPrev.start)) {
+        if (tutorialOpen) { var tutorialControl = controls()[focusIndex]; if (tutorialControl) tutorialControl.click(); }
+        else if (G.state === 'ready' || G.state === 'over' || G.state === 'won') play();
         else if (G.state === 'playing') pause();
         else if (G.state === 'paused') { var focused = controls()[focusIndex]; if (focused) focused.click(); }
       }
       padPrev = now; requestAnimationFrame(stateFrame);
     }
     render(); requestAnimationFrame(stateFrame);
-    return { game: G, config: config, overlay: layer, controls: root, getMode: function () { return selectedMode; } };
+    applyMode();
+    return { game: G, config: config, overlay: layer, controls: root, start: play, pause: pause, resume: resume, restart: function () { G.restart(true); }, getMode: function () { return selectedMode; }, getMutator: function () { return selectedMutator; }, setMutator: function (mutatorId) {
+      if (mutatorId !== 'none' && !mutators.some(function (item) { return item.id === mutatorId; })) return false;
+      selectedMutator = mutatorId; save(config.id, { settings: { mutator: selectedMutator } }); applyMutator(); render(); return true;
+    }, setMode: function (modeId) { return selectMode(modeId, true); } };
   };
 })();

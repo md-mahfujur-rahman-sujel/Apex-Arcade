@@ -97,6 +97,7 @@ export const HoloPongEngine: React.FC<HoloPongEngineProps> = ({
     const keysDown = new Set<string>();
 
     const handleDown = (e: KeyboardEvent) => {
+      if (isPaused) return;
       keysDown.add(e.code);
       if (e.code === 'Space' && stateRef.current !== 'PLAYING') {
         startGame();
@@ -107,6 +108,7 @@ export const HoloPongEngine: React.FC<HoloPongEngineProps> = ({
     };
 
     const interval = setInterval(() => {
+      if (isPaused) return;
       if (keysDown.has('KeyW') || keysDown.has('ArrowUp')) {
         playerRef.current.targetY = Math.max(10, playerRef.current.targetY - 8);
       }
@@ -122,7 +124,7 @@ export const HoloPongEngine: React.FC<HoloPongEngineProps> = ({
       window.removeEventListener('keydown', handleDown);
       window.removeEventListener('keyup', handleUp);
     };
-  }, [startGame]);
+  }, [isPaused, startGame]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

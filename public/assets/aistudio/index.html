@@ -257,8 +257,11 @@ $('rnd').addEventListener('click', () => openGame(playable[Math.floor(Math.rando
 
 /* theatre */
 const dlg = $('dlg'), fr = $('frame');
+let activeMenuGameId = null;
 function openGame(file) {
   const g = playable.find((x) => x.file === file); if (!g) return;
+  activeMenuGameId = null;
+  delete dlg.dataset.menuGame; delete dlg.dataset.menuState;
   store.set('apex:last', file);
   $('t-title').innerHTML = g.title; $('t-sub').innerHTML = g.n > 20 ? (grpOf(g) === 'board' ? 'board game' : grpOf(g) === 'brain' ? 'brain game' : grpOf(g) === 'puzzle' ? 'puzzle game' : 'sports game') + ' · ' + g.of : 'tribute to ' + g.of + ' · ' + g.year;
   $('t-keys').textContent = 'Controls: ' + g.keys + ' · M mute — click the game first if keys do nothing';
@@ -267,7 +270,20 @@ function openGame(file) {
   if (!dlg.open) dlg.showModal();
 }
 fr.addEventListener('load', () => { try { fr.contentWindow.focus(); } catch (e) {} });
-function closeGame() { if (dlg.open) dlg.close(); }
+function closeGame() { if (dlg.open) { activeMenuGameId = null; dlg.close(); } }
+window.addEventListener('message', (event) => {
+  const data = event.data;
+  if (event.origin !== window.location.origin || event.source !== fr.contentWindow || !dlg.open || !data || typeof data.gameId !== 'string' || !data.gameId) return;
+  if (data.type === 'MENU_OPEN') {
+    activeMenuGameId = data.gameId;
+    dlg.dataset.menuGame = data.gameId;
+    dlg.dataset.menuState = 'menu';
+    return;
+  }
+  if (!activeMenuGameId || data.gameId !== activeMenuGameId) return;
+  if (data.type === 'MENU_PLAY') dlg.dataset.menuState = 'playing';
+  else if (data.type === 'MENU_EXIT') closeGame();
+});
 dlg.addEventListener('close', () => { fr.src = 'about:blank'; render(); });
 $('t-close').addEventListener('click', closeGame);
 $('t-full').addEventListener('click', () => { const t = fr.parentElement; (t.requestFullscreen || t.webkitRequestFullscreen || (() => {})).call(t); });

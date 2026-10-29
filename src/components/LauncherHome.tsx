@@ -13,19 +13,22 @@ interface LauncherHomeProps {
   onExplore: () => void;
 }
 
-const formatDuration = (seconds: number) => `${Math.max(1, Math.round(seconds / 60))} min`;
-const dateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-const dateSeed = (value: string) => Array.from(value).reduce((seed, char) => ((seed * 31) + char.charCodeAt(0)) >>> 0, 7);
 // A deliberately curated flagship set. Every title has a dedicated playable canvas engine.
 const FEATURED_GAME_IDS = ['flappy-bird', 'pac-man', 'sonic-the-hedgehog', 'celeste', 'street-fighter-ii', 'tetris'];
+
+const HOME_CATEGORIES: Array<{ id: GameInfo['category']; label: string; icon: string; accent: string }> = [
+  { id: 'arcade', label: 'Arcade', icon: '🕹️', accent: '#8b5cf6' },
+  { id: 'board', label: 'Board games', icon: '🎲', accent: '#10b981' },
+  { id: 'sports', label: 'Sports', icon: '🏆', accent: '#f97316' },
+  { id: 'puzzle', label: 'Puzzles', icon: '🧩', accent: '#0ea5e9' },
+  { id: 'cards', label: 'Card games', icon: '🃏', accent: '#ec4899' },
+];
 
 export const LauncherHome: React.FC<LauncherHomeProps> = ({ games, stats, onLaunchGame, onExplore }) => {
   const [heroIndex, setHeroIndex] = useState(0);
   const heroCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const heroGames = useMemo(() => FEATURED_GAME_IDS.map((id) => games.find((game) => game.id === id)).filter((game): game is GameInfo => Boolean(game && game.playableEngineId)), [games]);
   const activeHero = heroGames[heroIndex % Math.max(1, heroGames.length)];
-  const dailyDate = dateKey(new Date());
-  const dailySeed = dateSeed(dailyDate);
   const gameById = useMemo(() => new Map(games.map((game) => [game.id, game])), [games]);
   const recentSessions = useMemo(() => {
     const seen = new Set<string>();
@@ -41,27 +44,26 @@ export const LauncherHome: React.FC<LauncherHomeProps> = ({ games, stats, onLaun
     const maxLevel = game.levelCount || 1;
     return clearedLevels > 0 && clearedLevels < maxLevel ? [{ game, startLevel: clearedLevels + 1 }] : [];
   }), [games, stats.levelProgress]);
-  const dailyGauntletGames = useMemo(() => {
-    const eligible = games.filter((game) => game.supportsDailySeed && game.tier !== 'B').sort((a, b) => a.gameNumber - b.gameNumber);
-    if (eligible.length < 3) return [];
-    const offset = dailySeed % eligible.length;
-    return [...eligible.slice(offset), ...eligible.slice(0, offset)].slice(0, 3);
-  }, [games, dailySeed]);
   const sharedRecentTags = useMemo(() => {
     const counts = new Map<string, number>();
     recentSessions.forEach(({ gameId }) => (gameById.get(gameId)?.tags || []).forEach((tag) => counts.set(tag, (counts.get(tag) || 0) + 1)));
-    return [...counts.entries()].filter(([, count]) => count >= Math.min(2, recentSessions.length)).map(([tag]) => tag);
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([tag]) => tag);
   }, [recentSessions, gameById]);
   const recommendedGames = useMemo(() => games
-    .filter((game) => !recentGameIds.has(game.id) && (game.tags || []).some((tag) => sharedRecentTags.includes(tag)))
-    .sort((a, b) => (b.tags || []).filter((tag) => sharedRecentTags.includes(tag)).length - (a.tags || []).filter((tag) => sharedRecentTags.includes(tag)).length || a.gameNumber - b.gameNumber)
+    .filter((game) => !recentGameIds.has(game.id) && !FEATURED_GAME_IDS.includes(game.id))
+    .sort((a, b) => {
+      const aMatches = (a.tags || []).filter((tag) => sharedRecentTags.includes(tag)).length;
+      const bMatches = (b.tags || []).filter((tag) => sharedRecentTags.includes(tag)).length;
+      return bMatches - aMatches || Number(b.status === 'enhanced') - Number(a.status === 'enhanced') || Number(b.tier === 'S') - Number(a.tier === 'S') || a.gameNumber - b.gameNumber;
+    })
     .slice(0, 6), [games, recentGameIds, sharedRecentTags]);
-  const newAndUpdatedGames = useMemo(() => games.filter((game) => game.status === 'enhanced'), [games]);
-  const quickGames = useMemo(() => games.filter((game) => (game.sessionMinutes || Infinity) <= 5), [games]);
-  const twoPlayerGames = useMemo(() => games.filter((game) => game.twoPlayer !== 'none'), [games]);
-  const bossRushGames = useMemo(() => games.filter((game) => game.modes?.some((mode) => /boss rush/i.test(mode))), [games]);
-  const moods = useMemo(() => [...new Set(games.flatMap((game) => game.moods || []))], [games]);
-  const collections = useMemo(() => [...new Set(games.flatMap((game) => game.collections || []))], [games]);
+  const categoryCards = useMemo(() => [
+    ...HOME_CATEGORIES.map((category) => ({
+      ...category,
+      games: games.filter((game) => game.category === category.id),
+    })),
+    { id: 'recommended', label: 'Recommended games', icon: '✨', accent: '#22d3ee', games: recommendedGames },
+  ], [games, recommendedGames]);
   useEffect(() => {
     if (heroGames.length < 2 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const timer = window.setInterval(() => setHeroIndex((index) => (index + 1) % heroGames.length), 7000);
@@ -188,32 +190,47 @@ export const LauncherHome: React.FC<LauncherHomeProps> = ({ games, stats, onLaun
       {caption && <p className="mt-1 text-xs text-fg-muted">{caption}</p>}
     </div>
   );
-  const renderGameCards = (items: GameInfo[], launch: (game: GameInfo) => void = onLaunchGame) => (
-    <div className="grid w-full min-w-0 grid-cols-2 gap-3 sm:grid-cols-3">
-      {items.map((game) => (
-        <Card key={game.id} interactive data-recommendation-card className="group w-full min-w-0" style={{ '--game-accent': game.accentColor } as React.CSSProperties}>
-          <button type="button" data-ui-open aria-label={`Play ${game.title}`} onClick={() => launch(game)} className="absolute inset-0 z-10 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent" />
-          <div aria-hidden="true" data-recommendation-preview className="pointer-events-none relative flex h-24 items-center justify-between overflow-hidden px-4">
-            <span className="text-4xl drop-shadow-lg">{game.icon}</span>
-            <span className="font-mono text-4xl font-black opacity-20" style={{ color: game.accentColor }}>{String(game.gameNumber).padStart(2, '0')}</span>
-          </div>
-          <div aria-hidden="true" data-recommendation-body className="pointer-events-none p-3.5">
-            <div data-recommendation-title className="truncate text-sm font-bold text-fg group-hover:text-accent-hover">{game.title}</div>
-            <div data-recommendation-meta className="mt-1 truncate text-[11px] text-fg-muted">{game.category} · {game.year}</div>
-          </div>
-        </Card>
-      ))}
-    </div>
-  );
-  const renderRail = (title: string, items: GameInfo[], caption?: string, launch?: (game: GameInfo) => void) => items.length > 0 ? (
-    <section aria-label={title}>
-      {sectionHeading(title, caption)}
-      {renderGameCards(items, launch)}
-    </section>
-  ) : null;
-
   return (
     <section aria-label="Arcade home" className="mx-auto w-full max-w-7xl space-y-10 px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+      <section aria-labelledby="home-categories-title" className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 id="home-categories-title" className="text-lg font-bold text-fg sm:text-xl">Browse categories</h2>
+          </div>
+          <button type="button" onClick={onExplore} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl px-2 text-sm font-semibold text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+            All games <ArrowRight className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-6">
+          {categoryCards.map((category) => (
+            <button
+              key={category.id}
+              type="button"
+              aria-label={`Browse ${category.label}, ${category.games.length} games`}
+              onClick={() => {
+                if (category.id === 'recommended') {
+                  const params = new URLSearchParams({ ids: category.games.map((game) => game.id).join(',') });
+                  window.location.hash = `#/browse?${params.toString()}`;
+                } else {
+                  window.location.hash = `#/browse?category=${encodeURIComponent(category.id)}`;
+                }
+              }}
+              className="group relative h-[112px] w-[158px] shrink-0 snap-start overflow-hidden rounded-2xl border border-white/10 p-3.5 text-left shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg sm:h-[118px] sm:w-auto"
+            >
+              <span aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-90" style={{ background: `linear-gradient(115deg, ${category.accent}55, ${category.accent}20 62%, #111827)` }} />
+              <span aria-hidden="true" className="pointer-events-none absolute -right-3 -top-5 text-[76px] leading-none opacity-20 grayscale transition-all duration-200 group-hover:scale-110 group-hover:rotate-6 group-hover:opacity-35">{category.icon}</span>
+              <span className="pointer-events-none absolute inset-x-3.5 bottom-3.5 flex items-end justify-between gap-2">
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-extrabold text-white drop-shadow">{category.label}</span>
+                  <span className="mt-0.5 block text-[10px] font-semibold text-white/70">{category.games.length} games</span>
+                </span>
+                <ArrowRight aria-hidden="true" className="mb-0.5 h-4 w-4 shrink-0 text-white/75 transition-all group-hover:translate-x-1 group-hover:text-white" />
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+
       {activeHero && <Card className="grid grid-cols-1 rounded-3xl border border-white/10 bg-surface shadow-card lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
         <div className="pointer-events-none absolute inset-0 opacity-30" style={{ background: `radial-gradient(ellipse at 80% 30%, ${activeHero.accentColor}30, transparent 50%)` }} />
         <div className="relative z-10 flex min-w-0 flex-col justify-center p-6 sm:p-9 lg:p-12">
@@ -226,12 +243,12 @@ export const LauncherHome: React.FC<LauncherHomeProps> = ({ games, stats, onLaun
             <Button variant="secondary" onClick={onExplore} className="px-5">Explore games <ArrowRight className="h-4 w-4" /></Button>
           </div>
           <div className="mt-7 flex flex-wrap items-center gap-2" role="group" aria-label="Featured games">
-            <div className="flex items-center gap-2">
-              {heroGames.map((game, index) => <button key={game.id} onClick={() => setHeroIndex(index)} aria-label={`Show ${game.title}`} aria-pressed={index === heroIndex} className="group grid min-h-11 min-w-11 place-items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"><span aria-hidden="true" className={`h-1.5 rounded-full transition-all ${index === heroIndex ? 'w-8 bg-accent' : 'w-3 bg-line-strong group-hover:bg-fg-muted'}`} /></button>)}
+            <div className="flex items-center gap-1">
+              {heroGames.map((game, index) => <button key={game.id} onClick={() => setHeroIndex(index)} aria-label={`Show ${game.title}`} aria-pressed={index === heroIndex} className="group grid h-11 w-11 shrink-0 place-items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"><span aria-hidden="true" className={`h-1.5 rounded-full transition-all ${index === heroIndex ? 'w-8 bg-accent' : 'w-3 bg-line-strong group-hover:bg-fg-muted'}`} /></button>)}
             </div>
-            <div className="ml-auto flex gap-2">
-              <button onClick={() => shiftHero(-1)} aria-label="Previous featured game" className="min-h-11 min-w-11 rounded-full border border-line bg-surface-2 p-2 text-fg-muted transition-colors hover:border-line-strong hover:bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"><ChevronLeft className="h-4 w-4" /></button>
-              <button onClick={() => shiftHero(1)} aria-label="Next featured game" className="min-h-11 min-w-11 rounded-full border border-line bg-surface-2 p-2 text-fg-muted transition-colors hover:border-line-strong hover:bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"><ChevronRight className="h-4 w-4" /></button>
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <button onClick={() => shiftHero(-1)} aria-label="Previous featured game" className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-line bg-surface-2 text-fg-muted transition-colors hover:border-line-strong hover:bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"><ChevronLeft className="h-4 w-4" /></button>
+              <button onClick={() => shiftHero(1)} aria-label="Next featured game" className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-line bg-surface-2 text-fg-muted transition-colors hover:border-line-strong hover:bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"><ChevronRight className="h-4 w-4" /></button>
             </div>
           </div>
         </div>
@@ -242,24 +259,6 @@ export const LauncherHome: React.FC<LauncherHomeProps> = ({ games, stats, onLaun
         </ScreenBezel>
       </Card>}
 
-      {recentSessions.length > 0 && <section aria-label="Recently played">
-        {sectionHeading('Recently played', 'Your five most recent games')}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {recentSessions.map((session, index) => {
-            const game = gameById.get(session.gameId);
-            if (!game) return null;
-            return <Card key={`${session.gameId}-${session.date}-${index}`} interactive data-recommendation-card className="group min-h-[104px] bg-card p-4 hover:bg-surface-2">
-              <button type="button" data-ui-open aria-label={`Play ${game.title} again`} onClick={() => onLaunchGame(game)} className="absolute inset-0 z-10 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent" />
-              <div aria-hidden="true" className="pointer-events-none relative flex items-center gap-3">
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl" style={{ backgroundColor: `${game.accentColor}22` }}>{game.icon}</span>
-                <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold text-fg">{game.title}</span><span className="mt-1 block text-[11px] text-fg-muted">Score {session.score} · {formatDuration(session.durationSeconds)}</span><span className="mt-1 block truncate text-[10px] text-fg-subtle">{session.date}</span></span>
-                <Play className="h-4 w-4 shrink-0 text-accent" />
-              </div>
-            </Card>;
-          })}
-        </div>
-      </section>}
-
       {continueGames.length > 0 && <section aria-label="Continue playing">
         {sectionHeading('Continue playing', 'Pick up at your next unlocked level')}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -269,15 +268,6 @@ export const LauncherHome: React.FC<LauncherHomeProps> = ({ games, stats, onLaun
           </Card>)}
         </div>
       </section>}
-      {dailyGauntletGames.length === 3 && renderRail('Daily Gauntlet', dailyGauntletGames, `Three Tier S/A games · ${dailyDate} seed`, (game) => onLaunchGame(game, 1, dailySeed))}
-      {renderRail('New and updated', newAndUpdatedGames)}
-      {renderRail('Quick 5-minute games', quickGames)}
-      {renderRail('Local two-player', twoPlayerGames)}
-      {renderRail('Because you played', recommendedGames, sharedRecentTags.length ? `Shares tags from your recent games: ${sharedRecentTags.join(', ')}` : undefined)}
-      {renderRail('Boss Rush playlists', bossRushGames)}
-      {moods.map((mood) => renderRail(mood, games.filter((game) => game.moods?.includes(mood))))}
-      {collections.map((collection) => renderRail(collection, games.filter((game) => game.collections?.includes(collection))))}
-
     </section>
   );
 };

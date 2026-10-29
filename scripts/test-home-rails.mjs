@@ -1,15 +1,50 @@
 import assert from 'node:assert/strict';
-import { access } from 'node:fs/promises';
+import { access, readFile, stat } from 'node:fs/promises';
+import path from 'node:path';
 import { chromium } from 'playwright';
-import { preview } from 'vite';
 
-const server = await preview({ preview: { host: '127.0.0.1', port: 0 } });
-const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
+const origin = 'http://127.0.0.1:4173';
+const distRoot = path.resolve('dist');
+await access(path.join(distRoot, 'index.html'));
+
+async function routeProductionFiles(context) {
+  await context.route(`${origin}/**`, async (route) => {
+    const pathname = decodeURIComponent(new URL(route.request().url()).pathname);
+    const filePath = path.resolve(distRoot, `.${pathname}`);
+    if (filePath !== distRoot && !filePath.startsWith(`${distRoot}${path.sep}`)) {
+      await route.fulfill({ status: 403, body: 'Forbidden' });
+      return;
+    }
+    try {
+      const info = await stat(filePath);
+      const resolvedPath = info.isDirectory() ? path.join(filePath, 'index.html') : filePath;
+      const ext = path.extname(resolvedPath).toLowerCase();
+      const contentType = ({
+        '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+        '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
+        '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon',
+        '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
+      })[ext] || 'application/octet-stream';
+      await route.fulfill({ status: 200, contentType, body: await readFile(resolvedPath) });
+    } catch {
+      await route.fulfill({ status: 404, body: `Not found: ${pathname}` });
+    }
+  });
+  await context.route('https://fonts.googleapis.com/**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'text/css; charset=utf-8',
+    body: '',
+  }));
+}
+
 const candidates = [process.env.CHROME_BIN, 'C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].filter(Boolean);
 let executablePath;
 for (const candidate of candidates) { try { await access(candidate); executablePath = candidate; break; } catch { /* Try another installed browser. */ } }
 const browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
-const page = await browser.newPage({ viewport: { width: 1280, height: 1000 }, reducedMotion: 'reduce' });
+const context = await browser.newContext({ viewport: { width: 1280, height: 1000 }, reducedMotion: 'reduce' });
+await routeProductionFiles(context);
+const page = await context.newPage();
 const errors = [];
 try {
   page.on('pageerror', (error) => errors.push(error.message));
@@ -28,25 +63,31 @@ try {
   });
   await page.goto(origin);
   const home = page.getByRole('region', { name: 'Arcade home' });
-  const expectedVisibleRails = ['Continue playing', 'Daily Gauntlet', 'Recently played', 'New and updated', 'Quick 5-minute games', 'Local two-player', 'Because you played', 'Boss Rush playlists', 'Adrenaline rush', '5-minute fun', 'With friends', 'Timeless classics', 'Train your brain', 'Just relax', 'Retro tributes', 'Brain games', 'Board night'];
-  for (const rail of expectedVisibleRails) assert.equal(await home.getByRole('region', { name: rail }).count(), 1, `expected populated rail: ${rail}`);
-  assert.equal(await home.locator('[aria-label="Daily Gauntlet"] [data-recommendation-card]').count(), 3, 'Gauntlet contains three verified seed-capable games');
+  const removedSections = ['Recently played', 'Daily Gauntlet', 'New and updated', 'Quick 5-minute games', 'Local two-player', 'Because you played', 'Boss Rush playlists', 'Adrenaline rush', '5-minute fun', 'With friends', 'Timeless classics', 'Just relax', 'Train your brain', 'Retro tributes', 'Board night', 'Brain games'];
+  for (const section of removedSections) assert.equal(await home.getByRole('region', { name: section }).count(), 0, `removed home section should stay hidden: ${section}`);
+  const categoryButtons = home.getByRole('button', { name: /^Browse / });
+  assert.equal(await categoryButtons.count(), 6, 'home shows five catalog categories plus Recommended games');
+  const arcadeButton = home.getByRole('button', { name: /^Browse Arcade, \d+ games$/ });
+  assert.equal(await arcadeButton.count(), 1, 'Arcade category is available from the home strip');
+  const arcadeCount = Number((await arcadeButton.getAttribute('aria-label')).match(/(\d+) games$/)?.[1]);
+  assert.ok(arcadeCount > 0, 'Arcade category reports its catalog count');
+  assert.ok(await home.getByRole('button', { name: /^Browse Recommended games, [1-9]\d* games$/ }).count() === 1, 'Recommended games remains populated for players with history');
   assert.equal(await home.locator('[aria-label="Continue playing"]').getByRole('button', { name: /^Continue .* at level 3$/ }).count(), 1, 'Continue uses saved level progress');
-  assert.equal(await home.locator('[aria-label="Recently played"] [data-recommendation-card]').count(), 3);
-  assert.ok(await home.locator('[aria-label="Because you played"] [data-recommendation-card]').count() > 0);
-  assert.equal(await page.locator('[aria-label="Arcade home"] section[aria-label] h2:empty').count(), 0, 'no blank rail headings render');
-  await home.getByRole('region', { name: 'Daily Gauntlet' }).locator('button[data-ui-open]').first().click();
-  await page.waitForFunction(() => /^#\/play\/.+\?seed=\d+$/.test(location.hash));
-  const dailySeed = await page.evaluate(() => new URLSearchParams(location.hash.split('?')[1]).get('seed'));
-  await page.getByRole('button', { name: /^Play / }).click();
-  await page.waitForFunction((seed) => document.querySelector('iframe')?.src.includes(`seed=${seed}`), dailySeed);
+  assert.equal(await page.locator('[aria-label="Arcade home"] section[aria-label] h2:empty').count(), 0, 'no blank home section headings render');
+  await arcadeButton.click();
+  await page.waitForFunction(() => location.hash === '#/browse?category=arcade');
+  await page.locator('#catalog [data-catalog-card]').first().waitFor();
+  assert.equal(await page.locator('#catalog [data-catalog-card]').count(), arcadeCount, 'category card opens the matching filtered catalog');
   await page.evaluate(() => { location.hash = '#/'; });
+  await page.locator('[aria-label="Continue playing"]').waitFor();
   await page.locator('[aria-label="Continue playing"]').getByRole('button', { name: /^Continue .* at level 3$/ }).click();
   await page.waitForFunction(() => location.hash === '#/play/celeste?level=3');
   const emptyContext = await browser.newContext();
+  await routeProductionFiles(emptyContext);
   const emptyPage = await emptyContext.newPage();
   await emptyPage.goto(origin);
   assert.equal(await emptyPage.getByRole('region', { name: 'Continue playing' }).count(), 0, 'Continue stays hidden without saved level progress');
+  assert.ok(await emptyPage.getByRole('button', { name: /^Browse Recommended games, [1-9]\d* games$/ }).count() === 1, 'new players still get a curated recommendation mix');
   await emptyContext.close();
   for (const [path, signature] of [
     ['/assets/aistudio/43-sudoku.html', () => [...document.querySelectorAll('#bd .c')].map((cell) => `${cell.textContent}:${cell.className}`).join('|')],
@@ -54,15 +95,22 @@ try {
     ['/assets/aistudio/50-mahjong.html', () => [...document.querySelectorAll('#board .tile')].map((cell) => cell.getAttribute('aria-label')).join('|')],
   ]) {
     const sample = async (seed) => {
-      const gamePage = await browser.newPage({ viewport: { width: 1280, height: 1000 }, reducedMotion: 'reduce' });
+      const gameContext = await browser.newContext({ viewport: { width: 1280, height: 1000 }, reducedMotion: 'reduce' });
+      await routeProductionFiles(gameContext);
+      const gamePage = await gameContext.newPage();
       const gameErrors = [];
       gamePage.on('pageerror', (error) => gameErrors.push(error.message));
       gamePage.on('console', (message) => { if (message.type() === 'error') gameErrors.push(message.text()); });
       await gamePage.goto(`${origin}${path}?seed=${seed}`);
+      const launchMenu = gamePage.locator('.apex-menu-root');
+      if (await launchMenu.count()) {
+        await launchMenu.locator('[data-menu-action="play"]').click();
+        await launchMenu.waitFor({ state: 'hidden' });
+      }
       if (path.includes('44-minesweeper')) await gamePage.locator('#bd .k[data-i="0"]').click();
       await gamePage.waitForTimeout(50);
       const result = await gamePage.evaluate(signature);
-      await gamePage.close();
+      await gameContext.close();
       assert.deepEqual(gameErrors, [], `${path} browser errors`);
       return result;
     };
@@ -73,9 +121,9 @@ try {
     console.log(`PASS ${path.split('/').at(-1)} produces repeatable seeded board layouts`);
   }
   if (errors.length) throw new Error(`Browser errors: ${errors.join(' | ')}`);
-  console.log(`PASS Home rails render from game metadata and three recent sessions (${expectedVisibleRails.length} populated rails); Continue launches saved level progress; unsupported empty rails stay hidden`);
-  console.log('PASS Home rail browser test completed with zero browser errors');
+  console.log(`PASS Home categories filter the catalog; removed duplicate rails stay hidden; recommendations render with and without history; Continue launches saved level progress`);
+  console.log('PASS Home layout browser test completed with zero browser errors');
 } finally {
+  await context.close();
   await browser.close();
-  await new Promise((resolve) => server.httpServer.close(resolve));
 }

@@ -36,7 +36,14 @@ try {
     ['Tag', 'logic', 'tag'],
   ];
   for (const [label, value, param] of facets) {
-    await page.getByLabel(`${label} facet`).selectOption(value);
+    if (label === 'Players' || label === 'Session length') {
+      await page.getByLabel(`${label} facet`).selectOption(value);
+    } else {
+      const details = page.locator(`#${label.toLowerCase().replace(/\s+/g, '-')}-facet`);
+      await details.locator('summary').click();
+      await details.getByLabel(`Search ${label.toLowerCase()}`).fill(value);
+      await details.getByRole('button', { name: new RegExp(`^${value}`, 'i') }).first().click();
+    }
     await page.waitForFunction(({ param, value }) => new URLSearchParams(location.hash.split('?')[1]).get(param) === value, { param, value });
     await assertCountMatchesCards();
   }
@@ -50,11 +57,11 @@ try {
   const stateBeforeReload = await page.evaluate(() => ({ hash: location.hash, count: document.querySelector('[data-result-count]')?.textContent }));
   await page.reload();
   await page.locator('#catalog [data-game-id]').first().waitFor();
-  assert.equal(await page.getByLabel('Mode facet').inputValue(), 'Classic');
+  for (const [label, value] of [['Mode', 'Classic'], ['Input', 'keyboard'], ['Tag', 'logic']]) {
+    assert.equal(await page.locator(`#${label.toLowerCase()}-facet summary`).getAttribute('aria-label'), `${label} filter: ${value}`);
+  }
   assert.equal(await page.getByLabel('Session length facet').inputValue(), 'short');
   assert.equal(await page.getByLabel('Players facet').inputValue(), '1P');
-  assert.equal(await page.getByLabel('Input facet').inputValue(), 'keyboard');
-  assert.equal(await page.getByLabel('Tag facet').inputValue(), 'logic');
   assert.equal(await search.inputValue(), '2048');
   assert.deepEqual(await page.evaluate(() => ({ hash: location.hash, count: document.querySelector('[data-result-count]')?.textContent })), stateBeforeReload, 'query and result count round-trip on reload');
   await assertCountMatchesCards();

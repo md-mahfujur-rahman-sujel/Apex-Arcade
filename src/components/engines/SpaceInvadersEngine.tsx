@@ -127,6 +127,7 @@ export const SpaceInvadersEngine: React.FC<SpaceInvadersEngineProps> = ({
     const keys = new Set<string>();
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isPaused) return;
       keys.add(e.code);
       if (e.code === 'Space') {
         e.preventDefault();
@@ -143,7 +144,7 @@ export const SpaceInvadersEngine: React.FC<SpaceInvadersEngineProps> = ({
     };
 
     const interval = setInterval(() => {
-      if (stateRef.current !== 'PLAYING') return;
+      if (isPaused || stateRef.current !== 'PLAYING') return;
       if (keys.has('KeyA') || keys.has('ArrowLeft')) {
         playerRef.current.x = Math.max(25, playerRef.current.x - 5.5);
       }
@@ -159,7 +160,7 @@ export const SpaceInvadersEngine: React.FC<SpaceInvadersEngineProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [shoot, startGame]);
+  }, [isPaused, shoot, startGame]);
 
   // Main Loop
   useEffect(() => {

@@ -16,15 +16,21 @@
     "test:apex-event": "npm run build && node scripts/test-apex-event.mjs",
     "test:cosmetics": "npm run build && node scripts/test-cosmetics.mjs",
     "test:game-frame-pilots": "npm run build && node scripts/test-game-frame-pilots.mjs",
+    "test:menu-pilots": "npm run build && node scripts/test-menu-pilots.mjs",
     "test:2048-modes": "npm run build && node scripts/test-2048-modes.mjs",
     "test:home-rails": "npm run build && node scripts/test-home-rails.mjs",
     "test:browse-facets": "npm run build && node scripts/test-browse-facets.mjs",
     "test:game-pages": "npm run build && node scripts/test-game-pages.mjs",
+    "test:settings": "npm run build && node scripts/test-settings.mjs",
+    "test:pwa": "npm run build && node scripts/test-pwa.mjs",
     "test:theater": "npm run build && node scripts/test-theater.mjs",
+    "test:theater-engines": "npm run build && node scripts/test-theater-engines.mjs",
+    "test:motion": "npm run build && node scripts/test-motion.mjs",
     "capture:ui-final": "node scripts/capture-ui-final.mjs",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "check:theme": "node scripts/check-theme.mjs"
+    "check:theme": "node scripts/check-theme.mjs",
+    "check:contrast": "node scripts/contrast-check.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

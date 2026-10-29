@@ -15,6 +15,7 @@
   .bb.pop { animation: pp .25s ease-out; } @keyframes pp { from { transform: scale(.4); } }
   .tb.shake { animation: sk .25s; } @keyframes sk { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
 </style>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -74,10 +75,10 @@ function pick(i) {
   if (sel < 0) { if (!T[i].length) { Board.sfx('error'); return; } sel = i; Board.sfx('click'); render(); return; }
   if (i === sel) { sel = -1; render(); return; }
   const A = T[sel], B = T[i], c = A[A.length - 1];
-  if (B.length >= CAP || (B.length && B[B.length - 1] !== c)) { Board.sfx('error'); const el = bd.children[i]; el.classList.add('shake'); setTimeout(() => el.classList.remove('shake'), 260); if (B.length && B[B.length - 1] !== c) { sel = i; render(); } else { sel = -1; render(); } return; }
+  if (B.length >= CAP || (B.length && B[B.length - 1] !== c)) { Board.sfx('error'); const el = bd.children[i]; el.classList.add('shake'); Board.after(260, () => el.classList.remove('shake')); if (B.length && B[B.length - 1] !== c) { sel = i; render(); } else { sel = -1; render(); } return; }
   let n = 0; while (n < A.length && A[A.length - 1 - n] === c && B.length + n < CAP) n++;
   hist.push(JSON.stringify(T)); T[i].push(...T[sel].splice(T[sel].length - n, n)); moves++; sel = -1; Board.sfx('move'); render(i);
-  if (T.every((x) => !x.length || full(x))) { const b = Math.max(+Board.ls.get('apex:cs:best') || 1, level + 1); Board.ls.set('apex:cs:best', b); busy = true; Board.sfx('win'); $('#st').textContent = 'Level cleared! 🎉'; setTimeout(() => Board.modal('Level ' + level + ' cleared!', moves + ' moves.', [['Next level', () => begin(level + 1)], ['Close', () => { busy = false; }]]), 500); }
+  if (T.every((x) => !x.length || full(x))) { const b = Math.max(+Board.ls.get('apex:cs:best') || 1, level + 1); Board.ls.set('apex:cs:best', b); busy = true; Board.sfx('win'); $('#st').textContent = 'Level cleared! 🎉'; Board.after(500, () => Board.modal('Level ' + level + ' cleared!', moves + ' moves.', [['Next level', () => begin(level + 1)], ['Close', () => { busy = false; }]])); }
 }
 function undo() { if (!hist.length || busy) return; T = JSON.parse(hist.pop()); moves = Math.max(0, moves - 1); sel = -1; spare = T.length > JSON.parse(start0).length; render(); }
 $('#bd').addEventListener('click', (e) => { const d = e.target.closest('.tb'); if (d) pick(+d.dataset.i); });
@@ -92,5 +93,6 @@ document.addEventListener('keydown', (e) => {
 });
 begin(Math.min(+Board.ls.get('apex:cs:best') || 1, 99));
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

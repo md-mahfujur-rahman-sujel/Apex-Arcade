@@ -6,15 +6,26 @@ export interface MetaState {
   streak: { count: number; lastDay: string; freezes: number };
   daily: { day: string; seed: number; games: string[]; done: string[] };
   quests: { day: unknown[]; week: unknown[] };
-  seasons: Record<string, Record<string, { best: number; trophy: string }>>;
+  seasons: Record<string, Record<string, { best: number; trophy: string; board?: Array<{ score: number; at: string }> }>>;
   trophies: Array<string | { id: string; gameId: string; rarity: string; day: string }>;
 }
 
 export interface MetaReward { xp: number; sparks: number; level?: number; state: MetaState; }
+export interface MetaQuest {
+  id: string;
+  title: string;
+  goal: number;
+  progress: number;
+  done: boolean;
+}
+export interface MetaQuests { day: MetaQuest[]; week: MetaQuest[]; }
 export interface MetaGlobal {
   read: () => MetaState;
+  getQuests?: (now?: Date) => MetaQuests;
   recordSession: (payload: { gameId: string; durationSec: number; newBest: boolean; category?: string }) => MetaReward;
   recordAchievement: (payload: { id: string; gameId: string; rarity?: string }) => MetaReward;
+  recordSeasonScore?: (gameId: string, mode: string, score: number, targets: number[], date?: Date) => { ok: boolean; week?: string; best?: number; trophy?: string; state: MetaState };
+  getSeasonLeaderboard?: (gameId: string, mode: string, date?: Date) => { week: string; local: true; entries: Array<{ score: number; at: string }>; best: number; trophy: string };
   equipCosmetic: (gameId: string, cosmeticId: string) => { ok: boolean; reason?: string };
 }
 
@@ -23,6 +34,10 @@ declare global {
     APEX_META_CONFIG?: { storageKey: string; defaultState: MetaState };
     Meta?: MetaGlobal;
   }
+}
+
+export function initializeMetaQuests(): void {
+  try { window.Meta?.getQuests?.(); } catch { /* The stored quest list remains available if initialization fails. */ }
 }
 
 const storageKey = () => window.APEX_META_CONFIG?.storageKey || 'apex:meta';

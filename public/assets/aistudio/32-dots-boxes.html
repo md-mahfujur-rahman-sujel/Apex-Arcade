@@ -35,6 +35,7 @@
   .capt { color: var(--muted); line-height: 1.8; }
   .note { margin-top: 6px; color: var(--amber); font-weight: 600; font-size: 13px; }
 </style>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -140,7 +141,7 @@ function play(i) {
     over = w ? `${NAME[w]} wins ${Math.max(a, b)}–${Math.min(a, b)}` : `Draw ${a}–${b}`; note = '';
     render(); Board.sfx(!w ? 'move' : mode === 'two' || w === mode ? 'win' : 'lose');
     const title = !w ? 'Draw' : mode === 'two' ? NAME[w] + ' wins!' : w === mode ? 'You won!' : 'Computer wins';
-    setTimeout(() => Board.modal(title, over, [['New game', newGame], ['Close']]), 600);
+    Board.after(600, () => Board.modal(title, over, [['New game', newGame], ['Close']]));
     return;
   }
   render(); cpu();
@@ -174,5 +175,6 @@ document.addEventListener('keydown', (e) => {
 });
 newGame();
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

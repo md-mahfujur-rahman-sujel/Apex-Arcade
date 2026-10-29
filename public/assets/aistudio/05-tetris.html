@@ -5,6 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Prism Stack</title>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -18,8 +19,16 @@
 <script>
 /* Prism Stack — falling-block puzzle: 7-bag, rotation kicks, hold, ghost, lock delay, combos. */
 const A = Arcade;
-const W = 560, H = 620, COLS = 10, ROWS = 20, CELL = 28, BX = 140, BY = 44, WIN_LINES = 150;
+const W = 560, H = 620, COLS = 10, ROWS = 20, CELL = 28, BX = 140, BY = 44, MARATHON_LINES = 150;
+let targetLines = MARATHON_LINES, activeMode = 'marathon', campaignStage = 1, rngState = 0;
+let activeTheme = ['#07051a', '#10113a', '#1b1250'], ghostColor = '#c7d2fe', skinStyle = 'ion-blocks';
 const COLORS = ['#22d3ee', '#6366f1', '#fb923c', '#facc15', '#4ade80', '#c084fc', '#f87171']; // I J L O S T Z
+const PALETTES = {
+  aurora: ['#22d3ee', '#6366f1', '#fb923c', '#facc15', '#4ade80', '#c084fc', '#f87171'],
+  ember: ['#fb7185', '#f97316', '#facc15', '#a3e635', '#22d3ee', '#818cf8', '#e879f9'],
+  mono: ['#f8fafc', '#cbd5e1', '#94a3b8', '#e2e8f0', '#64748b', '#ffffff', '#a1a1aa'],
+  solar: ['#facc15', '#fb923c', '#f87171', '#c084fc', '#818cf8', '#22d3ee', '#4ade80'],
+};
 const BASE = [
   [[0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]],
   [[1, 0, 0], [1, 1, 1], [0, 0, 0]],
@@ -36,10 +45,28 @@ const KJ = { '0>1': [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]], '1>0': [[0, 0
 const KI = { '0>1': [[0, 0], [-2, 0], [1, 0], [-2, -1], [1, 2]], '1>0': [[0, 0], [2, 0], [-1, 0], [2, 1], [-1, -2]], '1>2': [[0, 0], [-1, 0], [2, 0], [-1, 2], [2, -1]], '2>1': [[0, 0], [1, 0], [-2, 0], [1, -2], [-2, 1]], '2>3': [[0, 0], [2, 0], [-1, 0], [2, 1], [-1, -2]], '3>2': [[0, 0], [-2, 0], [1, 0], [-2, -1], [1, 2]], '3>0': [[0, 0], [1, 0], [-2, 0], [1, -2], [-2, 1]], '0>3': [[0, 0], [-1, 0], [2, 0], [-1, 2], [2, -1]] };
 const GRAV = [48, 43, 38, 33, 28, 23, 18, 13, 8, 6, 5, 4, 3, 2, 1];
 let board, p, bag, queue, hold, canHold, gravT, lockT, resets, lines, level, combo, b2b, clearRows, clearT, dasL, dasR, bg;
+function random() {
+  if (!rngState) return Math.random();
+  rngState = (Math.imul(rngState, 1664525) + 1013904223) >>> 0;
+  return rngState / 4294967296;
+}
+function dailySeed() {
+  const d = new Date(), key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate() + ':prism-stack';
+  let hash = 2166136261;
+  for (let i = 0; i < key.length; i++) { hash ^= key.charCodeAt(i); hash = Math.imul(hash, 16777619); }
+  return (hash >>> 0) || 1;
+}
+function unlock(id) {
+  const saved = window.Save && Save.load ? Save.load('prism-stack') : {};
+  if ((Array.isArray(saved.achievements) ? saved.achievements : []).includes(id)) return;
+  if (window.Save && Save.update) Save.update('prism-stack', { achievements: [id] });
+  if (window.Apex && Apex.unlockAchievement) Apex.unlockAchievement(id, 'prism-stack');
+  if (window.UI && UI.toast) UI.toast('Achievement unlocked', { color: '#facc15' });
+}
 
 const cellsOf = (q, x = q.x, y = q.y, r = q.rot) => { const m = SH[q.t][r], out = []; for (let j = 0; j < m.length; j++) for (let i = 0; i < m[j].length; i++) if (m[j][i]) out.push([x + i, y + j]); return out; };
 const hits = (q, x, y, r) => cellsOf(q, x, y, r).some(([cx, cy]) => cx < 0 || cx >= COLS || cy >= ROWS || (cy >= 0 && board[cy][cx]));
-function refill() { const b = [0, 1, 2, 3, 4, 5, 6]; for (let i = 6; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } queue.push(...b); }
+function refill() { const b = [0, 1, 2, 3, 4, 5, 6]; for (let i = 6; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } queue.push(...b); }
 function spawn(G, t) {
   while (queue.length < 5) refill();
   if (t === undefined) t = queue.shift();
@@ -47,6 +74,12 @@ function spawn(G, t) {
   if (hits(p, p.x, p.y, 0)) { G.shake(10); G.over('Topped Out', lines + ' lines · level ' + level); }
 }
 function init(G) {
+  rngState = activeMode === 'daily' ? dailySeed() : 0;
+  if (activeMode === 'circuit') {
+    const save = window.Save && Save.load ? Save.load('prism-stack') : {};
+    campaignStage = Math.max(1, Math.min(5, Number(save && save.stats && save.stats.prismCircuitStage) || 1));
+    targetLines = campaignStage * 10;
+  } else targetLines = activeMode === 'sprint' || activeMode === 'daily' ? 40 : MARATHON_LINES;
   board = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
   queue = []; hold = -1; canHold = true; lines = 0; level = 1; combo = -1; b2b = false; clearRows = []; clearT = 0; dasL = 0; dasR = 0;
   bg = A.makeStars(40, W, H);
@@ -63,6 +96,7 @@ function rotate(dir) {
 function move(dx) { if (!hits(p, p.x + dx, p.y, p.rot)) { p.x += dx; A.sfx('tick'); bump(); return true; } return false; }
 
 function lockPiece(G) {
+  unlock('first-stack');
   let out = false;
   for (const [cx, cy] of cellsOf(p)) { if (cy < 0) out = true; else board[cy][cx] = p.t + 1; }
   for (const [cx, cy] of cellsOf(p)) if (cy >= 0) G.burst(BX + cx * CELL + CELL / 2, BY + cy * CELL + CELL / 2, 2, { color: COLORS[p.t], speed: 1.5, life: 14, glow: true });
@@ -71,10 +105,16 @@ function lockPiece(G) {
   for (let y = 0; y < ROWS; y++) if (board[y].every(Boolean)) full.push(y);
   canHold = true;
   if (!full.length) { combo = -1; A.sfx('thud'); return spawn(G); }
+  if (full.length === 1) unlock('clean-sweep');
+  if (full.length === 2) unlock('double-prism');
+  if (full.length === 3) unlock('triple-spectrum');
+  if (full.length === 4) unlock('fourfold-prism');
   combo++;
   clearRows = full; clearT = 24;
   const base = [0, 100, 300, 500, 800][full.length] * level;
   const hard = full.length === 4, bonus = hard && b2b ? Math.floor(base * 0.5) : 0;
+  if (bonus) unlock('back-to-back');
+  if (combo >= 4) unlock('combo-chain');
   const comboPts = combo > 0 ? 50 * combo * level : 0;
   G.addScore(base + bonus + comboPts);
   b2b = hard;
@@ -101,7 +141,16 @@ function update(G) {
       const nl = 1 + Math.floor(lines / 10);
       if (nl > level) { level = nl; A.sfx('power'); G.popup(W / 2, 300, 'LEVEL ' + level, '#fde68a', 30); G.ring(W / 2, 300, '#fde68a', 140, 34); }
       clearRows = [];
-      if (lines >= WIN_LINES) { G.addScore(5000); return G.win('Marathon Complete!', WIN_LINES + ' lines cleared'); }
+      if (lines >= targetLines) {
+        G.addScore(5000);
+        if (activeMode === 'daily') unlock('daily-prism');
+        if (activeMode === 'circuit') {
+          if (campaignStage >= 5) { unlock('circuit-complete'); G.win('Prism Circuit Complete!', 'All five stages cleared'); }
+          else { if (window.Save && Save.update) Save.update('prism-stack', { stats: { prismCircuitStage: campaignStage + 1 } }); G.win('Stage ' + campaignStage + ' Clear', 'Circuit checkpoint saved · ' + (targetLines + 10) + ' lines next'); }
+        } else if (activeMode === 'marathon') { unlock('marathon-master'); G.win('Marathon Complete!', MARATHON_LINES + ' lines cleared'); }
+        else G.win(activeMode === 'daily' ? 'Daily Prism Complete!' : 'Sprint Complete!', targetLines + ' lines cleared');
+        return;
+      }
       spawn(G);
     }
     return;
@@ -129,10 +178,12 @@ function update(G) {
 
 function cube(c, x, y, s, color, a) {
   c.save(); if (a != null) c.globalAlpha = a;
+  if (skinStyle === 'glass-blocks') c.globalAlpha *= 0.86;
   c.fillStyle = color; c.fillRect(x, y, s, s);
   c.fillStyle = A.shade(color, 0.45); c.beginPath(); c.moveTo(x, y); c.lineTo(x + s, y); c.lineTo(x + s - 5, y + 5); c.lineTo(x + 5, y + 5); c.lineTo(x + 5, y + s - 5); c.lineTo(x, y + s); c.fill();
   c.fillStyle = A.shade(color, -0.4); c.beginPath(); c.moveTo(x + s, y + s); c.lineTo(x, y + s); c.lineTo(x + 5, y + s - 5); c.lineTo(x + s - 5, y + s - 5); c.lineTo(x + s - 5, y + 5); c.lineTo(x + s, y); c.fill();
-  c.fillStyle = A.shade(color, 0.12); c.fillRect(x + 5, y + 5, s - 10, s - 10);
+  c.fillStyle = A.shade(color, skinStyle === 'forged-blocks' ? -0.08 : skinStyle === 'soft-blocks' ? 0.25 : 0.12); c.fillRect(x + 5, y + 5, s - 10, s - 10);
+  if (skinStyle === 'glass-blocks') { c.strokeStyle = 'rgba(255,255,255,.78)'; c.lineWidth = 1.5; c.strokeRect(x + 3, y + 3, s - 6, s - 6); }
   c.restore();
 }
 function mini(c, t, cx, cy, s) {
@@ -149,8 +200,8 @@ function panel(c, x, y, w, h, title) {
 
 function draw(G, c) {
   const t = G.clock;
-  A.sky(c, W, H, ['#07051a', '#10113a', '#1b1250']);
-  A.drawStars(c, bg, t, W, H, 0.05, '#c7d2fe');
+  A.sky(c, W, H, activeTheme);
+  A.drawStars(c, bg, t, W, H, 0.05, ghostColor);
   // board frame with depth
   c.save(); c.shadowColor = '#6366f1'; c.shadowBlur = 24; c.fillStyle = '#0a0d1f'; c.fillRect(BX - 6, BY - 6, COLS * CELL + 12, ROWS * CELL + 12); c.restore();
   c.fillStyle = '#080b19'; c.fillRect(BX, BY, COLS * CELL, ROWS * CELL);
@@ -184,7 +235,7 @@ function draw(G, c) {
   for (let i = 0; i < 3; i++) if (queue[i] !== undefined) mini(c, queue[i], 490, BY + 58 + i * 60, i === 0 ? 20 : 16);
   panel(c, 430, BY + 226, 120, 170, 'STATS');
   const row = (k, v, y, col) => { A.text(c, k, 442, y, 11, '#8b93b3', 'left', '700'); A.text(c, String(v), 540, y, 16, col || '#fff', 'right', '800', A.MONO); };
-  row('SCORE', G.score, BY + 262); row('LEVEL', level, BY + 296, '#fde68a'); row('LINES', lines + '/' + WIN_LINES, BY + 330);
+  row('SCORE', G.score, BY + 262); row('LEVEL', level, BY + 296, '#fde68a'); row('LINES', lines + '/' + targetLines, BY + 330);
   row('COMBO', combo > 0 ? '×' + combo : '–', BY + 364, '#67e8f9');
   A.text(c, b2b ? 'BACK-TO-BACK' : '', 490, BY + 386, 10, '#fde68a', 'center', '800');
   panel(c, 10, BY + 116, 120, 150, 'KEYS');
@@ -193,13 +244,62 @@ function draw(G, c) {
   G.drawFX(c);
 }
 
-Arcade.game({
+const prismGame = Arcade.game({
   id: 'prism-stack', title: 'Prism Stack', subtitle: 'Stack, clear, and reach 150 lines', color: '#818cf8',
   help: '←/→ move, ↑ or X rotate, Z rotate back, ↓ soft drop, Space hard drop, C or Shift hold. Clear 4 lines at once for a PRISM; back-to-back and combos score extra. P pauses, M mutes.',
   w: W, h: H,
   touchL: [['◀', 'ArrowLeft'], ['▶', 'ArrowRight'], ['▼', 'ArrowDown']], touchR: [['⟳', 'ArrowUp'], ['⤓', 'Space'], ['H', 'KeyC']],
   init, update, draw,
 });
+const originalShake = prismGame.shake.bind(prismGame);
+let shakeScale = 1;
+prismGame.shake = (amount) => originalShake(amount * shakeScale);
+prismGame.ui = UI.mountGame(prismGame, {
+  id: 'prism-stack', title: 'Prism Stack', subtitle: 'Stack, clear, and shape the spectrum', accent: '#818cf8',
+  modes: [
+    { id: 'marathon', name: 'Marathon', blurb: 'Clear 150 lines.', seeded: false, seasonTargets: [4000, 9000, 16000] },
+    { id: 'sprint', name: '40-Line Sprint', blurb: 'Reach 40 lines as quickly as possible.', seeded: false, seasonTargets: [2500, 5000, 9000] },
+    { id: 'daily', name: 'Daily Prism', blurb: 'Same seven-bag sequence for today.', seeded: true, seasonTargets: [2500, 5000, 9000] },
+    { id: 'circuit', name: 'Prism Circuit', blurb: 'Five saved stages, from 10 to 50 lines.', seeded: false, seasonTargets: [3500, 7000, 12000] },
+  ],
+  settings: [
+    { key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 },
+    { key: 'particles', label: 'Particles', type: 'select', options: ['lite', 'standard', 'ultra'], default: 'standard' },
+  ],
+  achievements: [
+    { id: 'first-stack', name: 'First Stack', desc: 'Lock your first piece.', rarity: 'common' },
+    { id: 'clean-sweep', name: 'Clean Sweep', desc: 'Clear one line.', rarity: 'common' },
+    { id: 'double-prism', name: 'Double Prism', desc: 'Clear two lines at once.', rarity: 'common' },
+    { id: 'triple-spectrum', name: 'Triple Spectrum', desc: 'Clear three lines at once.', rarity: 'rare' },
+    { id: 'fourfold-prism', name: 'Fourfold Prism', desc: 'Clear four lines at once.', rarity: 'rare' },
+    { id: 'back-to-back', name: 'Back-to-Back', desc: 'Clear consecutive tetrises.', rarity: 'epic' },
+    { id: 'combo-chain', name: 'Combo Chain', desc: 'Reach a 5-clear combo.', rarity: 'rare' },
+    { id: 'daily-prism', name: 'Daily Prism', desc: 'Complete today’s seeded run.', rarity: 'rare' },
+    { id: 'circuit-complete', name: 'Circuit Complete', desc: 'Clear all five Circuit stages.', rarity: 'epic' },
+    { id: 'marathon-master', name: 'Marathon Master', desc: 'Clear 150 lines in Marathon.', rarity: 'legendary' },
+  ],
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Move pieces left and right, then rotate to fit the stack.', hold: 'ArrowLeft' },
+    { text: 'Use the ghost outline to line up a hard drop.', hold: 'Space' },
+    { text: 'Hold a piece for later and clear full rows to raise your level.', hold: 'KeyC' },
+  ] },
+  hooks: {
+    applyMode: (mode) => { activeMode = mode; },
+    applySetting: (key, value) => {
+      if (key === 'shake') shakeScale = Number(value);
+      if (key === 'particles' && window.Perf && Perf.setTier) Perf.setTier(value);
+    },
+    applyCosmetic: (slot, id) => {
+      if (slot === 'palette') {
+        const key = id.replace('prism-stack:', '').replace('-palette', '');
+        const colors = PALETTES[key]; if (colors) COLORS.splice(0, COLORS.length, ...colors);
+      } else if (slot === 'trail') ghostColor = id.includes('gold') ? '#facc15' : id.includes('prism') ? '#e879f9' : '#22d3ee';
+      else if (slot === 'theme') activeTheme = id.includes('mint') ? ['#041b19', '#0b302b', '#164e45'] : id.includes('violet') ? ['#0d0820', '#21143b', '#38205e'] : id.includes('crystal') ? ['#101a2a', '#1b3150', '#31547a'] : ['#07051a', '#10113a', '#1b1250'];
+      else if (slot === 'skin') skinStyle = id.replace('prism-stack:', '');
+    },
+  },
+});
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

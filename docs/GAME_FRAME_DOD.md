@@ -46,3 +46,15 @@ Use this checklist for each game before it joins a rollout sprint. A pilot-speci
 - [x] Production browser test verifies the date-based Daily Core goal and same-day retry restores the same seed and opening board.
 - [x] Production browser test verifies Trial 1's target, move limit, completion record, and three-star award using a controlled winning board state.
 - [ ] Playtesting verifies balance across all 30 escalating Foundry Trials.
+
+## Unified theater pause — all 50 games (2026-10-24)
+
+- [x] Escape toggles exactly one host-owned pause screen across the 20 React-engine records and all 50 tribute games. The in-game themed menu stays a launch menu; pause unlocks only after gameplay starts (immediately for React engines, after `MENU_PLAY` for iframes).
+- [x] The floating stage pause trigger and theater-toolbar pause icon are gone. Touch gets one Pause action in the theater bottom bar; gamepad Start toggles the same overlay.
+- [x] Resume, Restart, Settings and Exit to Arcade work from the overlay; Escape resumes from the pause screen and its Settings panel. Restart remounts a React engine or reloads the iframe to its themed menu, including Exit immediately after a restart (verified by `npm run test:theater`).
+- [x] React-engine pause freezes canvas output and input; animation resumes after Escape. Verified for all 20 engine records by `npm run test:theater-engines`.
+- [x] Tic-Tac-Toe and Merge 2048 keep exact board state across pause/resume; a native mobile 2048 swipe still changes the board. Verified by `npm run test:game-frame-pilots`.
+- [x] Production smoke passes every check for 50/50 games in desktop and touch viewports, including unified pause, difficulty, Lite tier and result delivery. See `docs/SMOKE_REPORT.md`.
+- [x] Shared audio suspends while paused; iframe game music, scenes, Arcade state and board-kit timers resume where they stopped.
+- [x] Overlay focus is trapped, buttons expose accessible names, touch targets do not overlap, and the pause overlay is reachable by keyboard, touch and simulated gamepad.
+- [ ] Physical gamepad hardware, real iOS/Android devices, and a visual review of the overlay in both site themes remain unverified.

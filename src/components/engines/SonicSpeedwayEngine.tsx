@@ -71,6 +71,7 @@ export const SonicSpeedwayEngine: React.FC<SonicSpeedwayEngineProps> = ({
   // Controls
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
+      if (isPaused) return;
       if (stateRef.current !== 'PLAYING') {
         if (e.code === 'Space') {
           e.preventDefault();
@@ -99,7 +100,7 @@ export const SonicSpeedwayEngine: React.FC<SonicSpeedwayEngineProps> = ({
 
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [startGame]);
+  }, [isPaused, startGame]);
 
   // Main Loop
   useEffect(() => {

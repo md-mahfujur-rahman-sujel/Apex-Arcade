@@ -5,7 +5,7 @@
 
   var Music = (window.Music = window.Music || {});
   var ctx = null, master = null, dry = null, wet = null, convolver = null, noise = null;
-  var timer = 0, nextTime = 0, step = 0, current = null, pending = null;
+  var timer = 0, nextTime = 0, step = 0, current = null, pending = null, defaultMusicVolume = 0.8;
   var active = false, paused = false, muted = false, intensity = 0.25, lastIntensity = -1, lastVolume = -1;
   var layerGains = {}, bound = [];
   var SCALE = {
@@ -26,7 +26,8 @@
   function volume() {
     var s = settings();
     if (muted || (window.Arcade && Arcade.muted)) return 0;
-    return num(s.musicVol, 0.8);
+    var savedVolume = num(s.musicVol, defaultMusicVolume);
+    return Math.abs(savedVolume - 0.8) < 0.0001 ? defaultMusicVolume : savedVolume;
   }
   function fade(param, value, seconds) {
     if (!ctx || !param) return;
@@ -123,6 +124,15 @@
   }
   window.addEventListener('pointerdown', activate, { passive: true });
   window.addEventListener('keydown', activate);
+  window.addEventListener('message', function (event) {
+    var data = event.data;
+    if (event.source !== window.parent || event.origin !== window.location.origin || !data || data.type !== 'APEX_AUDIO_DEFAULTS') return;
+    if (typeof data.musicVolume === 'number' && isFinite(data.musicVolume)) {
+      defaultMusicVolume = Math.max(0, Math.min(1, data.musicVolume));
+      lastVolume = -1;
+      refreshMix(true);
+    }
+  });
   window.addEventListener('blur', function () { Music.pause(); });
   document.addEventListener('visibilitychange', function () { if (document.hidden) Music.pause(); else if (active && paused) Music.resume(); });
   window.addEventListener('pagehide', function () { Music.stop(0); });

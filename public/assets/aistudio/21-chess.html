@@ -28,6 +28,7 @@
   .capt { color: var(--muted); font-size: 13px; line-height: 1.6; }
   .capt span { color: var(--text); font-size: 18px; letter-spacing: 1px; }
 </style>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -189,7 +190,7 @@ function bestMove(s, depth, noise) {
 const LEVELS = [{ d: 1, n: 140 }, { d: 2, n: 12 }, { d: 3, n: 0 }];
 
 /* ---------------- game state & UI ---------------- */
-let S, hist, sel, tg, last, over, flipped, mode, thinking, caps, moves, reps, hintSq, genId = 0;
+let S, hist, sel, tg, last, over, flipped, mode, thinking, caps, moves, reps, hintSq, genId = 0, menuPaused = true;
 const boardEl = $('#board'), sqs = [];
 for (let k = 0; k < 64; k++) {
   const d = document.createElement('div'); d.dataset.k = k; d.innerHTML = '<span class="pc"></span>';
@@ -207,7 +208,7 @@ function newGame() {
   render(); maybeCpu();
 }
 function maybeCpu() {
-  if (over || humanTurn()) return;
+  if (menuPaused || over || thinking || humanTurn()) return;
   thinking = true; render();
   const g = genId, L = LEVELS[+$('#lvl').value];
   Board.think(() => bestMove(S, L.d, L.n), 1100).then(async (m) => {
@@ -245,7 +246,7 @@ function play(m) {
   } else maybeCpu();
 }
 function clickSq(i) {
-  if (over || thinking || !humanTurn()) return;
+  if (menuPaused || over || thinking || !humanTurn()) return;
   const p = S.b[i], w = S.turn === 'w';
   if (sel >= 0) { const ms = tg.filter((m) => m.t === i); if (ms.length) { choose(ms); return; } }
   if (p && isW(p) === w) { sel = i; tg = legal(S).filter((m) => m.f === i); Board.sfx('click'); } else { sel = -1; tg = []; }
@@ -292,10 +293,22 @@ $('#flip').onclick = () => { flipped = !flipped; render(); };
 $('#mode').onchange = newGame;
 document.addEventListener('keydown', (e) => {
   if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey) return;
+  if (menuPaused) return;
   const k = e.key.toLowerCase();
   if (k === 'n') newGame(); else if (k === 'u') undo(); else if (k === 'f') { flipped = !flipped; render(); } else if (k === 't') hint();
 });
+window.ApexGameMenuActions = {
+  play: function () { menuPaused = false; maybeCpu(); },
+  pause: function (value) {
+    menuPaused = !!value;
+    if (menuPaused && thinking) { genId++; thinking = false; render(); }
+    else if (!menuPaused) maybeCpu();
+  },
+  resume: function () { menuPaused = false; maybeCpu(); },
+  restart: function () { menuPaused = false; newGame(); }
+};
 newGame();
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

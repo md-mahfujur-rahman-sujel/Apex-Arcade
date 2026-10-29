@@ -102,6 +102,7 @@ export const CyberFlapEngine: React.FC<CyberFlapEngineProps> = ({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isPaused) return;
       if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
         e.preventDefault();
         flap();
@@ -110,7 +111,7 @@ export const CyberFlapEngine: React.FC<CyberFlapEngineProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [flap]);
+  }, [flap, isPaused]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

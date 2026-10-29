@@ -135,6 +135,7 @@ export const AsteroidsCoreEngine: React.FC<AsteroidsCoreEngineProps> = ({
     const keys = new Set<string>();
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isPaused) return;
       keys.add(e.code);
       if (e.code === 'Space') {
         e.preventDefault();
@@ -151,7 +152,7 @@ export const AsteroidsCoreEngine: React.FC<AsteroidsCoreEngineProps> = ({
     };
 
     const interval = setInterval(() => {
-      if (stateRef.current !== 'PLAYING') return;
+      if (isPaused || stateRef.current !== 'PLAYING') return;
       const ship = shipRef.current;
       if (keys.has('KeyA') || keys.has('ArrowLeft')) {
         ship.rot -= 0.08;
@@ -175,7 +176,7 @@ export const AsteroidsCoreEngine: React.FC<AsteroidsCoreEngineProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [shoot, startGame]);
+  }, [isPaused, shoot, startGame]);
 
   // Main Loop
   useEffect(() => {

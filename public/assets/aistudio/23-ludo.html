@@ -18,6 +18,7 @@
   .pl i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #fff; }
   .pl span { margin-left: auto; color: var(--muted); font: 600 13px ui-monospace, Consolas, monospace; }
 </style>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -79,7 +80,7 @@ function draw() {
     c.fillStyle = i % 13 === 0 ? COL[i / 13] : '#e8ebf6'; c.fillRect(x * U + 1, y * U + 1, U - 2, U - 2);
     if (SAFE.has(i) && i % 13) { c.fillStyle = '#8b93b3'; c.font = '20px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('\u2605', x * U + U / 2, y * U + U / 2 + 1); }
   });
-  const items = [], seen = {}, t = Date.now() / 300, me = players[cur];
+  const items = [], seen = {}, t = Board.now() / 300, me = players[cur];
   players.forEach((p) => p.t.forEach((v, i) => { const [x, y] = xy(p, i); items.push({ p, i, v, x: x * U, y: y * U }); }));
   items.forEach((o) => { if (!o.v || o.v === 57) return; const k = Math.round(o.x) + ',' + Math.round(o.y), n = (seen[k] = (seen[k] || 0) + 1); o.x += (n - 1) * 6; o.y -= (n - 1) * 6; });
   items.forEach((o) => {
@@ -90,7 +91,7 @@ function draw() {
     if (mv) { c.strokeStyle = '#fff'; c.lineWidth = 3; c.beginPath(); c.arc(o.x, o.y, r + 4 + Math.sin(t * 3) * 2.5, 0, 7); c.stroke(); }
   });
 }
-(function loop() { if (players) draw(); requestAnimationFrame(loop); })();
+(function loop() { if (players && !Board.paused()) draw(); requestAnimationFrame(loop); })();
 
 function newGame() {
   const n = +$('#mode').value, seats = n === 0 ? [0, 1, 2, 3] : n === 1 ? [0, 2] : [0, 1, 2, 3].slice(0, n + 1);
@@ -106,7 +107,7 @@ function upd(m) {
 }
 const ok = (p, i) => (p.t[i] === 0 ? die === 6 : p.t[i] + die <= 57);
 const foe = (p, k) => players.some((q) => q !== p && q.t.some((w) => w >= 1 && w <= 51 && trk(q.s, w) === k));
-function auto() { if (!over && players[cur].cpu && phase === 'roll') setTimeout(roll, Board.pace(1300)); }
+function auto() { if (!over && players[cur].cpu && phase === 'roll') Board.after(Board.pace(1300), () => { if (!over && !Board.paused() && players[cur].cpu && phase === 'roll') roll(); }); }
 function cpuPick(p) {
   const skill = Board.level();
   if (skill === 1) return moves[Board.rand(moves.length)];
@@ -171,5 +172,6 @@ document.addEventListener('keydown', (e) => {
 });
 newGame();
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

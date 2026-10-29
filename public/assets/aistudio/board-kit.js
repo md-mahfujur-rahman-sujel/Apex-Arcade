@@ -24,16 +24,112 @@
   };
   B.ls = ls;
   B.rand = (n) => Math.floor(Math.random() * n);
-  B.sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   B.shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = B.rand(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
+  /* ---------- pause clock and schedulers ----------
+     Board games run on wall-clock timers; these helpers stop advancing while
+     the shared pause is active so turns, AI and countdowns stay frozen. */
+  let paused = false, pauseStartedAt = 0, pausedTotal = 0;
+  const timerJobs = new Map();
+  let timerSeq = 0;
+  const rawNow = () => (window.performance && typeof performance.now === 'function') ? performance.now() : Date.now();
+  B.now = () => { const t = rawNow(); return t - pausedTotal - (paused ? t - pauseStartedAt : 0); };
+  function armTimer(id, job) {
+    job.startedAt = rawNow();
+    job.handle = window.setTimeout(() => fireTimer(id), Math.max(0, job.remaining));
+  }
+  function fireTimer(id) {
+    const job = timerJobs.get(id);
+    if (!job || paused) return;
+    job.handle = 0;
+    if (job.every) {
+      job.remaining = job.interval;
+      armTimer(id, job);
+      try { job.fn(); } catch (error) { console.error(error); }
+    } else {
+      timerJobs.delete(id);
+      try { job.fn(); } catch (error) { console.error(error); }
+    }
+  }
+  function scheduleTimer(ms, fn, every) {
+    const id = ++timerSeq;
+    const interval = Math.max(1, Number(ms) || 0);
+    const job = { fn, every: !!every, interval, remaining: interval, startedAt: rawNow(), handle: 0 };
+    timerJobs.set(id, job);
+    if (!paused) armTimer(id, job);
+    else job.remaining = interval;
+    return id;
+  }
+  B.after = (ms, fn) => scheduleTimer(ms, fn, false);
+  B.every = (ms, fn) => scheduleTimer(ms, fn, true);
+  B.cancel = (id) => {
+    const job = timerJobs.get(id);
+    if (job && job.handle) window.clearTimeout(job.handle);
+    timerJobs.delete(id);
+  };
+  B.sleep = (ms) => new Promise((resolve) => B.after(ms, resolve));
+  B.paused = () => paused;
+  B.pauseTime = () => B.now();
+
+  function applyPauseState(next) {
+    if (next !== paused) {
+      const stamp = rawNow();
+      if (next) {
+        pauseStartedAt = stamp;
+        timerJobs.forEach((job) => {
+          if (job.handle) { window.clearTimeout(job.handle); job.handle = 0; }
+          job.remaining = Math.max(0, job.remaining - (stamp - job.startedAt));
+        });
+      } else {
+        pausedTotal += stamp - pauseStartedAt;
+        pauseStartedAt = 0;
+        timerJobs.forEach((job, id) => armTimer(id, job));
+      }
+      paused = next;
+    }
+    const root = document.documentElement;
+    if (root) {
+      if (paused) root.setAttribute('data-apex-paused', 'true');
+      else root.removeAttribute('data-apex-paused');
+    }
+    const main = document.getElementById('bk-main');
+    if (main) main.style.pointerEvents = paused ? 'none' : '';
+    window.ApexGamePaused = paused;
+    if (window.Music) {
+      try { if (paused) Music.pause(); else Music.resume(); } catch (e) {}
+    }
+    try { window.dispatchEvent(new CustomEvent('apex:board-pause', { detail: { paused: paused } })); } catch (e) {}
+    return paused;
+  }
+  B.setPaused = applyPauseState;
+
+  window.ApexPauseGame = function (value) {
+    const next = B.setPaused(value);
+    if (window.ApexGameMenuActions && typeof window.ApexGameMenuActions.pause === 'function') {
+      try { window.ApexGameMenuActions.pause(next); } catch (error) { console.error(error); }
+    }
+    return next;
+  };
+
+  document.addEventListener('keydown', (event) => {
+    if (!paused) return;
+    const target = event.target;
+    if (target && target.closest && target.closest('.apex-menu-root,#bk-dlg')) return;
+    event.stopImmediatePropagation();
+  }, true);
+  document.addEventListener('pointerdown', (event) => {
+    if (!paused) return;
+    const target = event.target;
+    if (target && target.closest && target.closest('#bk-main,.bk-top')) event.stopImmediatePropagation();
+  }, true);
+
   /* ---------- sound ---------- */
-  let ctx = null, muted = ls.get('apex:mute') === '1';
+  let ctx = null, muted = ls.get('apex:mute') === '1', sfxVolume = 0.8;
   const tone = (f, d, type, v, delay, to) => {
     const t = ctx.currentTime + (delay || 0), o = ctx.createOscillator(), g = ctx.createGain();
     o.type = type || 'sine'; o.frequency.setValueAtTime(f, t);
     if (to) o.frequency.exponentialRampToValueAtTime(to, t + d);
-    g.gain.setValueAtTime(v || 0.08, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    g.gain.setValueAtTime((v || 0.08) * sfxVolume, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
     o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + d + 0.02);
   };
   B.sfx = (n) => {
@@ -62,6 +158,7 @@
     }
   };
   B.muted = () => muted;
+  B.setSfxVolume = (value) => { sfxVolume = Math.max(0, Math.min(1, Number(value) || 0)); };
 
   /* ---------- difficulty contract ----------
      Strength is deliberately independent from the visible computer-thinking pace. */
@@ -95,13 +192,13 @@
   B.pace = (ms) => Math.round(ms * PACE[B.speed()]);
   /* Run fn (the computer's search) and resolve with its result only after a visible "thinking" pause. */
   B.think = (fn, min) => new Promise((resolve) => {
-    const t0 = Date.now(), bars = document.querySelectorAll('.bk-status');
+    const t0 = B.now(), bars = document.querySelectorAll('.bk-status');
     bars.forEach((b) => b.classList.add('think'));
-    setTimeout(() => {
+    B.after(40, () => {
       let r; try { r = fn(); } catch (e) { console.error(e); }
-      const wait = Math.max(0, B.pace(min == null ? 1000 : min) + B.rand(260) - (Date.now() - t0));
-      setTimeout(() => { bars.forEach((b) => b.classList.remove('think')); resolve(r); }, wait);
-    }, 40);
+      const wait = Math.max(0, B.pace(min == null ? 1000 : min) + B.rand(260) - (B.now() - t0));
+      B.after(wait, () => { bars.forEach((b) => b.classList.remove('think')); resolve(r); });
+    });
   });
   /* Glide a copy of the piece inside fromEl across one or more target elements (cb(i) fires after each stop). */
   B.glide = async (fromEl, to, ms, sel, cb) => {
@@ -150,6 +247,7 @@ kbd{font:600 12px ui-monospace,Consolas,monospace;background:#0b0d16;border:1px 
 .bk-spd{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:13px;margin-right:8px}
 .bk-status.think{animation:bkp 1.1s ease-in-out infinite}
 @keyframes bkp{50%{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan)}}
+html[data-apex-paused="true"] *,html[data-apex-paused="true"] *::before,html[data-apex-paused="true"] *::after{animation-play-state:paused!important}
 `;
 
   B.shell = function (o) {
@@ -177,13 +275,14 @@ kbd{font:600 12px ui-monospace,Consolas,monospace;background:#0b0d16;border:1px 
     } catch (e) {}
     if (spd) { spd.value = B.speed(); spd.onchange = () => { ls.set('apex:cpu', spd.value); spd.blur(); }; }
     window.addEventListener('message', (e) => {
+      if ((e.source !== window.parent && e.source !== window) || e.origin !== window.location.origin) return;
       if (e.data && e.data.type === 'SET_DIFFICULTY') {
         const d = e.data.difficulty;
         setDifficulty(d);
       }
     });
     document.addEventListener('keydown', (e) => {
-      if (e.ctrlKey || e.metaKey || e.altKey || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+      if (window.ApexMenuActive || e.ctrlKey || e.metaKey || e.altKey || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
       if (e.key === 'm' || e.key === 'M') toggleMute();
       else if (e.key === 'h' || e.key === 'H') help.open = !help.open;
     });
@@ -257,10 +356,10 @@ kbd{font:600 12px ui-monospace,Consolas,monospace;background:#0b0d16;border:1px 
       return true;
     };
     document.addEventListener('pointerdown', (e) => {
-      if (e.isTrusted && isGameplayInput(e.target)) startSession();
+      if (!window.ApexMenuActive && e.isTrusted && isGameplayInput(e.target)) startSession();
     }, true);
     document.addEventListener('keydown', (e) => {
-      if (!e.isTrusted || /INPUT|SELECT|TEXTAREA/.test(e.target?.tagName || '')) return;
+      if (window.ApexMenuActive || !e.isTrusted || /INPUT|SELECT|TEXTAREA/.test(e.target?.tagName || '')) return;
       if (main.contains(e.target) || e.target === document.body) startSession();
     }, true);
     window.addEventListener('pagehide', () => endSession('exit'), { once: true });

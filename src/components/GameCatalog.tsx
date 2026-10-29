@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { GameInfo, PlayerStats } from '../types/game';
 import { GameCard3D } from './GameCard3D';
-import { Search, Sparkles, Star, Layers, Dices } from 'lucide-react';
+import { Search, Sparkles, Star, Layers, Dices, ChevronDown, Check } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Chip } from './ui/Chip';
 import { Input, Select } from './ui/Input';
@@ -18,6 +18,91 @@ interface GameCatalogProps {
   initialQuery?: URLSearchParams;
 }
 
+interface FacetOption {
+  value: string;
+  count: number;
+}
+
+const formatFacetLabel = (value: string) => value
+  .replace(/[-_]+/g, ' ')
+  .replace(/\b\w/g, (character) => character.toUpperCase());
+
+const buildFacetOptions = (games: GameInfo[], getValues: (game: GameInfo) => string[]): FacetOption[] => {
+  const counts = new Map<string, number>();
+  games.forEach((game) => new Set(getValues(game)).forEach((value) => counts.set(value, (counts.get(value) || 0) + 1)));
+  return [...counts].map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+};
+
+const CompactFacetPicker: React.FC<{
+  id: string;
+  label: string;
+  value: string;
+  emptyValue: string;
+  emptyLabel: string;
+  options: FacetOption[];
+  onChange: (value: string) => void;
+}> = ({ id, label, value, emptyValue, emptyLabel, options, onChange }) => {
+  const detailsRef = React.useRef<HTMLDetailsElement>(null);
+  const [query, setQuery] = useState('');
+  const selectedOption = options.find((option) => option.value === value);
+  const popularOptions = [
+    ...(selectedOption ? [selectedOption] : []),
+    ...options.filter((option) => option.value !== value),
+  ].slice(0, 6);
+  const matchingOptions = query.trim()
+    ? options.filter((option) => formatFacetLabel(option.value).toLowerCase().includes(query.trim().toLowerCase()))
+    : popularOptions;
+
+  useEffect(() => {
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (event.target instanceof Node && !detailsRef.current?.contains(event.target)) {
+        if (detailsRef.current) detailsRef.current.open = false;
+        setQuery('');
+      }
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+  }, []);
+
+  const choose = (nextValue: string) => {
+    onChange(nextValue);
+    setQuery('');
+    if (detailsRef.current) detailsRef.current.open = false;
+  };
+
+  return <details id={id} ref={detailsRef} className="group relative min-w-0">
+    <summary aria-label={`${label} filter: ${selectedOption?.value || emptyLabel}`} onKeyDown={(event) => { if (event.key === 'Escape' && detailsRef.current) detailsRef.current.open = false; }} className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-lg border border-line bg-sunken px-2.5 text-xs text-fg transition-colors hover:border-line-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
+      <span className={`truncate ${value !== emptyValue ? 'text-fg' : 'text-fg-muted'}`}>{selectedOption ? formatFacetLabel(selectedOption.value) : emptyLabel}</span>
+      <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-fg-subtle transition-transform group-open:rotate-180" />
+    </summary>
+    <div className="absolute left-0 top-full z-50 mt-2 w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-line bg-card p-2 shadow-xl">
+      <label className="relative block">
+        <Search aria-hidden="true" className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-subtle" />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${label.toLowerCase()}…`} aria-label={`Search ${label.toLowerCase()}`} className="min-h-9 w-full rounded-lg border border-line bg-surface-2 pl-8 pr-2 text-xs text-fg placeholder:text-fg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" />
+      </label>
+      <div className="mt-1.5 flex items-center justify-between px-1.5 py-1 text-[10px] text-fg-subtle">
+        <span>{query.trim() ? 'Matching options' : 'Popular choices'}</span>
+        <span>{options.length} total</span>
+      </div>
+      <div className="max-h-52 space-y-0.5 overflow-y-auto">
+        <button type="button" aria-pressed={value === emptyValue} onClick={() => choose(emptyValue)} className="flex min-h-9 w-full items-center justify-between rounded-lg px-2 text-left text-xs text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg">
+          <span>{emptyLabel}</span>{value === emptyValue && <Check aria-hidden="true" className="h-3.5 w-3.5 text-accent" />}
+        </button>
+        {matchingOptions.map((option) => (
+          <button key={option.value} type="button" aria-pressed={value === option.value} onClick={() => choose(option.value)} className={`flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs transition-colors hover:bg-surface-2 ${value === option.value ? 'bg-accent-soft text-accent' : 'text-fg'}`}>
+            <span className="min-w-0 flex-1 truncate">{formatFacetLabel(option.value)}</span>
+            <span className="rounded-full bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-fg-muted">{option.count}</span>
+            {value === option.value && <Check aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-accent" />}
+          </button>
+        ))}
+        {matchingOptions.length === 0 && <p className="px-2 py-4 text-center text-xs text-fg-muted">No matching options.</p>}
+      </div>
+      {!query.trim() && options.length > matchingOptions.length && <p className="px-1.5 pt-1.5 text-[10px] text-fg-subtle">Search to find {options.length - matchingOptions.length} more.</p>}
+    </div>
+  </details>;
+};
+
 export const GameCatalog: React.FC<GameCatalogProps> = ({
   games,
   stats,
@@ -31,6 +116,7 @@ export const GameCatalog: React.FC<GameCatalogProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState(() => initialQuery?.get('q') || '');
   const [selectedCategory, setSelectedCategory] = useState<string>(() => initialQuery?.get('category') || 'all');
+  const [includedGameIds, setIncludedGameIds] = useState(() => new Set(initialQuery?.get('ids')?.split(',').filter(Boolean) || []));
   const [tagFilter, setTagFilter] = useState<string>(() => initialQuery?.get('tag') || 'all');
   const [sortBy, setSortBy] = useState<'az' | 'number' | 'enhanced' | 'played' | 'difficulty'>('az');
   const [playersFilter, setPlayersFilter] = useState<'all' | '1P' | '1-2P' | '1-4P'>(() => ['1P', '1-2P', '1-4P'].includes(initialQuery?.get('players') || '') ? initialQuery!.get('players') as '1P' | '1-2P' | '1-4P' : 'all');
@@ -46,9 +132,9 @@ export const GameCatalog: React.FC<GameCatalogProps> = ({
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  const availableModes = useMemo(() => [...new Set(games.flatMap((game) => game.modes || []))].sort(), [games]);
-  const availableTags = useMemo(() => [...new Set(games.flatMap((game) => game.tags || []))].sort((a, b) => a.localeCompare(b)), [games]);
-  const availableInputs = useMemo(() => [...new Set(games.flatMap((game) => game.inputs || []))].sort(), [games]);
+  const modeOptions = useMemo(() => buildFacetOptions(games, (game) => game.modes || []), [games]);
+  const tagOptions = useMemo(() => buildFacetOptions(games, (game) => game.tags || []), [games]);
+  const inputOptions = useMemo(() => buildFacetOptions(games, (game) => game.inputs || []), [games]);
   const searchSuggestions = useMemo(() => {
     const values = games.flatMap((game) => [game.title, game.genre, ...(game.tags || []), ...(game.modes || [])]);
     const query = searchQuery.trim().toLowerCase();
@@ -64,13 +150,14 @@ export const GameCatalog: React.FC<GameCatalogProps> = ({
     if (inputFilter) params.set('input', inputFilter);
     if (tagFilter !== 'all') params.set('tag', tagFilter);
     if (selectedCategory !== 'all') params.set('category', selectedCategory);
+    if (includedGameIds.size) params.set('ids', [...includedGameIds].join(','));
     if (moodFilter) params.set('mood', moodFilter);
     if (searchQuery.trim()) params.set('q', searchQuery.trim());
     const nextHash = `#/browse${params.size ? `?${params.toString()}` : ''}`;
     if (window.location.hash !== nextHash) {
       window.history.replaceState({ ...(window.history.state || {}), apexRoute: nextHash }, '', nextHash);
     }
-  }, [modeFilter, sessionFilter, playersFilter, inputFilter, tagFilter, selectedCategory, moodFilter, searchQuery]);
+  }, [modeFilter, sessionFilter, playersFilter, inputFilter, tagFilter, selectedCategory, includedGameIds, moodFilter, searchQuery]);
 
   // Category counts
   const categories = useMemo(() => {
@@ -89,6 +176,8 @@ export const GameCatalog: React.FC<GameCatalogProps> = ({
   const filteredGames = useMemo(() => {
     const difficultyRank: Record<GameInfo['difficulty'], number> = { Easy: 1, Medium: 2, Hard: 3, Brutal: 4 };
     return games.filter((game) => {
+      if (includedGameIds.size && !includedGameIds.has(game.id)) return false;
+
       // Search term
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -139,7 +228,7 @@ export const GameCatalog: React.FC<GameCatalogProps> = ({
       if (sortBy === 'difficulty') return difficultyRank[a.difficulty] - difficultyRank[b.difficulty] || a.title.localeCompare(b.title);
       return a.title.localeCompare(b.title);
     });
-  }, [games, searchQuery, selectedCategory, tagFilter, activeFilter, favorites, playersFilter, eraFilter, modeFilter, sessionFilter, sortBy, stats.recentSessions, inputFilter, moodFilter]);
+  }, [games, includedGameIds, searchQuery, selectedCategory, tagFilter, activeFilter, favorites, playersFilter, eraFilter, modeFilter, sessionFilter, sortBy, stats.recentSessions, inputFilter, moodFilter]);
 
   const handleSurpriseMe = () => {
     const pool = filteredGames.length > 0 ? filteredGames : games;
@@ -150,7 +239,7 @@ export const GameCatalog: React.FC<GameCatalogProps> = ({
   };
 
   return (
-    <section id="catalog" className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-14">
+    <section id="catalog" className="w-full max-w-7xl scroll-mt-20 mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-14">
       {/* Header & Controls Strip */}
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-6 sm:mb-8 pb-6 border-b border-line">
         <div>
@@ -207,7 +296,7 @@ export const GameCatalog: React.FC<GameCatalogProps> = ({
             <Chip
               key={cat.id}
               selected={selectedCategory === cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
+              onClick={() => { setSelectedCategory(cat.id); setIncludedGameIds(new Set()); }}
             >
               <span>{cat.label}</span>
               <span
@@ -252,15 +341,15 @@ export const GameCatalog: React.FC<GameCatalogProps> = ({
         <label className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">Session
           <Select aria-label="Session length facet" value={sessionFilter} onChange={(event) => setSessionFilter(event.target.value as typeof sessionFilter)} className="mt-1 min-h-11 rounded-lg px-2 text-xs normal-case tracking-normal"><option value="all">Any length</option><option value="quick">Quick · ≤5 min</option><option value="short">Short · 6–10 min</option><option value="standard">Standard · 11–20 min</option><option value="long">Long · over 20 min</option></Select>
         </label>
-        <label className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">Mode
-          <Select aria-label="Mode facet" value={modeFilter} onChange={(event) => setModeFilter(event.target.value)} className="mt-1 min-h-11 rounded-lg px-2 text-xs normal-case tracking-normal"><option value="all">Any mode</option>{availableModes.map((mode) => <option key={mode} value={mode}>{mode}</option>)}</Select>
-        </label>
-        <label className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">Input
-          <Select aria-label="Input facet" value={inputFilter} onChange={(event) => setInputFilter(event.target.value)} className="mt-1 min-h-11 rounded-lg px-2 text-xs normal-case tracking-normal"><option value="">Any input</option>{availableInputs.map((input) => <option key={input} value={input}>{input[0].toUpperCase() + input.slice(1)}</option>)}</Select>
-        </label>
-        <label className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">Tag
-          <Select aria-label="Tag facet" value={tagFilter} onChange={(event) => setTagFilter(event.target.value)} className="mt-1 min-h-11 rounded-lg px-2 text-xs normal-case tracking-normal"><option value="all">Any tag</option>{availableTags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</Select>
-        </label>
+        <div className="min-w-0 text-[10px] font-mono uppercase tracking-wider text-fg-muted">Mode
+          <div className="mt-1 normal-case tracking-normal"><CompactFacetPicker id="mode-facet" label="Mode" value={modeFilter} emptyValue="all" emptyLabel="Any mode" options={modeOptions} onChange={setModeFilter} /></div>
+        </div>
+        <div className="min-w-0 text-[10px] font-mono uppercase tracking-wider text-fg-muted">Input
+          <div className="mt-1 normal-case tracking-normal"><CompactFacetPicker id="input-facet" label="Input" value={inputFilter} emptyValue="" emptyLabel="Any input" options={inputOptions} onChange={setInputFilter} /></div>
+        </div>
+        <div className="min-w-0 text-[10px] font-mono uppercase tracking-wider text-fg-muted">Tag
+          <div className="mt-1 normal-case tracking-normal"><CompactFacetPicker id="tag-facet" label="Tag" value={tagFilter} emptyValue="all" emptyLabel="Any tag" options={tagOptions} onChange={setTagFilter} /></div>
+        </div>
         <label className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">Era
           <Select value={eraFilter} onChange={(event) => setEraFilter(event.target.value as typeof eraFilter)} className="mt-1 min-h-11 rounded-lg px-2 text-xs normal-case tracking-normal"><option value="all">Any era</option>{[...new Set(games.map((game) => game.era))].map((era) => <option key={era} value={era}>{era}</option>)}</Select>
         </label>

@@ -23,6 +23,7 @@
 <script src="ui-kit.js"></script>
 <script src="fx-kit.js"></script>
 <script src="music-kit.js"></script>
+<script src="menu-kit.js"></script>
 <script>
 /* Glowmoth Gauntlet — one-button gravity glider through crystal caverns. */
 const A = Arcade;
@@ -307,6 +308,102 @@ if (window.UI) {
   glowmothGame.ui = UI.mountGame(glowmothGame, glowmothConfig);
 }
 if (window.Music) Music.bindArcade(glowmothGame, MUSIC);
+
+function glowmothMenuScene(c, frame) {
+  const w = frame.width, h = frame.height, t = frame.time;
+  const sky = c.createLinearGradient(0, 0, w, h);
+  sky.addColorStop(0, '#0b1030'); sky.addColorStop(0.58, '#17123e'); sky.addColorStop(1, '#241552');
+  c.fillStyle = sky; c.fillRect(0, 0, w, h);
+  const light = c.createRadialGradient(w * 0.76, h * 0.42, 0, w * 0.76, h * 0.42, Math.max(w, h) * 0.58);
+  light.addColorStop(0, 'rgba(103,232,249,.24)'); light.addColorStop(0.42, 'rgba(167,139,250,.11)'); light.addColorStop(1, 'rgba(11,16,48,0)');
+  c.fillStyle = light; c.fillRect(0, 0, w, h);
+  const layers = frame.quality.layers;
+  for (let layer = 0; layer < layers; layer++) {
+    const base = h * (0.57 + layer * 0.13), amp = h * (0.035 + layer * 0.012), shift = t * (0.006 + layer * 0.004);
+    c.beginPath(); c.moveTo(0, h);
+    for (let x = 0; x <= w + 8; x += Math.max(18, w / 32)) {
+      const ridge = base - (Math.sin(x / w * 9 + shift + layer) * 0.55 + Math.sin(x / w * 17 - shift * 0.7) * 0.3) * amp;
+      c.lineTo(x, ridge);
+    }
+    c.lineTo(w, h); c.closePath(); c.fillStyle = ['#22154d', '#17123f', '#100d32'][layer]; c.fill();
+  }
+  // A crystal arch frames the scene from the right side of the menu card.
+  c.save(); c.translate(w * 0.78, h * 0.52); c.globalAlpha = 0.82;
+  c.shadowColor = '#67e8f9'; c.shadowBlur = frame.quality.glow ? 22 : 8;
+  c.strokeStyle = 'rgba(103,232,249,.65)'; c.lineWidth = Math.max(2, Math.min(w, h) * 0.006);
+  c.beginPath(); c.moveTo(-w * 0.15, h * 0.18); c.lineTo(-w * 0.12, -h * 0.12); c.lineTo(-w * 0.04, -h * 0.29); c.lineTo(w * 0.04, -h * 0.29); c.lineTo(w * 0.13, -h * 0.08); c.lineTo(w * 0.15, h * 0.18); c.stroke();
+  c.fillStyle = 'rgba(103,232,249,.12)'; c.beginPath(); c.moveTo(-w * 0.13, h * 0.18); c.lineTo(-w * 0.1, -h * 0.1); c.lineTo(-w * 0.035, -h * 0.25); c.lineTo(w * 0.035, -h * 0.25); c.lineTo(w * 0.11, -h * 0.06); c.lineTo(w * 0.13, h * 0.18); c.closePath(); c.fill();
+  c.restore();
+  const specks = frame.quality.particles;
+  for (let i = 0; i < specks; i++) {
+    const x = ((i * 97.13 + 21) % 997) / 997 * w;
+    const y = ((i * 173.7 + 47) % 991) / 991 * h;
+    const pulse = 0.3 + 0.7 * Math.abs(Math.sin(t * 0.001 + i * 2.1));
+    c.globalAlpha = pulse * 0.7; c.fillStyle = i % 3 ? '#fde68a' : '#a5f3fc';
+    c.beginPath(); c.arc(x, y, 1 + (i % 3) * 0.45, 0, Math.PI * 2); c.fill();
+  }
+  c.globalAlpha = 1;
+  // Original moth mark, kept clear of the menu text.
+  const mx = w * 0.79, my = h * 0.45 + Math.sin(t * 0.0015) * h * 0.012;
+  c.save(); c.translate(mx, my); c.shadowColor = '#fde68a'; c.shadowBlur = frame.quality.glow ? 18 : 6;
+  c.fillStyle = 'rgba(249,168,212,.82)'; c.beginPath(); c.ellipse(-8, -5, 12, 7, -0.48, 0, Math.PI * 2); c.ellipse(8, -5, 12, 7, 0.48, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#fde68a'; c.beginPath(); c.ellipse(0, 0, 5, 9, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = '#fde68a'; c.lineWidth = 1.4; c.beginPath(); c.moveTo(-2, -7); c.quadraticCurveTo(-8, -16, -11, -12); c.moveTo(2, -7); c.quadraticCurveTo(8, -16, 11, -12); c.stroke(); c.restore();
+}
+
+const glowmothMenu = Menu.mount({
+  gameId: 'glowmoth', title: 'Glowmoth Gauntlet', tagline: 'Carry the Dawn Spark through the crystal caverns.',
+  archetype: 'banner', items: ['play', 'customize', 'options', 'about', 'stats', 'exit'],
+  theme: {
+    frame: 'crystal-corner', button: 'faceted-banner',
+    palette: { bg: '#0b1030', panel: 'rgba(12,18,40,0.82)', accent: '#67e8f9', button: '#fde68a', buttonText: '#241552', text: '#f4f0ff' },
+    type: { title: 'system-ui, sans-serif', body: 'system-ui, sans-serif' },
+    scene: glowmothMenuScene,
+    sceneFallback: glowmothMenuScene,
+    music: { tempo: 76, root: 45, scale: 'dorian', layers: ['bass', 'pad', 'lead'] },
+    sfx: { hover: 'tick', select: 'select', back: 'blip' }
+  },
+  onPlay: function () { glowmothGame.inputLocked = false; glowmothGame.begin(); },
+  onRestart: function () { glowmothGame.restart(true); },
+  onResume: function () { if (glowmothGame.state === 'paused') glowmothGame.pauseToggle(); },
+  screens: {
+    customize: function (view) {
+      const doc = view.panel.ownerDocument, meta = window.Meta, wallet = meta && meta.read ? meta.read().sparks : 0;
+      const heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Customize'; view.panel.appendChild(heading);
+      const balance = doc.createElement('p'); balance.className = 'apex-menu-tagline';
+      balance.textContent = 'Sparks: ' + wallet + ' · Owned items are saved on this device.'; view.panel.appendChild(balance);
+      (meta && meta.getCosmetics ? meta.getCosmetics('glowmoth') : []).forEach(function (item) {
+        const button = doc.createElement('button'); button.type = 'button'; button.className = 'apex-menu-action';
+        button.textContent = item.name + ' · ' + (item.equipped ? 'Equipped' : item.owned ? 'Equip' : item.cost + ' Sparks');
+        button.disabled = item.equipped || (!item.owned && wallet < item.cost);
+        button.addEventListener('click', function () {
+          const result = item.owned ? meta.equipCosmetic('glowmoth', item.id) : meta.purchaseCosmetic('glowmoth', item.id);
+          if (result && result.ok && item.owned) glowmothConfig.hooks.applyCosmetic(item.slot, item.id);
+          view.refresh();
+        });
+        view.panel.appendChild(button);
+      });
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    },
+    about: function (view) {
+      const doc = view.panel.ownerDocument;
+      const heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'About the flight'; view.panel.appendChild(heading);
+      const story = doc.createElement('p'); story.className = 'apex-menu-tagline'; story.textContent = 'Guide the last Glowmoth through the crystal caverns and carry the Dawn Spark toward the Lumen Tree.'; view.panel.appendChild(story);
+      const controls = doc.createElement('p'); controls.className = 'apex-menu-tagline'; controls.textContent = 'Controls: Space, ↑, W, click, or tap to flap. Press P or Escape to pause. M toggles mute.'; view.panel.appendChild(controls);
+      const medals = doc.createElement('p'); medals.className = 'apex-menu-caption'; medals.textContent = 'Bronze 10 · Silver 20 · Gold 30 · Platinum 40'; view.panel.appendChild(medals);
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    },
+    stats: function (view) {
+      const doc = view.panel.ownerDocument, save = Save.load('glowmoth');
+      const heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Flight records'; view.panel.appendChild(heading);
+      const result = doc.createElement('p'); result.className = 'apex-menu-tagline'; result.textContent = 'Best score: ' + glowmothGame.hi + ' · Runs played: ' + ((save.stats && save.stats.plays) || 0); view.panel.appendChild(result);
+      const medals = doc.createElement('p'); medals.className = 'apex-menu-tagline'; medals.textContent = 'Medals earned: ' + ((save.achievements || []).filter(function (id) { return /-medal$/.test(id); }).length) + ' of 4'; view.panel.appendChild(medals);
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    }
+  },
+  options: { difficulty: 'normal' },
+});
+glowmothGame.inputLocked = true;
 </script>
 </body>
 </html>

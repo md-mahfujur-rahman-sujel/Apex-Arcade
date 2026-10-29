@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GameInfo, DifficultySetting } from '../types/game';
+import { TheaterPauseOverlay } from './TheaterPauseOverlay';
 import { CyberFlapEngine } from './engines/CyberFlapEngine';
 import { HoloPongEngine } from './engines/HoloPongEngine';
 import { QuantumSnakeEngine } from './engines/QuantumSnakeEngine';
@@ -16,9 +17,20 @@ import { saveSessionScore, recordApexScore, recordApexAchievement, recordApexLev
 import { audio } from '../services/audioSynthesizer';
 import { shareOrDownloadScoreCard } from '../services/scoreCard';
 import { createApexEventRateLimiter, normalizeApexEvent } from '../services/apexEvent';
+import { AppPreferences } from '../services/preferencesService';
+
+const reducedMotionPreferenceKey = (gameId: string) => `apex:reduced-motion:${gameId}`;
+
+function readReducedMotionPreference(gameId: string, fallback: boolean): boolean {
+  try {
+    const stored = window.localStorage.getItem(reducedMotionPreferenceKey(gameId));
+    if (stored === 'true') return true;
+    if (stored === 'false') return false;
+  } catch { /* Keep the system preference for this session when storage is unavailable. */ }
+  return fallback;
+}
 import {
   X,
-  Pause,
   Play,
   Volume2,
   VolumeX,
@@ -45,6 +57,7 @@ interface PlayableTheaterModalProps {
   highScore: number;
   startLevel?: number;
   startSeed?: number;
+  defaultPreferences: AppPreferences;
   onClose: () => void;
   onStatsUpdated: () => void;
 }
@@ -54,20 +67,22 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
   highScore,
   startLevel = 1,
   startSeed,
+  defaultPreferences,
   onClose,
   onStatsUpdated,
 }) => {
   const [difficulty, setDifficulty] = useState<DifficultySetting>('normal');
   const [isPaused, setIsPaused] = useState(false);
   const [isMuted, setIsMuted] = useState(audio.isMuted());
-  const [volume, setVolume] = useState(audio.getVolume());
+  const [volume, setVolume] = useState(defaultPreferences.sfxVolume);
   const [currentScore, setCurrentScore] = useState(0);
   const [hasLaunched, setHasLaunched] = useState(false);
+  const [iframeStarted, setIframeStarted] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [gamepadConnected, setGamepadConnected] = useState(false);
-  const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  const [colourBlindMode, setColourBlindMode] = useState(false);
-  const [performanceTier, setPerformanceTier] = useState<'auto' | 'ultra' | 'standard' | 'lite'>('auto');
+  const [reducedMotion, setReducedMotion] = useState(() => readReducedMotionPreference(game?.id || '', defaultPreferences.reducedMotion || window.matchMedia('(prefers-reduced-motion: reduce)').matches));
+  const [colourBlindMode, setColourBlindMode] = useState(defaultPreferences.colourBlindPalette !== 'off');
+  const [performanceTier, setPerformanceTier] = useState<'auto' | 'ultra' | 'standard' | 'lite'>(() => defaultPreferences.particleLevel === 'ultra' ? 'ultra' : defaultPreferences.particleLevel === 'lite' ? 'lite' : 'standard');
   const [isSharingScore, setIsSharingScore] = useState(false);
   const [displayPreferences, setDisplayPreferences] = useState<{ gameId: string | null; crt: boolean; pixelPerfect: boolean; ambientGlow: boolean }>({ gameId: null, crt: false, pixelPerfect: false, ambientGlow: false });
   const sessionStartRef = useRef(Date.now());
@@ -83,6 +98,14 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const activeMenuGameIdRef = useRef<string | null>(null);
+  const highScoreRef = useRef(highScore);
+  highScoreRef.current = highScore;
+  const defaultPreferencesRef = useRef(defaultPreferences);
+  defaultPreferencesRef.current = defaultPreferences;
+
+  const showingEngine = Boolean(game?.playableEngineId && (viewMode === '2.5d' || !game.htmlPath));
+  const canPause = Boolean(game && hasLaunched && (showingEngine || iframeStarted));
 
   // Auto-detect touch device to enable virtual controls by default
   useEffect(() => {
@@ -94,26 +117,60 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
 
   useEffect(() => {
     // Reset state on game open
+    activeMenuGameIdRef.current = null;
     setIsPaused(false);
     setCurrentScore(0);
     setEngineKey((k) => k + 1);
     setViewMode('classic');
     setHasLaunched(false);
+    setIframeStarted(false);
     setShowSettings(false);
+    setReducedMotion(game ? readReducedMotionPreference(game.id, defaultPreferencesRef.current.reducedMotion || window.matchMedia('(prefers-reduced-motion: reduce)').matches) : false);
+    setVolume(defaultPreferencesRef.current.sfxVolume);
+    audio.setVolume(defaultPreferencesRef.current.sfxVolume);
     sessionStartRef.current = Date.now();
-    sessionBestRef.current = highScore;
+    sessionBestRef.current = highScoreRef.current;
     sessionNewBestRef.current = false;
     sessionEndedRef.current = false;
     apexRateRef.current = createApexEventRateLimiter();
-    const stored = game ? localStorage.getItem(`apex:theater-display:${game.id}`) : null;
+    let stored: string | null = null;
+    try { stored = game ? localStorage.getItem(`apex:theater-display:${game.id}`) : null; } catch { /* Use global display defaults when storage is blocked. */ }
     let preferences: Record<string, unknown> = {};
     try { preferences = stored ? JSON.parse(stored) : {}; } catch { preferences = {}; }
-    setDisplayPreferences({ gameId: game?.id || null, crt: preferences.crt === true, pixelPerfect: preferences.pixelPerfect === true, ambientGlow: preferences.ambientGlow === true });
-  }, [game, highScore]);
+    setDisplayPreferences({
+      gameId: game?.id || null,
+      crt: typeof preferences.crt === 'boolean' ? preferences.crt : defaultPreferencesRef.current.displayModes.crt,
+      pixelPerfect: typeof preferences.pixelPerfect === 'boolean' ? preferences.pixelPerfect : defaultPreferencesRef.current.displayModes.pixelPerfect,
+      ambientGlow: typeof preferences.ambientGlow === 'boolean' ? preferences.ambientGlow : defaultPreferencesRef.current.displayModes.ambientGlow,
+    });
+    setColourBlindMode(defaultPreferencesRef.current.colourBlindPalette !== 'off');
+    setPerformanceTier(defaultPreferencesRef.current.particleLevel === 'ultra' ? 'ultra' : defaultPreferencesRef.current.particleLevel === 'lite' ? 'lite' : 'standard');
+  }, [game]);
 
   useEffect(() => {
-    if (game && displayPreferences.gameId === game.id) localStorage.setItem(`apex:theater-display:${game.id}`, JSON.stringify({ crt: displayPreferences.crt, pixelPerfect: displayPreferences.pixelPerfect, ambientGlow: displayPreferences.ambientGlow }));
-  }, [game, displayPreferences]);
+    audio.setPaused(isPaused);
+    return () => audio.setPaused(false);
+  }, [isPaused]);
+
+  useEffect(() => {
+    const onFrameMotionChange = (event: MessageEvent) => {
+      if (!game || event.origin !== window.location.origin || event.source !== iframeRef.current?.contentWindow) return;
+      if (event.data?.type !== 'APEX_REDUCED_MOTION_CHANGED' || typeof event.data.reducedMotion !== 'boolean') return;
+      setReducedMotion(event.data.reducedMotion);
+      try { window.localStorage.setItem(reducedMotionPreferenceKey(game.id), String(event.data.reducedMotion)); } catch { /* The in-game preference still applies until this theater closes. */ }
+    };
+    window.addEventListener('message', onFrameMotionChange);
+    return () => window.removeEventListener('message', onFrameMotionChange);
+  }, [game]);
+
+  const updateDisplayPreference = (key: 'crt' | 'pixelPerfect' | 'ambientGlow', value: boolean) => {
+    if (!game) return;
+    setDisplayPreferences((current) => {
+      const next = { ...current, gameId: game.id, [key]: value };
+      try { localStorage.setItem(`apex:theater-display:${game.id}`, JSON.stringify({ crt: next.crt, pixelPerfect: next.pixelPerfect, ambientGlow: next.ambientGlow })); } catch { /* Apply for this session if storage is blocked. */ }
+      return next;
+    });
+  };
 
   useEffect(() => {
     const sync = () => setGamepadConnected(Array.from(navigator.getGamepads?.() || []).some((pad) => Boolean(pad?.connected)));
@@ -126,22 +183,78 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     document.addEventListener('fullscreenchange', sync); return () => document.removeEventListener('fullscreenchange', sync);
   }, []);
 
+  const postFramePause = useCallback((paused: boolean) => {
+    if (!game) return;
+    try {
+      iframeRef.current?.contentWindow?.postMessage({ type: 'SET_PAUSED', paused, gameId: game.id }, window.location.origin);
+    } catch { /* The next iframe load resynchronises pause state. */ }
+  }, [game]);
+
+  const pauseGame = useCallback(() => {
+    if (!canPause) return;
+    setShowSettings(false);
+    setIsPaused(true);
+    postFramePause(true);
+    audio.playClick();
+  }, [canPause, postFramePause]);
+
+  const resumeGame = useCallback(() => {
+    setIsPaused(false);
+    setShowSettings(false);
+    postFramePause(false);
+    audio.playClick();
+    window.requestAnimationFrame(() => {
+      const frame = iframeRef.current;
+      if (!frame) return;
+      frame.focus();
+      frame.contentWindow?.focus();
+    });
+  }, [postFramePause]);
+
+  const pauseStateRef = useRef({ isPaused, canPause });
+  pauseStateRef.current = { isPaused, canPause };
+  const pauseActionsRef = useRef({ pauseGame, resumeGame });
+  pauseActionsRef.current = { pauseGame, resumeGame };
+
+  const frameSrc = useCallback((cacheBust = false) => {
+    if (!game?.htmlPath) return '';
+    const params = new URLSearchParams({
+      diff: difficulty,
+      level: String(Math.max(1, Math.floor(startLevel))),
+      embed: 'theater',
+    });
+    if (startSeed !== undefined) params.set('seed', String(Math.floor(startSeed)));
+    if (cacheBust) params.set('r', String(Date.now()));
+    const gameUrl = `${import.meta.env.BASE_URL}${game.htmlPath.replace(/^\/+/, '')}`;
+    return `${gameUrl}?${params.toString()}`;
+  }, [game, difficulty, startLevel, startSeed]);
+
   useEffect(() => {
     let frame = 0; let previous = new Set<number>(); let direction = 0;
     const poll = () => {
       const pad = Array.from(navigator.getGamepads?.() || []).find((candidate) => candidate?.connected);
       if (pad && containerRef.current) {
+        const paused = pauseStateRef.current.isPaused;
+        const scope = paused ? containerRef.current.querySelector<HTMLElement>('[data-pause-overlay]') : containerRef.current;
         const movePrevious = pad.buttons[12]?.pressed || pad.buttons[14]?.pressed || pad.axes[1] < -0.65 || pad.axes[0] < -0.65;
         const moveNext = pad.buttons[13]?.pressed || pad.buttons[15]?.pressed || pad.axes[1] > 0.65 || pad.axes[0] > 0.65;
         const nextDirection = movePrevious ? -1 : moveNext ? 1 : 0;
-        if (nextDirection && nextDirection !== direction) {
-          const items = Array.from(containerRef.current.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),[tabindex="0"]'));
+        if (nextDirection && nextDirection !== direction && scope) {
+          const items = Array.from(scope.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),[tabindex="0"]'));
           const index = items.indexOf(document.activeElement as HTMLElement);
-          if (items.length) items[(index + nextDirection + items.length) % items.length]?.focus();
+          if (items.length) {
+            const next = index < 0 ? (nextDirection > 0 ? 0 : items.length - 1) : (index + nextDirection + items.length) % items.length;
+            items[next]?.focus();
+          }
         }
         direction = nextDirection;
         const pressed = new Set(pad.buttons.flatMap((button, index) => button.pressed ? [index] : []));
-        if ((pressed.has(0) && !previous.has(0)) || (pressed.has(9) && !previous.has(9))) (document.activeElement as HTMLElement | null)?.click?.();
+        if (pressed.has(9) && !previous.has(9)) {
+          if (pauseStateRef.current.isPaused) pauseActionsRef.current.resumeGame();
+          else if (pauseStateRef.current.canPause) pauseActionsRef.current.pauseGame();
+        } else if (pressed.has(0) && !previous.has(0)) {
+          (document.activeElement as HTMLElement | null)?.click?.();
+        }
         previous = pressed;
       } else { previous = new Set(); direction = 0; }
       frame = requestAnimationFrame(poll);
@@ -152,6 +265,42 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
   useEffect(() => {
     const handleMsg = (e: MessageEvent) => {
       if (e.source !== iframeRef.current?.contentWindow || e.origin !== window.location.origin) return;
+      if (e.data?.type === 'MENU_OPEN') {
+        setIframeStarted(false);
+        activeMenuGameIdRef.current = typeof e.data.gameId === 'string' && e.data.gameId ? e.data.gameId : null;
+        return;
+      }
+      if (e.data?.type === 'MENU_PLAY') {
+        if (!activeMenuGameIdRef.current || e.data.gameId !== activeMenuGameIdRef.current) return;
+        setIframeStarted(true);
+        return;
+      }
+      if (e.data?.type === 'MENU_EXIT') {
+        if (!activeMenuGameIdRef.current || e.data.gameId !== activeMenuGameIdRef.current) return;
+        activeMenuGameIdRef.current = null;
+        onClose();
+        return;
+      }
+      if (e.data?.type === 'MENU_PAUSE' || e.data?.type === 'MENU_RESUME') {
+        if (!activeMenuGameIdRef.current || e.data.gameId !== activeMenuGameIdRef.current) return;
+        if (e.data.type === 'MENU_PAUSE') pauseGame();
+        else resumeGame();
+        return;
+      }
+      if (e.data?.type === 'APEX_GAME_FRAME') {
+        const avgMs = e.data.detail?.avgMs;
+        if (typeof avgMs === 'number' && Number.isFinite(avgMs) && avgMs > 0 && avgMs <= 200) {
+          window.dispatchEvent(new CustomEvent('apex:game-frame', { detail: { avgMs, gameId: game?.id, source: e.data.detail?.source } }));
+        }
+        return;
+      }
+      if (e.data?.type === 'APEX_PERF') {
+        const tier = e.data.detail?.tier;
+        if (tier === 'ultra' || tier === 'standard' || tier === 'lite') {
+          window.dispatchEvent(new CustomEvent('apex:perf', { detail: { tier } }));
+        }
+        return;
+      }
       if (e.data?.type === 'CLOSE_THEATER') {
         onClose();
         return;
@@ -185,31 +334,85 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     };
     window.addEventListener('message', handleMsg);
     return () => window.removeEventListener('message', handleMsg);
-  }, [onClose, game, onStatsUpdated, highScore]);
+  }, [onClose, game, onStatsUpdated, highScore, pauseGame, resumeGame]);
+
+  useEffect(() => () => { window.dispatchEvent(new Event('apex:perf-clear')); }, []);
+
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (isPaused) {
+        event.preventDefault();
+        resumeGame();
+        return;
+      }
+      if (showSettings) {
+        event.preventDefault();
+        setShowSettings(false);
+        return;
+      }
+      if (canPause) {
+        event.preventDefault();
+        pauseGame();
+      }
+    };
+    window.addEventListener('keydown', handleEscape, true);
+    return () => window.removeEventListener('keydown', handleEscape, true);
+  }, [isPaused, showSettings, canPause, pauseGame, resumeGame]);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (!document.hidden) return;
+      const paused = pauseStateRef.current;
+      if (paused.canPause && !paused.isPaused) pauseActionsRef.current.pauseGame();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
 
   if (!game) return null;
 
-  const handleScoreUpdate = (score: number) => {
+  const handleScoreUpdate = useCallback((score: number) => {
     const finalVal = difficulty === 'hard' ? Math.floor(score * 1.25) : score;
     setCurrentScore(finalVal);
-  };
+  }, [difficulty]);
 
-  const handleGameOver = (finalScore: number) => {
+  const handleGameOver = useCallback((finalScore: number) => {
+    if (sessionEndedRef.current) return;
+    sessionEndedRef.current = true;
     const elapsedSeconds = Math.max(1, Math.floor((Date.now() - sessionStartRef.current) / 1000));
     const scoredVal = difficulty === 'hard' ? Math.floor(finalScore * 1.25) : finalScore;
+    const newBest = scoredVal > sessionBestRef.current;
+    if (newBest) {
+      sessionBestRef.current = scoredVal;
+      sessionNewBestRef.current = true;
+    }
     saveSessionScore(game.id, game.title, scoredVal, elapsedSeconds);
-    window.Meta?.recordSession({ gameId: game.id, durationSec: elapsedSeconds, newBest: scoredVal > highScore, category: game.category });
+    window.Meta?.recordSession({ gameId: game.id, durationSec: elapsedSeconds, newBest, category: game.category });
     onStatsUpdated();
-  };
+  }, [difficulty, game?.id, game?.title, game?.category, onStatsUpdated]);
 
   const handleRestart = () => {
     setEngineKey((k) => k + 1);
     setCurrentScore(0);
     setIsPaused(false);
+    setIframeStarted(false);
+    setShowSettings(false);
     sessionStartRef.current = Date.now();
+    sessionEndedRef.current = false;
+    sessionBestRef.current = highScore;
+    sessionNewBestRef.current = false;
     audio.playClick();
     if (viewMode === 'classic' && iframeRef.current) {
-      iframeRef.current.src = `${import.meta.env.BASE_URL}${game.htmlPath.replace(/^\/+/, '')}?diff=${difficulty}&level=${Math.max(1, Math.floor(startLevel))}${startSeed === undefined ? '' : `&seed=${Math.floor(startSeed)}`}&r=${Date.now()}`;
+      const frame = iframeRef.current;
+      const nextSrc = frameSrc(true);
+      try {
+        const frameWindow = frame.contentWindow;
+        if (frameWindow) frameWindow.location.replace(nextSrc);
+        else frame.src = nextSrc;
+      } catch {
+        frame.src = nextSrc;
+      }
     }
   };
 
@@ -230,7 +433,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
 
   const handleVolumeChange = (nextVolume: number) => { setVolume(nextVolume); audio.setVolume(nextVolume); };
 
-  const launchGame = () => { sessionStartRef.current = Date.now(); sessionBestRef.current = highScore; sessionNewBestRef.current = false; setHasLaunched(true); };
+  const launchGame = () => { sessionStartRef.current = Date.now(); sessionBestRef.current = highScore; sessionNewBestRef.current = false; sessionEndedRef.current = false; setHasLaunched(true); };
 
   const handleShareScore = async () => {
     if (!game || isSharingScore) return;
@@ -347,6 +550,19 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     }
   };
 
+  const settingsControls = (
+    <div className="space-y-3 text-xs text-slate-300">
+      <label className="flex items-center justify-between gap-3"><span>Audio</span><button type="button" onClick={toggleSound} className={`rounded-lg px-3 py-1.5 font-semibold ${isMuted ? 'bg-white/10 text-slate-300' : 'bg-cyan-400 text-slate-950'}`}>{isMuted ? 'Muted' : 'On'}</button></label>
+      <label className="block"><span className="mb-1 flex justify-between"><span>Volume</span><span className="font-mono text-cyan-300">{Math.round(volume * 100)}%</span></span><input aria-label="Theater volume" type="range" min="0" max="1" step="0.05" value={volume} onChange={(event) => handleVolumeChange(Number(event.target.value))} className="w-full accent-cyan-400" /></label>
+      <label className="flex items-center justify-between"><span>Reduced motion</span><input type="checkbox" checked={reducedMotion} onChange={(event) => { const next = event.target.checked; setReducedMotion(next); try { window.localStorage.setItem(reducedMotionPreferenceKey(game.id), String(next)); } catch { /* The preference still applies for this session. */ } iframeRef.current?.contentWindow?.postMessage({ type: 'SET_ACCESSIBILITY', reducedMotion: next, gameId: game.id, colourBlindMode, performanceTier }, window.location.origin); }} /></label>
+      <label className="flex items-center justify-between"><span>Colour-blind palette</span><input type="checkbox" checked={colourBlindMode} onChange={(event) => { setColourBlindMode(event.target.checked); iframeRef.current?.contentWindow?.postMessage({ type: 'SET_ACCESSIBILITY', reducedMotion, colourBlindMode: event.target.checked, performanceTier }, '*'); }} /></label>
+      <label className="flex items-center justify-between"><span>CRT filter</span><input aria-label="CRT filter" type="checkbox" checked={displayPreferences.gameId === game.id && displayPreferences.crt} onChange={(event) => updateDisplayPreference('crt', event.target.checked)} /></label>
+      <label className="flex items-center justify-between"><span>Pixel-perfect scaling</span><input aria-label="Pixel-perfect scaling" type="checkbox" checked={displayPreferences.gameId === game.id && displayPreferences.pixelPerfect} onChange={(event) => updateDisplayPreference('pixelPerfect', event.target.checked)} /></label>
+      <label className="flex items-center justify-between"><span>Ambient glow</span><input aria-label="Ambient glow" type="checkbox" checked={displayPreferences.gameId === game.id && displayPreferences.ambientGlow} onChange={(event) => updateDisplayPreference('ambientGlow', event.target.checked)} /></label>
+      <label className="flex items-center justify-between"><span>Performance tier</span><select value={performanceTier} onChange={(event) => { const tier = event.target.value as typeof performanceTier; setPerformanceTier(tier); iframeRef.current?.contentWindow?.postMessage({ type: 'SET_PERF_TIER', tier: tier === 'auto' ? null : tier }, window.location.origin); }} className="rounded bg-[#080b14] p-2"><option value="auto">Auto</option><option value="ultra">Ultra</option><option value="standard">Standard</option><option value="lite">Lite</option></select></label>
+    </div>
+  );
+
   return (
     <div
       id="playable-theater-modal"
@@ -355,6 +571,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
       data-touch-mode={game.touchControls?.mode || 'native'}
       data-theme="dark"
       data-theater
+      data-apex-reduced-motion={reducedMotion ? 'true' : undefined}
       data-crt={displayPreferences.gameId === game.id && displayPreferences.crt ? 'true' : 'false'}
       data-pixel-perfect={displayPreferences.gameId === game.id && displayPreferences.pixelPerfect ? 'true' : 'false'}
       data-ambient-glow={displayPreferences.gameId === game.id && displayPreferences.ambientGlow ? 'true' : 'false'}
@@ -367,7 +584,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
         } bg-[#0A0D18] border-0 sm:border border-white/10 rounded-none sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col transition-all`}
       >
         {/* Top Control Bar (Responsive Flexbox) */}
-        <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-6 py-2 sm:py-3 bg-[#070913] border-b border-white/10 shrink-0">
+        <div inert={isPaused} className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-6 py-2 sm:py-3 bg-[#070913] border-b border-white/10 shrink-0">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <div>
               <div className="flex items-center gap-1.5">
@@ -390,6 +607,9 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
               <button
                 onClick={() => {
                   setViewMode('classic');
+                  setIframeStarted(false);
+                  setIsPaused(false);
+                  setShowSettings(false);
                   audio.playClick();
                 }}
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer min-h-[32px] ${
@@ -403,6 +623,8 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
               <button
                 onClick={() => {
                   setViewMode('2.5d');
+                  setIsPaused(false);
+                  setShowSettings(false);
                   audio.playClick();
                 }}
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer min-h-[32px] ${
@@ -486,30 +708,19 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
               <RotateCcw className="w-4 h-4" />
             </button>
 
-            <>
-                <button
-                  onClick={() => setIsPaused(!isPaused)}
-                  className="p-1.5 sm:p-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
-                  title={isPaused ? 'Resume' : 'Pause'}
-                  aria-label={isPaused ? 'Resume game' : 'Pause game'}
-                >
-                  {isPaused ? <Play className="w-4 h-4 text-cyan-400" /> : <Pause className="w-4 h-4" />}
-                </button>
-                {viewMode === '2.5d' && (
-              <>
-                <button
-                  onClick={toggleSound}
-                  className="p-1.5 sm:p-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
-                  title={isMuted ? 'Unmute Audio' : 'Mute Audio'}
-                >
-                  {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4 text-cyan-400" />}
-                </button>
-              </>
-                )}
-            </>
+            {viewMode === '2.5d' && (
+              <button
+                onClick={toggleSound}
+                className="p-1.5 sm:p-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
+                title={isMuted ? 'Unmute Audio' : 'Mute Audio'}
+              >
+                {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4 text-cyan-400" />}
+              </button>
+            )}
 
             <button
               onClick={onClose}
+              data-ui-close
               className="p-1.5 sm:p-2 rounded-lg bg-white/5 hover:bg-red-500/20 text-slate-300 hover:text-red-400 transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
               title="Close Theater"
             >
@@ -520,16 +731,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
 
         {showSettings && <aside id="theater-settings" aria-label="Theater settings" className="absolute right-3 top-14 z-40 w-[min(22rem,calc(100%-1.5rem))] rounded-2xl border border-white/10 bg-[#101525] p-4 shadow-2xl">
           <div className="mb-3 flex items-center justify-between text-sm font-bold text-white"><span className="flex items-center gap-2">Theater settings <Accessibility className="h-4 w-4 text-cyan-300" /></span><button type="button" aria-label="Close theater settings" onClick={() => setShowSettings(false)} className="rounded-lg px-2 py-1 text-slate-300 hover:bg-white/10">Close</button></div>
-          <div className="space-y-3 text-xs text-slate-300">
-            <label className="flex items-center justify-between gap-3"><span>Audio</span><button type="button" onClick={toggleSound} className={`rounded-lg px-3 py-1.5 font-semibold ${isMuted ? 'bg-white/10 text-slate-300' : 'bg-cyan-400 text-slate-950'}`}>{isMuted ? 'Muted' : 'On'}</button></label>
-            <label className="block"><span className="mb-1 flex justify-between"><span>Volume</span><span className="font-mono text-cyan-300">{Math.round(volume * 100)}%</span></span><input aria-label="Theater volume" type="range" min="0" max="1" step="0.05" value={volume} onChange={(event) => handleVolumeChange(Number(event.target.value))} className="w-full accent-cyan-400" /></label>
-            <label className="flex items-center justify-between"><span>Reduced motion</span><input type="checkbox" checked={reducedMotion} onChange={(event) => { setReducedMotion(event.target.checked); iframeRef.current?.contentWindow?.postMessage({ type: 'SET_ACCESSIBILITY', reducedMotion: event.target.checked, colourBlindMode, performanceTier }, '*'); }} /></label>
-            <label className="flex items-center justify-between"><span>Colour-blind palette</span><input type="checkbox" checked={colourBlindMode} onChange={(event) => { setColourBlindMode(event.target.checked); iframeRef.current?.contentWindow?.postMessage({ type: 'SET_ACCESSIBILITY', reducedMotion, colourBlindMode: event.target.checked, performanceTier }, '*'); }} /></label>
-            <label className="flex items-center justify-between"><span>CRT filter</span><input aria-label="CRT filter" type="checkbox" checked={displayPreferences.gameId === game.id && displayPreferences.crt} onChange={(event) => setDisplayPreferences((current) => ({ ...current, gameId: game.id, crt: event.target.checked }))} /></label>
-            <label className="flex items-center justify-between"><span>Pixel-perfect scaling</span><input aria-label="Pixel-perfect scaling" type="checkbox" checked={displayPreferences.gameId === game.id && displayPreferences.pixelPerfect} onChange={(event) => setDisplayPreferences((current) => ({ ...current, gameId: game.id, pixelPerfect: event.target.checked }))} /></label>
-            <label className="flex items-center justify-between"><span>Ambient glow</span><input aria-label="Ambient glow" type="checkbox" checked={displayPreferences.gameId === game.id && displayPreferences.ambientGlow} onChange={(event) => setDisplayPreferences((current) => ({ ...current, gameId: game.id, ambientGlow: event.target.checked }))} /></label>
-            <label className="flex items-center justify-between"><span>Performance tier</span><select value={performanceTier} onChange={(event) => { const tier = event.target.value as typeof performanceTier; setPerformanceTier(tier); iframeRef.current?.contentWindow?.postMessage({ type: 'SET_PERF_TIER', tier: tier === 'auto' ? null : tier }, window.location.origin); }} className="rounded bg-[#080b14] p-2"><option value="auto">Auto</option><option value="ultra">Ultra</option><option value="standard">Standard</option><option value="lite">Lite</option></select></label>
-          </div>
+          {settingsControls}
         </aside>}
 
         {/* Orientation Tip for Portrait Mobile */}
@@ -549,9 +751,10 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
         )}
 
         {/* Stage Container (Responsive height on mobile/tablet/desktop) */}
-        <div id="playable-theater-stage" className="relative flex-1 p-0 sm:p-2 md:p-3 flex flex-col items-center justify-center bg-[#05060D] overflow-hidden">
+        <div id="playable-theater-stage" inert={isPaused} className="relative flex-1 p-0 sm:p-2 md:p-3 flex flex-col items-center justify-center bg-[#05060D] overflow-hidden">
           {!hasLaunched ? (
-            <div className="flex h-full w-full max-w-3xl flex-col justify-end rounded-2xl border border-white/10 bg-[#0d1425] p-6 sm:p-10" style={{ background: `radial-gradient(circle at 75% 25%, ${game.accentColor}55, transparent 42%), #0d1425` }}>
+            <div className="relative flex h-full w-full max-w-3xl flex-col justify-end overflow-hidden rounded-2xl border border-white/10 bg-[#0d1425] p-6 sm:p-10" style={{ background: `radial-gradient(circle at 75% 25%, ${game.accentColor}55, transparent 42%), #0d1425` }}>
+              <div aria-hidden="true" className="pointer-events-none absolute right-6 top-6 grid h-20 w-20 place-items-center rounded-3xl border border-white/10 bg-white/5 text-5xl shadow-xl backdrop-blur-sm sm:right-8 sm:top-8 sm:h-24 sm:w-24 sm:text-6xl" style={{ boxShadow: `0 12px 48px ${game.accentColor}25` }}>{game.icon}</div>
               <span className="mb-3 text-xs font-mono uppercase tracking-widest text-cyan-300">Ready to launch - {game.players || '1P'} - {game.sessionMinutes || 10} min</span>
               <h3 className="text-3xl font-black text-white sm:text-5xl">{game.title}</h3>
               <p className="mt-3 max-w-xl text-sm text-slate-300">{game.storyBlurb || game.description}</p>
@@ -562,13 +765,18 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
             renderEngine()
           ) : game.htmlPath ? (
             <div className="w-full h-full flex-1 flex flex-col items-center justify-center">
-              <iframe ref={iframeRef} src={`${import.meta.env.BASE_URL}${game.htmlPath.replace(/^\/+/, '')}?diff=${difficulty}&level=${Math.max(1, Math.floor(startLevel))}${startSeed === undefined ? '' : `&seed=${Math.floor(startSeed)}`}`} title={game.title} className={`w-full h-full min-h-[320px] rounded-none sm:rounded-xl border-0 sm:border border-white/10 bg-black shadow-2xl ${isPaused ? 'pointer-events-none' : ''}`} allow="gamepad; fullscreen; autoplay; clipboard-write; focus-without-user-activation" tabIndex={0} onLoad={() => {
+              <iframe ref={iframeRef} src={frameSrc()} title={game.title} className={`w-full h-full min-h-[320px] rounded-none sm:rounded-xl border-0 sm:border border-white/10 bg-black shadow-2xl ${isPaused ? 'pointer-events-none' : ''}`} inert={isPaused} allow="gamepad; fullscreen; autoplay; clipboard-write; focus-without-user-activation" tabIndex={0} onLoad={() => {
                 try {
                   const frame = iframeRef.current;
-                  frame?.focus(); frame?.contentWindow?.focus();
-                  frame?.contentWindow?.postMessage({ type: 'SET_DIFFICULTY', difficulty }, '*');
+                  if (!isPaused) { frame?.focus(); frame?.contentWindow?.focus(); }
+                  frame?.contentWindow?.postMessage({ type: 'SET_DIFFICULTY', difficulty }, window.location.origin);
                   frame?.contentWindow?.postMessage({ type: 'SET_LEVEL', level: Math.max(1, Math.floor(startLevel)) }, window.location.origin);
-                  frame?.contentWindow?.postMessage({ type: 'SET_ACCESSIBILITY', reducedMotion, colourBlindMode, performanceTier }, '*');
+                  frame?.contentWindow?.postMessage({ type: 'APEX_AUDIO_DEFAULTS', musicVolume: defaultPreferences.musicVolume, sfxVolume: defaultPreferences.sfxVolume }, window.location.origin);
+                  const storedMotionPreference = window.localStorage.getItem(reducedMotionPreferenceKey(game.id));
+                  const frameReducedMotion = storedMotionPreference === null ? (defaultPreferences.reducedMotion || window.matchMedia('(prefers-reduced-motion: reduce)').matches) : storedMotionPreference === 'true';
+                  frame?.contentWindow?.postMessage({ type: 'SET_ACCESSIBILITY', reducedMotion: frameReducedMotion, gameId: game.id, colourBlindMode, performanceTier }, window.location.origin);
+                  frame?.contentWindow?.postMessage({ type: 'SET_PERF_TIER', tier: performanceTier === 'auto' ? null : performanceTier }, window.location.origin);
+                  if (isPaused) frame?.contentWindow?.postMessage({ type: 'SET_PAUSED', paused: true, gameId: game.id }, window.location.origin);
                   if (displayPreferences.pixelPerfect && frame?.contentDocument) frame.contentDocument.documentElement.style.imageRendering = 'pixelated';
                 } catch {}
               }} />
@@ -581,11 +789,10 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
             </div>}
             {game.touchControls.actions && <div className="pointer-events-auto flex max-w-[70%] flex-wrap justify-end gap-2 rounded-2xl border border-white/10 bg-[#070B18]/85 p-2 shadow-2xl backdrop-blur-md">{game.touchControls.actions.map((action) => <button key={`${action.label}-${action.key}`} type="button" aria-label={`${action.label} (${action.key === ' ' ? 'Space' : action.key})`} onPointerDown={(event) => { event.preventDefault(); dispatchVirtualKey(action.key, 'down'); }} onPointerUp={() => dispatchVirtualKey(action.key, 'up')} onPointerCancel={() => dispatchVirtualKey(action.key, 'up')} onPointerLeave={() => dispatchVirtualKey(action.key, 'up')} className="min-h-12 min-w-12 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 px-3 text-xs font-extrabold text-slate-950">{action.label}</button>)}</div>}
           </div>}
-            {isPaused && hasLaunched && <div role="dialog" aria-modal="true" aria-label="Game paused" className="absolute inset-0 z-40 grid place-items-center bg-[#05060D]/75 backdrop-blur-sm"><div className="rounded-2xl border border-white/15 bg-[#101525] p-6 text-center shadow-2xl"><h3 className="text-2xl font-black text-white">Paused</h3><p className="mt-1 text-sm text-slate-400">{game.title}</p><div className="mt-5 flex justify-center gap-3"><button onClick={() => setIsPaused(false)} className="rounded-xl bg-cyan-400 px-5 py-3 font-bold text-slate-950">Resume</button><button onClick={handleRestart} className="rounded-xl border border-white/15 px-5 py-3 font-bold text-white">Restart</button></div></div></div>}
         </div>
 
         {/* Bottom Helper Bar (Responsive layout) */}
-        <div className="px-3 sm:px-6 py-2 sm:py-2.5 bg-[#070913] border-t border-white/5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400 shrink-0">
+        <div inert={isPaused} className="px-3 sm:px-6 py-2 sm:py-2.5 bg-[#070913] border-t border-white/5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
             <span className="font-medium text-slate-300 truncate text-[11px] sm:text-xs">
@@ -593,6 +800,20 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
             </span>
           </div>
           <div className="flex items-center gap-2 text-slate-400 font-mono text-[10px] sm:text-[11px] shrink-0">
+            <button
+              type="button"
+              data-touch-pause
+              onClick={pauseGame}
+              disabled={!canPause}
+              className="hidden [@media(pointer:coarse)]:inline-flex min-h-9 items-center rounded-lg border border-white/10 bg-white/5 px-3 font-sans text-[11px] font-bold text-slate-200 disabled:opacity-40"
+              aria-label="Pause game"
+            >
+              Pause
+            </button>
+            <span className="hidden [@media(pointer:fine)]:inline-flex items-center gap-1.5 text-slate-500" aria-hidden="true">
+              <kbd className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-[10px] text-slate-300">Esc</kbd>
+              pause
+            </span>
             <Flame className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             <span>
               {difficulty === 'easy'
@@ -603,6 +824,18 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
             </span>
           </div>
         </div>
+
+        {isPaused && hasLaunched && (
+          <TheaterPauseOverlay
+            game={game}
+            score={currentScore}
+            difficulty={difficulty}
+            settingsContent={settingsControls}
+            onResume={resumeGame}
+            onRestart={handleRestart}
+            onExit={onClose}
+          />
+        )}
       </div>
     </div>
   );

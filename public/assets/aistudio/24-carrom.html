@@ -14,6 +14,7 @@
   #pos { width: 100%; accent-color: #f59e0b; }
   .tag { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; border: 1px solid #888; }
 </style>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -98,7 +99,7 @@ function newGame() {
 function sync() { $('#pos').value = Math.round((sx - 110) / (S - 220) * 100); }
 function begin() {
   sx = S / 2; for (const dx of [0, 40, -40, 80, -80, 120, -120, 160, -160]) if (free(S / 2 + dx, BY[turn], W)) { sx = S / 2 + dx; break; }
-  sync(); phase = 'place'; drag = null; text(); if (!human()) { phase = 'think'; const g = gen; setTimeout(() => g === gen && aiMove(), Board.pace(1300)); }
+  sync(); phase = 'place'; drag = null; text(); if (!human()) { phase = 'think'; const g = gen; Board.after(Board.pace(1300), () => { if (g === gen && !Board.paused()) aiMove(); }); }
 }
 function shoot(x, ang, pw) {
   st = mk(x, BY[turn], SR, 1.7, 's'); st.vx = Math.cos(ang) * pw; st.vy = Math.sin(ang) * pw; st.sp = pw; st.ang = ang;
@@ -165,20 +166,20 @@ function aiMove() {
   }
   /* slide the striker to the chosen spot, show the aim line, then flick */
   phase = 'aim'; drag = null;
-  const x0 = sx, animDur = Board.pace(600), t0 = performance.now(), g = gen;
+  const x0 = sx, animDur = Board.pace(600), t0 = Board.now(), g = gen;
   (function slide() {
     if (g !== gen || over) return;
-    const k = Math.min(1, (performance.now() - t0) / animDur); sx = x0 + (best.x - x0) * (k * k * (3 - 2 * k)); sync();
+    const k = Math.min(1, (Board.now() - t0) / animDur); sx = x0 + (best.x - x0) * (k * k * (3 - 2 * k)); sync();
     if (k < 1) { requestAnimationFrame(slide); return; }
     drag = { ai: true, ang: best.ang, pw: best.pw };
-    setTimeout(() => { if (g === gen && !over && phase === 'aim' && drag && drag.ai) shoot(best.x, best.ang, best.pw); }, Board.pace(1200));
+    Board.after(Board.pace(1200), () => { if (g === gen && !over && !Board.paused() && phase === 'aim' && drag && drag.ai) shoot(best.x, best.ang, best.pw); });
   })();
 }
 
 /* ---------- input ---------- */
 function pt(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * S / r.width, (e.clientY - r.top) * S / r.height]; }
 cv.addEventListener('pointerdown', (e) => {
-  if (over || phase !== 'place' || !human()) return;
+  if (over || phase !== 'place' || !human() || Board.paused()) return;
   const [x, y] = pt(e), y0 = BY[turn];
   if (Math.hypot(x - sx, y - y0) < 42) { drag = { x, y, cur: [x, y] }; cv.setPointerCapture(e.pointerId); }
   else if (Math.abs(y - y0) < 50) { sx = Math.max(110, Math.min(S - 110, x)); sync(); Board.sfx('click'); }
@@ -194,7 +195,7 @@ $('#pos').oninput = (e) => { if (phase === 'place' && human()) sx = 110 + (S - 2
 $('#new').onclick = (e) => { e.target.blur(); newGame(); }; $('#mode').onchange = (e) => { e.target.blur(); newGame(); };
 let lastPw = 4.5;
 document.addEventListener('keydown', (e) => {
-  if (/SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey) return; if (e.target.tagName === 'INPUT' && e.key.startsWith('Arrow')) return;
+  if (/SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || Board.paused()) return; if (e.target.tagName === 'INPUT' && e.key.startsWith('Arrow')) return;
   const k = e.key;
   if (k === 'n' || k === 'N') newGame();
   else if ((k === 'ArrowLeft' || k === 'ArrowRight') && phase === 'place' && human()) { sx = Math.max(110, Math.min(S - 110, sx + (k === 'ArrowLeft' ? -12 : 12))); sync(); e.preventDefault(); }
@@ -239,6 +240,7 @@ function draw() {
 let prev = 0, acc = 0;
 function frame(t) {
   requestAnimationFrame(frame); acc += Math.min(0.05, (t - prev) / 1000 || 0); prev = t;
+  if (Board.paused()) return;
   while (acc >= 1 / 240) {
     acc -= 1 / 240;
     if (phase === 'run') { const h = step(W, evs); if (h > 0.6 && t - sfxT > 60) { Board.sfx('step'); sfxT = t; } if (evs.length && evs.at(-1)._s !== 1) { evs.at(-1)._s = 1; Board.sfx('capture'); } if (!moving(W)) { resolve(); break; } }
@@ -247,5 +249,6 @@ function frame(t) {
 }
 newGame(); requestAnimationFrame(frame);
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

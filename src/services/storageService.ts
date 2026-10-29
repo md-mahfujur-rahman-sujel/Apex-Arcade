@@ -71,14 +71,36 @@ export const saveProfile = (profile: NonNullable<PlayerStats['profile']>): Playe
   return updated;
 };
 
-export const exportStats = (): string => JSON.stringify(getStoredStats(), null, 2);
+export const exportStats = (): string => {
+  const localData: Record<string, string> = {};
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (key && (key.startsWith('apex:save:') || key === 'apex:meta' || key === 'apex:preferences:v1')) {
+        const value = localStorage.getItem(key);
+        if (value !== null) localData[key] = value;
+      }
+    }
+  } catch { /* Export whatever data is readable alongside the stats below. */ }
+  return JSON.stringify({ format: 'apex-arcade-profile', version: 1, stats: getStoredStats(), localData }, null, 2);
+};
 
 export const importStats = (raw: string): PlayerStats | null => {
   try {
-    const candidate = JSON.parse(raw) as Partial<PlayerStats>;
+    const parsed = JSON.parse(raw) as Partial<PlayerStats> & { format?: string; stats?: Partial<PlayerStats>; localData?: Record<string, unknown> };
+    const candidate = (parsed.format === 'apex-arcade-profile' ? parsed.stats : parsed) as Partial<PlayerStats>;
     if (typeof candidate.totalPlayCount !== 'number' || typeof candidate.totalTimeSeconds !== 'number' || !Array.isArray(candidate.favorites)) return null;
     const updated: PlayerStats = { ...defaultStats, ...candidate, achievements: candidate.achievements || {}, levelProgress: candidate.levelProgress || {}, profile: candidate.profile || defaultStats.profile };
     saveStatsToStorage(updated);
+    if (parsed.format === 'apex-arcade-profile' && parsed.localData && typeof parsed.localData === 'object') {
+      for (const [key, value] of Object.entries(parsed.localData)) {
+        if ((key.startsWith('apex:save:') || key === 'apex:meta' || key === 'apex:preferences:v1') && typeof value === 'string') {
+          try { localStorage.setItem(key, value); } catch { /* Continue restoring other records if storage quota is reached. */ }
+        }
+      }
+      window.dispatchEvent(new Event('apex:meta'));
+      window.dispatchEvent(new Event('apex:preferences-changed'));
+    }
     return updated;
   } catch { return null; }
 };
@@ -202,5 +224,20 @@ export const resetAllStats = (): PlayerStats => {
     localStorage.removeItem(STORAGE_KEY_V1);
     localStorage.removeItem(STORAGE_KEY_V2);
   } catch {}
+  return defaultStats;
+};
+
+export const resetAllProfileData = (): PlayerStats => {
+  resetAllStats();
+  try {
+    const saveKeys: string[] = [];
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (key?.startsWith('apex:save:')) saveKeys.push(key);
+    }
+    saveKeys.forEach((key) => localStorage.removeItem(key));
+    localStorage.removeItem('apex:meta');
+  } catch {}
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('apex:meta'));
   return defaultStats;
 };

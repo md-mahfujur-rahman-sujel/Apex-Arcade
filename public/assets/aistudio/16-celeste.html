@@ -5,6 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skyfall Ridge</title>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -71,7 +72,22 @@
 
   const flakes = Array.from({ length: 70 }, () => ({ x: Math.random() * W, y: Math.random() * H, z: Math.random() * 0.8 + 0.3 }));
   const stars = A.makeStars(60, W, H * 0.6);
-  let S;
+  let S, activeMode = 'story', shakeScale = 1, theme = 'alpine', parkaColor = '#f2b134', scarfColor = '#38d6ff', shardColor = '#fde047';
+
+  function dailySeed() {
+    if (window.Meta && Meta.getDailySeed) return Meta.getDailySeed('skyfall-ridge');
+    const d = new Date(), key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate() + ':skyfall-ridge';
+    let hash = 2166136261;
+    for (let i = 0; i < key.length; i++) { hash ^= key.charCodeAt(i); hash = Math.imul(hash, 16777619); }
+    return hash >>> 0;
+  }
+  function unlock(id) {
+    const saved = window.Save && Save.load ? Save.load('skyfall-ridge') : {};
+    if ((Array.isArray(saved.achievements) ? saved.achievements : []).includes(id)) return;
+    if (window.Save && Save.update) Save.update('skyfall-ridge', { achievements: [id] });
+    if (window.Apex && Apex.unlockAchievement) Apex.unlockAchievement(id, 'skyfall-ridge');
+    if (window.UI && UI.toast) UI.toast('Achievement unlocked', { color: '#fde047' });
+  }
 
   /* ---------- state ---------- */
   function newPlayer(c, r) {
@@ -133,10 +149,11 @@
   /* ---------- gameplay ---------- */
   function die(G) {
     const p = S.p; if (p.dead) return;
-    p.dead = 24; S.deaths++;
+    p.dead = 24; S.deaths++; unlock('first-fall');
     G.burst(p.x + p.w / 2, p.y + p.h / 2, 26, { speed: 5, life: 34, size: 3.5, color: ['#f2b134', '#38d6ff', '#fff'], glow: true, grav: 0.08 });
     G.ring(p.x + p.w / 2, p.y + p.h / 2, '#f2b134', 50, 20);
     G.shake(7); G.freeze(5); A.sfx('hurt');
+    if (activeMode === 'daily') G.over('Daily attempt ended', 'Daily Ridge allows one fall per run.');
   }
   function startTrans(to) { S.trans = { t: 0, to }; A.sfx('door'); }
 
@@ -165,7 +182,7 @@
     if (dp && p.dashes > 0 && p.dashT <= 0 && p.dcd <= 0) {
       let dx = ax, dy = ay; if (!dx && !dy) dx = p.face;
       const l = Math.hypot(dx, dy); p.ddx = dx / l; p.ddy = dy / l;
-      p.dashT = 9; p.dashes = 0; p.dcd = 14; p.vx = 0; p.vy = 0;
+      p.dashT = 9; p.dashes = 0; p.dcd = 14; p.vx = 0; p.vy = 0; unlock('first-dash');
       A.sfx('dash'); G.shake(3); G.freeze(2); G.ring(p.x + p.w / 2, p.y + p.h / 2, '#38d6ff', 36, 14);
     }
     if (p.dashT > 0) {
@@ -236,27 +253,39 @@
       else if (ch === 'G') {
         const gk = S.room + ':' + c + ',' + r;
         if (!S.got.includes(gk) && A.dist(p.x + p.w / 2, p.y + p.h / 2, cx, cy) < 24) {
-          S.got.push(gk); G.addScore(100); A.sfx('gem'); G.popup(cx, cy - 12, '+100', '#fde047');
-          G.burst(cx, cy, 14, { speed: 3, life: 28, size: 3, color: ['#fde047', '#fff'], glow: true });
+          S.got.push(gk); G.addScore(100); A.sfx('gem'); G.popup(cx, cy - 12, '+100', shardColor);
+          unlock('first-shard');
+          G.burst(cx, cy, 14, { speed: 3, life: 28, size: 3, color: [shardColor, '#fff'], glow: true });
         }
       } else if (ch === 'D') {
         if (!(S.crys[key] > 0) && p.dashes < 1 && A.dist(p.x + p.w / 2, p.y + p.h / 2, cx, cy) < 26) {
           p.dashes = 1; S.crys[key] = 200; A.sfx('power'); G.ring(cx, cy, '#67e8f9', 44, 18);
+          if (S.got.length > 0) unlock('crystal-chain');
           G.burst(cx, cy, 14, { speed: 3, life: 24, size: 3, color: ['#67e8f9', '#fff'], glow: true });
         }
       } else if (ch === 'S') {
         if (p.vy >= 0 && A.overlap(hb, { x: c * T + 4, y: r * T + 22, w: T - 8, h: T - 22 })) {
-          p.vy = -15; p.dashes = 1; p.cut = true; p.dashT = 0; p.sq = -0.4; S.fx[key] = 12; A.sfx('bounce');
+          p.vy = -15; p.dashes = 1; p.cut = true; p.dashT = 0; p.sq = -0.4; S.fx[key] = 12; A.sfx('bounce'); unlock('spring-flight');
           G.ring(cx, r * T + 30, '#f472b6', 40, 16); G.shake(2);
         }
       } else if (ch === 'F') {
         if (!S.done && A.dist(p.x + p.w / 2, p.y + p.h / 2, cx, cy) < 32) {
           S.done = true;
           const secs = Math.floor(S.frames / 60);
-          const bonus = Math.max(0, 6000 - secs * 20 - S.deaths * 100);
+          const bonus = activeMode === 'time-trial' ? Math.max(0, 12000 - secs * 35)
+            : activeMode === 'daily' ? Math.max(0, S.dailyTarget - secs) * 25
+              : Math.max(0, 6000 - secs * 20 - S.deaths * 100);
+          const complete = activeMode !== 'shard-hunt' || S.got.length === TOTAL_GEMS;
           G.addScore(bonus);
+          if (activeMode === 'daily') unlock('daily-ridge');
+          if (secs < 120) unlock('speed-ascent');
+          if (S.deaths === 0) unlock('no-falls');
+          if (S.got.length === TOTAL_GEMS) unlock('all-shards');
+          if (activeMode === 'story') unlock('summit-story');
+          if (activeMode === 'shard-hunt' && complete) unlock('shard-hunt');
           G.burst(cx, cy, 50, { speed: 6, life: 60, size: 4, color: ['#fde047', '#f472b6', '#67e8f9', '#fff'], glow: true, grav: 0.05 });
-          G.win('Summit reached!', timeStr() + '  ·  ' + S.deaths + ' falls  ·  ' + S.got.length + '/' + TOTAL_GEMS + ' gems');
+          if (complete) G.win('Summit reached!', timeStr() + '  ·  ' + S.deaths + ' falls  ·  ' + S.got.length + '/' + TOTAL_GEMS + ' shards');
+          else G.over('Summit reached', 'Shard Hunt needs every shard · ' + S.got.length + '/' + TOTAL_GEMS);
           return;
         }
       }
@@ -284,7 +313,7 @@
   function drawPlayer(c, G, p) {
     if (p.dead) return;
     const cx = p.x + p.w / 2, top = p.y, sq = p.sq;
-    const col = p.dashes > 0 ? '#38d6ff' : '#8a7fd0';
+    const col = p.dashes > 0 ? scarfColor : '#8a7fd0';
     A.shadow(c, cx, p.y + p.h + 1, 11, 3, 0.2);
     // scarf
     c.save(); c.lineCap = 'round'; c.lineJoin = 'round';
@@ -299,8 +328,8 @@
     // legs
     c.fillStyle = '#2a2147'; c.fillRect(p.x + 3, p.y + 20, 5, 8); c.fillRect(p.x + 12, p.y + 20, 5, 8);
     // parka
-    c.fillStyle = '#f2b134'; A.roundRect(c, p.x, p.y + 9, p.w, 15, 6); c.fill();
-    c.fillStyle = '#c98712'; c.fillRect(p.x, p.y + 19, p.w, 3);
+    c.fillStyle = parkaColor; A.roundRect(c, p.x, p.y + 9, p.w, 15, 6); c.fill();
+    c.fillStyle = A.shade(parkaColor, -0.22); c.fillRect(p.x, p.y + 19, p.w, 3);
     // hood + face
     c.fillStyle = '#f7c451'; c.beginPath(); c.arc(cx, top + 8, 9, 0, A.TAU); c.fill();
     c.fillStyle = '#1b1630'; c.beginPath(); c.ellipse(cx + p.face * 2, top + 8, 5.5, 5, 0, 0, A.TAU); c.fill();
@@ -310,7 +339,8 @@
 
   function draw(G, c) {
     const R = MAPS[S.room], p = S.p, k = S.room / (MAPS.length - 1);
-    c.fillStyle = A.vgrad(c, 0, H, [A.mix('#0a0f2e', '#3b2a6b', k), A.mix('#22407a', '#e8798f', k), A.mix('#4a76b8', '#ffd6a0', k)]);
+    const night = theme === 'night', violet = theme === 'violet';
+    c.fillStyle = A.vgrad(c, 0, H, night ? ['#050818', '#101a3d', '#202854'] : violet ? ['#120b29', '#3b1d61', '#65408a'] : [A.mix('#0a0f2e', '#3b2a6b', k), A.mix('#22407a', '#e8798f', k), A.mix('#4a76b8', '#ffd6a0', k)]);
     c.fillRect(0, 0, W, H);
     c.globalAlpha = 1 - k * 0.8; A.drawStars(c, stars, G.clock, W, H * 0.6, 0.02, '#fff'); c.globalAlpha = 1;
     const sun = c.createRadialGradient(620, 110, 4, 620, 110, 90 + k * 60);
@@ -362,7 +392,7 @@
       } else if (ch === 'G') {
         if (S.got.includes(S.room + ':' + cc + ',' + r)) continue;
         const cx = x + T / 2, cy = y + T / 2 + Math.sin(G.clock * 0.08 + cc * 2) * 3;
-        c.save(); c.shadowColor = '#fde047'; c.shadowBlur = 14; c.fillStyle = '#fde047'; c.beginPath();
+        c.save(); c.shadowColor = shardColor; c.shadowBlur = 14; c.fillStyle = shardColor; c.beginPath();
         for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? 6 : 13; c.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
         c.closePath(); c.fill(); c.restore();
       } else if (ch === 'F') {
@@ -390,18 +420,65 @@
       c.fillStyle = 'rgba(8,10,30,' + Math.min(1, a * 1.2) + ')'; c.fillRect(0, 0, W, H);
     }
     G.hudL = (S.room + 1) + '/' + MAPS.length + '  ✦' + S.got.length + '/' + TOTAL_GEMS + '  ☠' + S.deaths;
-    G.hudR = 'TIME ' + timeStr();
+    G.hudR = (activeMode === 'daily' ? 'DAILY TARGET ' + S.dailyTarget + 's · ' : activeMode === 'time-trial' ? 'TRIAL ' : activeMode === 'shard-hunt' ? 'SHARD HUNT ' : '') + 'TIME ' + timeStr();
   }
 
-  Arcade.game({
+  const skyfallGame = Arcade.game({
     id: 'skyfall-ridge', title: 'Skyfall Ridge', subtitle: 'Precision dash-climbing — reach the summit', color: '#38bdf8', w: W, h: H,
     help: '← → move · Space jump (hold for height) · Shift dash (aim with the arrow keys, one air dash that refills on landing, springs and crystals) · slide down walls and jump off them · P pause · M mute',
     touchL: [['◀', 'ArrowLeft'], ['▶', 'ArrowRight'], ['▲', 'ArrowUp']],
     touchR: [['Dash', 'ShiftLeft'], ['Jump', 'Space']],
-    init(G) { S = newState(); loadRoom(0); },
+    init(G) { S = newState(); S.seed = activeMode === 'daily' ? dailySeed() : 0; S.dailyTarget = 150 + (S.seed % 121); loadRoom(0); },
     update, draw,
+  });
+  const originalShake = skyfallGame.shake.bind(skyfallGame);
+  skyfallGame.shake = (amount) => originalShake(amount * shakeScale);
+  skyfallGame.ui = UI.mountGame(skyfallGame, {
+    id: 'skyfall-ridge', title: 'Skyfall Ridge', subtitle: 'Dash, climb, and reach the summit', accent: '#38bdf8',
+    modes: [
+      { id: 'story', name: 'Summit Story', blurb: 'Climb all ten authored rooms.' },
+      { id: 'time-trial', name: 'Time Trial', blurb: 'Race the same route; falls do not affect the time bonus.' },
+      { id: 'daily', name: 'Daily Ridge', blurb: 'A same-day seeded summit run; one fall ends the attempt.', seeded: true },
+      { id: 'shard-hunt', name: 'Shard Hunt', blurb: 'Collect every shard before reaching the summit.' },
+    ],
+    settings: [
+      { key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 },
+      { key: 'particles', label: 'Particles', type: 'select', options: ['lite', 'standard', 'ultra'], default: 'standard' },
+    ],
+    achievements: [
+      { id: 'first-dash', name: 'First Dash', desc: 'Use your air dash.', rarity: 'common' },
+      { id: 'first-shard', name: 'First Shard', desc: 'Collect a summit shard.', rarity: 'common' },
+      { id: 'crystal-chain', name: 'Crystal Chain', desc: 'Collect a shard and recharge mid-air.', rarity: 'rare' },
+      { id: 'spring-flight', name: 'Spring Flight', desc: 'Launch from a spring.', rarity: 'common' },
+      { id: 'first-fall', name: 'A Soft Landing', desc: 'Fall and return to the room.', rarity: 'common' },
+      { id: 'no-falls', name: 'Steady Ascent', desc: 'Reach the summit without falling.', rarity: 'rare' },
+      { id: 'daily-ridge', name: 'Daily Climber', desc: 'Complete a daily run.', rarity: 'rare' },
+      { id: 'speed-ascent', name: 'Quick Ascent', desc: 'Reach the summit in under two minutes.', rarity: 'epic' },
+      { id: 'all-shards', name: 'Shard Keeper', desc: 'Collect every shard.', rarity: 'epic' },
+      { id: 'summit-story', name: 'Summit Story', desc: 'Finish the story route.', rarity: 'rare' },
+      { id: 'shard-hunt', name: 'Shard Hunt', desc: 'Finish Shard Hunt with every shard.', rarity: 'legendary' },
+    ],
+    tutorial: { type: 'interactive', steps: [
+      { text: 'Move with A/D or the arrow keys, and hold Space for a higher jump.', hold: 'ArrowRight' },
+      { text: 'Press Shift to dash; aim with the arrow keys. Crystals restore your dash.', hold: 'ShiftLeft' },
+      { text: 'Wall-jump and bounce from springs to climb toward the summit.', hold: 'Space' },
+    ] },
+    hooks: {
+      applyMode: (mode) => { activeMode = mode; },
+      applySetting: (key, value) => {
+        if (key === 'shake') shakeScale = Number(value);
+        if (key === 'particles' && window.Perf && Perf.setTier) Perf.setTier(value);
+      },
+      applyCosmetic: (slot, id) => {
+        if (slot === 'skin') parkaColor = id.includes('rose') ? '#e879a8' : id.includes('jade') ? '#39b982' : id.includes('ice') ? '#73c9e8' : '#f2b134';
+        else if (slot === 'palette') scarfColor = id.includes('ember') ? '#fb7185' : id.includes('gold') ? '#facc15' : id.includes('violet') ? '#c084fc' : '#38d6ff';
+        else if (slot === 'trail') shardColor = id.includes('rose') ? '#fb7185' : id.includes('mint') ? '#6ee7b7' : '#fde047';
+        else if (slot === 'theme') theme = id.includes('night') ? 'night' : id.includes('violet') ? 'violet' : 'alpine';
+      },
+    },
   });
 })();
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

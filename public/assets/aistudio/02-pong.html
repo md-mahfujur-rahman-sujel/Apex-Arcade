@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ion Rally</title>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -26,11 +27,54 @@ const A = Arcade;
 const W = 800, H = 480, TOP = 70, BOT = 432, PH = 80, PW = 14, R = 8, LX = 34, RX = W - 34 - PW, WIN = 7;
 let L, Rt, ball, trail, mode, sc, serveT, serveDir, level, rally, cpu, ripples;
 let scPop = [0, 0], edge = [0, 0], hitFlash = [0, 0], wallFlash = [0, 0], banner = null;
+let activeMode = 'classic', winTarget = WIN, circuitOpponent = 0, difficulty = 'normal', speedScale = 1, shakeScale = 1;
+let dailySeed = 0, rngState = 1, leftColor = '#22d3ee', rightColor = '#f472b6', ballRim = '#22d3ee', arenaTheme = 'ion';
+let firstRallyScored = false, edgeReturn = false, cpuTier = 0, ionGame = null;
+function random01() {
+  if (activeMode !== 'daily-rally') return Math.random();
+  rngState ^= rngState << 13; rngState ^= rngState >>> 17; rngState ^= rngState << 5;
+  return (rngState >>> 0) / 4294967296;
+}
+function randomRange(min, max) { return min + random01() * (max - min); }
+function scorePoints(G, amount) { G.addScore(Math.round(amount)); }
+function applyMode(id) {
+  activeMode = id || 'classic'; mode = activeMode === 'classic-local' ? 2 : 1;
+  winTarget = activeMode === 'rally-rush' ? 5 : WIN;
+  circuitOpponent = 0; cpuTier = 0;
+  dailySeed = activeMode === 'daily-rally' ? todaySeed() : 0; rngState = dailySeed || 1;
+  if (ionGame && ionGame.state !== 'ready') ionGame.restart(true);
+}
+function applySetting(key, value) {
+  if (key === 'difficulty') { difficulty = value; speedScale = value === 'easy' ? 0.8 : value === 'hard' ? 1.35 : 1; }
+  else if (key === 'shake') shakeScale = Math.max(0, Math.min(1, Number(value)));
+}
+function applyCosmetic(slot, id) {
+  const palettes = {
+    'ion-rally:ion-cyan': ['#22d3ee', '#f472b6'], 'ion-rally:magenta-pulse': ['#e879f9', '#fb923c'],
+    'ion-rally:solar-gold': ['#fbbf24', '#38bdf8'], 'ion-rally:jade-current': ['#34d399', '#fb7185'],
+    'ion-rally:prism-edge': ['#a78bfa', '#f472b6']
+  };
+  if (slot === 'palette' && palettes[id]) { leftColor = palettes[id][0]; rightColor = palettes[id][1]; ballRim = palettes[id][0]; }
+  if (slot === 'trail') ballRim = '#fb923c';
+  if (slot === 'theme') arenaTheme = id;
+}
+function unlock(id) {
+  const saved = Save.load('ion-rally'); if ((Array.isArray(saved.achievements) ? saved.achievements : []).includes(id)) return;
+  Save.update('ion-rally', { achievements: [id] });
+  if (window.Apex && Apex.unlockAchievement) Apex.unlockAchievement(id, 'ion-rally');
+  UI.toast(id.replace(/-/g, ' '), { color: '#38bdf8' });
+}
+function todaySeed() {
+  const d = new Date(), stamp = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  let x = stamp ^ 0x7f4a7c15; for (const ch of 'ion-rally') x = Math.imul(x ^ ch.charCodeAt(0), 16777619);
+  return x >>> 0 || 1;
+}
 
 /* ---------- baked art (drawn once, reused every frame) ---------- */
 function bgSprite() {
-  return Fx.bake('ion-bg', W, H, (c) => {
-    A.sky(c, W, H, ['#05031a', '#120a35', '#2b0e52', '#3d1060']);
+  return Fx.bake('ion-bg-' + arenaTheme, W, H, (c) => {
+    const rain = arenaTheme === 'ion-rally:rainlit-skyline';
+    A.sky(c, W, H, rain ? ['#061526', '#102b44', '#173c54', '#225067'] : ['#05031a', '#120a35', '#2b0e52', '#3d1060']);
     for (let i = 0; i < 110; i++) {
       const x = A.hash(i, 3) * W, y = A.hash(i, 9) * 54, s = A.hash(i, 5) * 1.3 + 0.4;
       c.fillStyle = 'rgba(255,255,255,' + (0.25 + A.hash(i, 7) * 0.6).toFixed(2) + ')'; c.fillRect(x, y, s, s);
@@ -56,17 +100,17 @@ function bgSprite() {
   });
 }
 function tableSprite() {
-  return Fx.bake('ion-table', W, BOT - TOP, (c, w, h) => {
-    c.fillStyle = A.vgrad(c, 0, h, ['#0a1b44', '#0c2658', '#081a3d']); c.fillRect(0, 0, w, h);
+  return Fx.bake('ion-table-' + arenaTheme + '-' + leftColor + '-' + rightColor, W, BOT - TOP, (c, w, h) => {
+    c.fillStyle = A.vgrad(c, 0, h, arenaTheme === 'ion-rally:starfield-table' ? ['#101331', '#171d43', '#10152f'] : arenaTheme === 'ion-rally:rainlit-skyline' ? ['#0b2033', '#14354b', '#0b2335'] : ['#0a1b44', '#0c2658', '#081a3d']); c.fillRect(0, 0, w, h);
     c.strokeStyle = 'rgba(103,232,249,.06)'; c.lineWidth = 1;
     for (let x = 0; x <= w; x += 40) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke(); }
     for (let y = 0; y <= h; y += 40) { c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke(); }
     const sh = c.createLinearGradient(0, 0, w, h);
     sh.addColorStop(0, 'rgba(255,255,255,.08)'); sh.addColorStop(0.45, 'rgba(255,255,255,0)'); sh.addColorStop(0.55, 'rgba(255,255,255,.03)'); sh.addColorStop(1, 'rgba(255,255,255,0)');
     c.fillStyle = sh; c.fillRect(0, 0, w, h);
-    const gl = c.createLinearGradient(0, 0, 110, 0); gl.addColorStop(0, 'rgba(34,211,238,.30)'); gl.addColorStop(1, 'rgba(34,211,238,0)');
+    const gl = c.createLinearGradient(0, 0, 110, 0); gl.addColorStop(0, A.alpha(leftColor, .30)); gl.addColorStop(1, A.alpha(leftColor, 0));
     c.fillStyle = gl; c.fillRect(0, 0, 110, h);
-    const gr = c.createLinearGradient(w, 0, w - 110, 0); gr.addColorStop(0, 'rgba(244,114,182,.30)'); gr.addColorStop(1, 'rgba(244,114,182,0)');
+    const gr = c.createLinearGradient(w, 0, w - 110, 0); gr.addColorStop(0, A.alpha(rightColor, .30)); gr.addColorStop(1, A.alpha(rightColor, 0));
     c.fillStyle = gr; c.fillRect(w - 110, 0, 110, h);
     c.strokeStyle = 'rgba(103,232,249,.14)'; c.lineWidth = 2; c.beginPath(); c.arc(w / 2, h / 2, 56, 0, A.TAU); c.stroke();
     c.beginPath(); c.arc(w / 2, h / 2, 5, 0, A.TAU); c.fillStyle = 'rgba(103,232,249,.25)'; c.fill();
@@ -78,18 +122,25 @@ function resetMatch(G) {
   Rt = { x: RX, y: (TOP + BOT) / 2 - PH / 2, vy: 0 };
   sc = [0, 0]; level = 1; rally = 0; trail = []; ripples = [];
   scPop = [0, 0]; edge = [0, 0]; hitFlash = [0, 0]; wallFlash = [0, 0]; banner = null;
+  firstRallyScored = false; edgeReturn = false;
   cpu = { target: (TOP + BOT) / 2, err: 0, wait: 0 };
-  serve(G, Math.random() < 0.5 ? 1 : -1);
+  serve(G, random01() < 0.5 ? 1 : -1);
 }
 function serve(G, dir) {
   serveDir = dir; serveT = 100; rally = 0; trail = [];
-  ball = { x: W / 2, y: (TOP + BOT) / 2, vx: 0, vy: 0, sp: 5.2 };
+  ball = { x: W / 2, y: (TOP + BOT) / 2, vx: 0, vy: 0, sp: activeMode === 'rally-rush' ? 6.4 : 5.2 };
 }
 function launch() {
-  const a = A.rand(-0.45, 0.45);
+  const a = randomRange(-0.45, 0.45);
   ball.vx = Math.cos(a) * ball.sp * serveDir; ball.vy = Math.sin(a) * ball.sp;
 }
-function init(G) { mode = mode || 1; resetMatch(G); G.hudL = ''; }
+function init(G) {
+  mode = activeMode === 'classic-local' ? 2 : 1;
+  winTarget = activeMode === 'rally-rush' ? 5 : WIN;
+  circuitOpponent = activeMode === 'city-circuit' ? 0 : circuitOpponent;
+  dailySeed = activeMode === 'daily-rally' ? todaySeed() : 0; rngState = dailySeed || 1;
+  resetMatch(G); G.hudL = '';
+}
 
 function predictY() {
   // fold the ball's future y position back into the field to simulate wall bounces
@@ -109,17 +160,33 @@ function movePaddle(p, dir, speed) {
 
 function pointScored(G, who) {
   sc[who]++;
+  if (rally > 0 && !firstRallyScored) { firstRallyScored = true; unlock('first-serve'); }
   A.sfx('explode'); G.shake(10);
   const gx = who === 0 ? W - 10 : 10;
-  const col = who === 0 ? '#22d3ee' : '#f472b6';
-  G.burst(gx, ball.y, 34, { color: who === 0 ? ['#22d3ee', '#a5f3fc'] : ['#f472b6', '#fbcfe8'], speed: 6, glow: true, life: 40, angle: who === 0 ? Math.PI : 0, spread: 1.2 });
+  const col = who === 0 ? leftColor : rightColor;
+  G.burst(gx, ball.y, 34, { color: who === 0 ? [leftColor, '#a5f3fc'] : [rightColor, '#fbcfe8'], speed: 6, glow: true, life: 40, angle: who === 0 ? Math.PI : 0, spread: 1.2 });
   G.ring(gx, ball.y, col, 80);
   G.ring(gx, ball.y, '#fff', 46, 16);
   scPop[who] = 1; edge[who === 0 ? 1 : 0] = 1;
   banner = { text: (mode === 1 ? (who === 0 ? 'POINT!' : 'CPU SCORES') : (who === 0 ? 'LEFT SCORES' : 'RIGHT SCORES')), color: col, t: 0 };
-  if (mode === 1 && who === 0) { G.addScore(100 + rally * 5); G.popup(W / 2, 150, 'POINT +' + (100 + rally * 5), '#fde68a', 22); }
-  if (sc[who] >= WIN) {
-    if (mode === 1) { G.addScore(500); return who === 0 ? G.win('You Win!', 'Final ' + sc[0] + ' – ' + sc[1]) : G.over('CPU Wins', 'Final ' + sc[0] + ' – ' + sc[1]); }
+  if (mode === 1 && who === 0) { scorePoints(G, 100 + rally * 5); G.popup(W / 2, 150, 'POINT +' + (100 + rally * 5), '#fde68a', 22); }
+  if (rally >= 8) unlock('long-rally'); if (rally >= 20) unlock('comet-run');
+  if (who === 0 && edgeReturn) unlock('edge-artist'); edgeReturn = false;
+  if (sc[who] >= winTarget) {
+    if (mode === 1 && who === 0) {
+      scorePoints(G, 500);
+      if (sc[1] === 0 && activeMode === 'classic') unlock('clean-sweep');
+      if (activeMode === 'city-circuit') {
+        circuitOpponent++;
+        if (circuitOpponent >= 3) { unlock('city-circuit'); Save.update('ion-rally', { stats: { cityCircuitBest: Math.max(3, Number(Save.load('ion-rally').stats && Save.load('ion-rally').stats.cityCircuitBest) || 0) } }); return G.win('City Circuit cleared!', 'Three CPU pilots defeated · Score ' + G.score); }
+        Save.update('ion-rally', { stats: { cityCircuitBest: Math.max(circuitOpponent, Number(Save.load('ion-rally').stats && Save.load('ion-rally').stats.cityCircuitBest) || 0) } });
+        cpuTier = circuitOpponent; resetMatch(G); banner = { text: 'PILOT ' + (circuitOpponent + 1), color: '#fde68a', t: 0 }; return;
+      }
+      if (activeMode === 'daily-rally') unlock('daily-pilot');
+      return G.win(activeMode === 'rally-rush' ? 'Rally Rush clear!' : activeMode === 'daily-rally' ? 'Daily Rally clear!' : 'You Win!', 'Final ' + sc[0] + ' – ' + sc[1] + ' · Score ' + G.score);
+    }
+    if (mode === 2) unlock('local-rivals');
+    if (mode === 1) return G.over('CPU Wins', 'Final ' + sc[0] + ' – ' + sc[1]);
     return G.win((who === 0 ? 'Left' : 'Right') + ' Player Wins!', 'Final ' + sc[0] + ' – ' + sc[1]);
   }
   level = A.clamp(1 + sc[0] * 0.7 - sc[1] * 0.35, 0.6, 5.5);
@@ -129,19 +196,21 @@ function pointScored(G, who) {
 function paddleHit(G, p, dir) {
   const idx = p === L ? 0 : 1;
   const off = A.clamp((ball.y - (p.y + PH / 2)) / (PH / 2), -1, 1);
+  if (Math.abs(off) > 0.86 && dir > 0) edgeReturn = true;
   ball.sp = Math.min(11.5, ball.sp + 0.35);
   const ang = off * 1.05;
   ball.vx = Math.cos(ang) * ball.sp * dir;
   ball.vy = Math.sin(ang) * ball.sp + p.vy * 0.25;
   rally++;
   A.sfx('blip'); G.freeze(2); G.shake(2 + ball.sp * 0.3);
-  const col = dir > 0 ? '#22d3ee' : '#f472b6';
+  const col = dir > 0 ? leftColor : rightColor;
   G.burst(ball.x, ball.y, 10, { color: [col, '#fff'], speed: 3.5, glow: true, life: 24, angle: dir > 0 ? 0 : Math.PI, spread: 1 });
   G.burst(ball.x, ball.y, 6, { color: '#fff', speed: 5, shape: 'l', life: 14, angle: dir > 0 ? 0 : Math.PI, spread: 0.9 });
   ripples.push({ x: ball.x, y: ball.y, t: 0, c: col });
   hitFlash[idx] = 1;
   Fx.squash.punch('pd' + idx, { sx: 1.5, sy: 0.92 });
-  if (mode === 1 && dir > 0) G.addScore(10);
+  if (mode === 1 && dir > 0) scorePoints(G, 10);
+  if (rally === 1) firstRallyScored = false;
   if (rally > 0 && rally % 8 === 0) G.popup(W / 2, 120, 'Rally ' + rally + '!', '#fde68a', 20);
 }
 
@@ -155,18 +224,19 @@ function update(G) {
   Fx.update(1);
   for (let i = 0; i < 2; i++) { scPop[i] *= 0.9; edge[i] = Math.max(0, edge[i] - 0.035); hitFlash[i] = Math.max(0, hitFlash[i] - 0.08); wallFlash[i] = Math.max(0, wallFlash[i] - 0.07); }
   if (banner && ++banner.t > 60) banner = null;
-  if (A.hit('Digit2') && mode !== 2) { mode = 2; resetMatch(G); G.score = 0; return; }
-  if (A.hit('Digit1') && mode !== 1) { mode = 1; resetMatch(G); G.score = 0; return; }
+  if (A.hit('Digit2') && mode !== 2) { activeMode = 'classic'; mode = 2; winTarget = WIN; resetMatch(G); G.score = 0; return; }
+  if (A.hit('Digit1') && mode !== 1) { activeMode = 'classic'; mode = 1; winTarget = WIN; resetMatch(G); G.score = 0; return; }
   // paddles
-  if (mode === 1) movePaddle(L, A.axisY(), 6);
-  else movePaddle(L, (A.held('KeyS') ? 1 : 0) - (A.held('KeyW') ? 1 : 0), 6);
-  if (mode === 2) movePaddle(Rt, (A.held('ArrowDown') ? 1 : 0) - (A.held('ArrowUp') ? 1 : 0), 6);
+  const paddleSpeed = 6 * speedScale;
+  if (mode === 1) movePaddle(L, A.axisY(), paddleSpeed);
+  else movePaddle(L, (A.held('KeyS') ? 1 : 0) - (A.held('KeyW') ? 1 : 0), paddleSpeed);
+  if (mode === 2) movePaddle(Rt, (A.held('ArrowDown') ? 1 : 0) - (A.held('ArrowUp') ? 1 : 0), paddleSpeed);
   else {
-    const sp = Math.min(6.2, 3.3 + level * 0.55);
-    const react = Math.max(0.2, 0.62 - level * 0.07);
+    const sp = Math.min(6.2, 3.3 + level * 0.55) * (difficulty === 'easy' ? 0.8 : difficulty === 'hard' ? 1.35 : 1) * (1 + cpuTier * 0.12);
+    const react = Math.max(0.12, 0.62 - level * 0.07 - cpuTier * 0.06);
     if (ball.vx > 0 && ball.x > W * react) {
-      if (--cpu.wait <= 0) { cpu.wait = 12; cpu.target = predictY() + cpu.err; }
-    } else { cpu.target = (TOP + BOT) / 2; cpu.err = A.rand(-1, 1) * Math.max(8, 70 - level * 11); }
+      if (--cpu.wait <= 0) { cpu.wait = Math.max(4, 12 - cpuTier * 2 - (difficulty === 'hard' ? 3 : 0)); cpu.target = predictY() + cpu.err; }
+    } else { cpu.target = (TOP + BOT) / 2; cpu.err = randomRange(-1, 1) * Math.max(8, 70 - level * 11) * (difficulty === 'easy' ? 1.4 : difficulty === 'hard' ? 0.62 : 1) / (1 + cpuTier * 0.35); }
     const d = cpu.target - (Rt.y + PH / 2);
     movePaddle(Rt, Math.abs(d) < 5 ? 0 : A.sign(d), Math.min(sp, Math.abs(d)));
   }
@@ -178,7 +248,7 @@ function update(G) {
     return;
   }
   for (let s = 0; s < 2; s++) {
-    ball.x += ball.vx / 2; ball.y += ball.vy / 2;
+    ball.x += ball.vx / 2 * speedScale; ball.y += ball.vy / 2 * speedScale;
     if (ball.y - R < TOP) { ball.y = TOP + R; ball.vy = Math.abs(ball.vy); wallHit(G, TOP, true); }
     if (ball.y + R > BOT) { ball.y = BOT - R; ball.vy = -Math.abs(ball.vy); wallHit(G, BOT, false); }
     if (ball.vx < 0 && ball.x - R <= L.x + PW && ball.x >= L.x - 2 && ball.y > L.y - R * 0.6 && ball.y < L.y + PH + R * 0.6) { ball.x = L.x + PW + R; paddleHit(G, L, 1); }
@@ -190,7 +260,7 @@ function update(G) {
   if (trail.length > 22) trail.shift();
   for (const r of ripples) r.t++;
   ripples = ripples.filter((r) => r.t < 22);
-  G.hudL = (mode === 1 ? 'YOU vs CPU' : '2 PLAYERS') + '  ·  first to ' + WIN;
+  G.hudL = (activeMode === 'city-circuit' ? 'CITY CIRCUIT · PILOT ' + (circuitOpponent + 1) : activeMode === 'rally-rush' ? 'RALLY RUSH · build a 20-hit bonus' : activeMode === 'daily-rally' ? 'DAILY RALLY · seed ' + String(dailySeed).slice(-5) : mode === 1 ? 'YOU vs CPU' : '2 PLAYERS') + '  ·  first to ' + winTarget;
 }
 
 /* ---------- drawing ---------- */
@@ -235,7 +305,7 @@ function drawBall(c, t) {
   const energy = A.clamp((ball.sp - 5) / 6.5, 0, 1);
   const bucket = energy > 0.66 ? 'hot' : energy > 0.33 ? 'warm' : 'cool';
   const core = energy > 0.66 ? '#fecdd3' : energy > 0.33 ? '#fde68a' : '#a5f3fc';
-  const rim = energy > 0.66 ? '#fb7185' : energy > 0.33 ? '#fbbf24' : '#22d3ee';
+  const rim = energy > 0.66 ? '#fb7185' : energy > 0.33 ? '#fbbf24' : ballRim;
   // comet ribbon
   c.save(); c.globalCompositeOperation = 'lighter'; c.lineCap = 'round';
   for (let i = 1; i < trail.length; i++) {
@@ -296,12 +366,12 @@ function draw(G, c) {
     c.save(); c.globalAlpha = 0.26 + scPop[i] * 0.4;
     const sx = W / 2 + (i ? 90 : -90), s = 1 + scPop[i] * 0.4;
     c.translate(sx, 190); c.scale(s, s);
-    A.text(c, String(sc[i]), 0, 40, 110, i ? '#f472b6' : '#22d3ee', 'center', '900');
+    A.text(c, String(sc[i]), 0, 40, 110, i ? rightColor : leftColor, 'center', '900');
     c.restore();
   }
   for (const r of ripples) { c.strokeStyle = A.alpha(r.c, 1 - r.t / 22); c.lineWidth = 2; c.beginPath(); c.arc(r.x, r.y, 8 + r.t * 1.6, 0, A.TAU); c.stroke(); }
-  drawPaddle(c, L, '#22d3ee', 0, t);
-  drawPaddle(c, Rt, mode === 2 ? '#f472b6' : '#fb923c', 1, t);
+  drawPaddle(c, L, leftColor, 0, t);
+  drawPaddle(c, Rt, mode === 2 ? rightColor : '#fb923c', 1, t);
   drawBall(c, t);
   // serve countdown with pulsing ring
   if (serveT > 0 && G.state === 'playing') {
@@ -318,18 +388,61 @@ function draw(G, c) {
     const k = banner.t / 60, a = k < 0.15 ? k / 0.15 : 1 - Math.max(0, (k - 0.6) / 0.4);
     c.save(); c.globalAlpha = A.clamp(a, 0, 1); A.glowText(c, banner.text, W / 2, TOP + 70 - k * 14, 30, banner.color, 'center', 18); c.restore();
   }
-  A.text(c, mode === 1 ? 'Press 2 for two players' : 'Press 1 to play the CPU', W / 2, H - 12, 12, '#8b93b3', 'center', '600');
+  A.text(c, mode === 1 ? 'Press 2 for local play' : 'Press 1 for CPU play', W / 2, H - 12, 12, '#8b93b3', 'center', '600');
   if (mode === 1) A.text(c, 'CPU lv ' + level.toFixed(1), W - 150, 54, 13, '#fb923c', 'center', '800', A.MONO);
   Fx.bloom(c, W, H, 0.45);
   Fx.vignette(c, W, H, 0.34);
   G.drawFX(c);
 }
 
-Arcade.game({
+const ionRallyGame = Arcade.game({
   id: 'ion-rally', title: 'Ion Rally', subtitle: 'Neon paddle duel — first to 7', color: '#22d3ee',
   help: 'One player: W/S or ↑/↓ move your paddle vs the CPU (it adapts to how you play). Press 2 for two players: W/S (left) and ↑/↓ (right); press 1 to return to the CPU. Hit with the paddle edge for steeper angles. P pauses, M mutes.',
   w: W, h: H, touchL: [['▲', 'ArrowUp'], ['▼', 'ArrowDown']], init, update, draw,
 });
+ionGame = ionRallyGame;
+const ionOriginalShake = ionRallyGame.shake.bind(ionRallyGame);
+ionRallyGame.shake = (amount) => ionOriginalShake(amount * shakeScale);
+ionRallyGame.ui = UI.mountGame(ionRallyGame, {
+  id: 'ion-rally', title: 'Ion Rally', subtitle: 'Hold your line. Own the rally.', accent: '#38bdf8',
+  modes: [
+    { id: 'classic', name: 'Classic', blurb: 'Adaptive CPU or local play · first to 7', seasonTargets: [500, 1500, 3000] },
+    { id: 'classic-local', name: 'Local Rivals', blurb: 'Two players · first to 7', seasonTargets: [500, 1200, 2500] },
+    { id: 'rally-rush', name: 'Rally Rush', blurb: 'Fast serve · first to 5', seasonTargets: [700, 1600, 2800] },
+    { id: 'city-circuit', name: 'City Circuit', blurb: 'Defeat three increasingly sharp pilots', seasonTargets: [900, 2000, 3600] },
+    { id: 'daily-rally', name: 'Daily Rally', blurb: 'A seeded match shared for today', seeded: true, seasonTargets: [700, 1500, 3000] },
+  ],
+  settings: [
+    { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
+    { key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 },
+    { key: 'particles', label: 'Particles', type: 'select', options: ['lite', 'standard', 'ultra'], default: 'standard' },
+  ],
+  achievements: [
+    { id: 'first-serve', name: 'First Serve', desc: 'Complete your first rally.', rarity: 'common' },
+    { id: 'clean-sweep', name: 'Clean Sweep', desc: 'Win Classic without conceding a point.', rarity: 'epic' },
+    { id: 'long-rally', name: 'Long Rally', desc: 'Reach an 8-hit rally.', rarity: 'rare' },
+    { id: 'comet-run', name: 'Comet Run', desc: 'Reach a 20-hit rally.', rarity: 'epic' },
+    { id: 'edge-artist', name: 'Edge Artist', desc: 'Score from a steep paddle-edge return.', rarity: 'rare' },
+    { id: 'city-circuit', name: 'City Circuit', desc: 'Clear all three CPU pilots.', rarity: 'legendary' },
+    { id: 'daily-pilot', name: 'Daily Pilot', desc: 'Complete a seeded Daily Rally.', rarity: 'rare' },
+    { id: 'local-rivals', name: 'Local Rivals', desc: 'Finish a local two-player match.', rarity: 'common' },
+  ],
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Move with W/S or the arrow keys. In local play, the left pilot uses W/S.', hold: 'ArrowUp' },
+    { text: 'Meet the comet near the top or bottom of your paddle to change its angle.', hold: 'KeyW' },
+    { text: 'Keep a rally alive to build speed and earn a larger point bonus.', hold: 'ArrowDown' },
+  ] },
+  hooks: {
+    applyMode,
+    applySetting: (key, value) => {
+      applySetting(key, value);
+      if (key === 'particles' && window.Perf && Perf.setTier) Perf.setTier(value);
+    },
+    applyCosmetic,
+    getResult: () => ({ score: ionRallyGame.score, win: ionRallyGame.state === 'won', mode: activeMode, rally }),
+  },
+});
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

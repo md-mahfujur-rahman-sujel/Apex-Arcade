@@ -8,6 +8,7 @@ class SoundEngine {
   private muted: boolean = false;
   private volume: number = 0.8;
   private lastHoverAt = 0;
+  private suspendedByPause = false;
 
   constructor() {
     // Lazily initialized on first user interaction to comply with browser autoplay policy
@@ -28,6 +29,20 @@ class SoundEngine {
       this.ctx.resume();
     }
     return this.ctx;
+  }
+
+  public setPaused(paused: boolean): void {
+    if (!this.ctx) return;
+    if (paused) {
+      if (this.ctx.state === 'running') {
+        this.suspendedByPause = true;
+        void this.ctx.suspend();
+      }
+      return;
+    }
+    if (!this.suspendedByPause) return;
+    this.suspendedByPause = false;
+    if (this.ctx.state === 'suspended') void this.ctx.resume();
   }
 
   public isMuted(): boolean {

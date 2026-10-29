@@ -1,9 +1,9 @@
-import { access } from 'node:fs/promises';
+import { access, readFile, stat } from 'node:fs/promises';
+import path from 'node:path';
 import { chromium } from 'playwright';
-import { preview } from 'vite';
 
-const server = await preview({ preview: { host: '127.0.0.1', port: 0 } });
-const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
+const origin = 'http://127.0.0.1:4173';
+const distRoot = path.resolve(process.cwd(), 'dist');
 const candidates = [process.env.CHROME_BIN, 'C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].filter(Boolean);
 let executablePath;
 for (const candidate of candidates) { try { await access(candidate); executablePath = candidate; break; } catch { /* Continue to another installed browser. */ } }
@@ -11,6 +11,23 @@ const browser = await chromium.launch({ headless: true, ...(executablePath ? { e
 const context = await browser.newContext({ viewport: { width: 900, height: 760 }, hasTouch: true });
 const errors = [];
 try {
+  await context.route(`${origin}/**`, async (route) => {
+    const pathname = decodeURIComponent(new URL(route.request().url()).pathname);
+    const filePath = path.resolve(distRoot, `.${pathname}`);
+    if (filePath !== distRoot && !filePath.startsWith(`${distRoot}${path.sep}`)) {
+      await route.fulfill({ status: 403, body: 'Forbidden' });
+      return;
+    }
+    try {
+      const info = await stat(filePath);
+      const resolvedPath = info.isDirectory() ? path.join(filePath, 'index.html') : filePath;
+      const ext = path.extname(resolvedPath).toLowerCase();
+      const contentType = ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' })[ext] || 'application/octet-stream';
+      await route.fulfill({ status: 200, contentType, body: await readFile(resolvedPath) });
+    } catch {
+      await route.fulfill({ status: 404, body: `Not found: ${pathname}` });
+    }
+  });
   const page = await context.newPage();
   await page.addInitScript(() => {
     window.__virtualPads = [];
@@ -23,7 +40,9 @@ try {
   await page.goto(`${origin}/assets/aistudio/01-flappy-bird.html`);
   await page.waitForFunction(() => window.UI?.mountGame && window.Arcade?.test?.G?.ui?.controls?.isConnected);
   const menu = page.locator('.apex-game-menu');
-  await menu.getByRole('button', { name: 'Play', exact: true }).tap();
+  const launchMenu = page.locator('.apex-menu-root');
+  await launchMenu.locator('[data-menu-action="play"]').tap();
+  await launchMenu.waitFor({ state: 'hidden' });
   await page.waitForFunction(() => window.Arcade.test.G.state === 'playing');
   await menu.getByRole('button', { name: 'Pause', exact: true }).tap();
   await page.waitForFunction(() => window.Arcade.test.G.state === 'paused');
@@ -50,7 +69,9 @@ try {
   await pad(12, true); await pad(12, false);
   await pad(14, true); await page.waitForFunction(() => Math.abs(window.Save.load('glowmoth').settings.shake - 0.3) < 0.001); await pad(14, false);
   await pad(13, true); await pad(13, false);
+  await pad(13, true); await pad(13, false);
   await pad(0, true); await page.waitForFunction(() => !document.querySelector('.apex-game-menu input[type="range"]')); await pad(0, false);
+  await pad(12, true); await pad(12, false);
   await pad(12, true); await pad(12, false);
   await pad(0, true); await page.waitForFunction(() => window.Arcade.test.G.state === 'playing'); await pad(0, false);
   await pad(9, true); await page.waitForFunction(() => window.Arcade.test.G.state === 'paused'); await pad(9, false);
@@ -77,8 +98,28 @@ try {
   await page.waitForFunction(() => window.Arcade.test.G.state === 'over');
   await menu.getByRole('button', { name: 'Back to menu', exact: true }).focus(); await page.keyboard.press('Enter');
   await page.waitForFunction(() => window.Arcade.test.G.state === 'ready');
+  const modeFlow = await page.evaluate(() => {
+    const applied = [];
+    function mount() {
+      const host = document.createElement('div'), canvas = document.createElement('canvas');
+      canvas.width = 320; canvas.height = 180; host.appendChild(canvas); document.body.appendChild(host);
+      const game = { canvas, state: 'ready', score: 0, hi: 0, title: '', sub: '', begin() { this.state = 'playing'; }, pauseToggle() { this.state = this.state === 'paused' ? 'playing' : 'paused'; }, restart(play) { this.state = play ? 'playing' : 'ready'; } };
+      const ui = UI.mountGame(game, { id: 'smoke-mode-probe', title: 'Mode Probe', modes: [{ id: 'classic', name: 'Classic' }, { id: 'rally', name: 'Rally Rush' }], hooks: { applyMode(mode) { applied.push(mode); } } });
+      return { host, ui };
+    }
+    const first = mount();
+    const select = first.host.querySelector('select[aria-label="Game mode"]');
+    select.value = 'rally'; select.dispatchEvent(new Event('change', { bubbles: true }));
+    const saved = Save.load('smoke-mode-probe').settings.mode;
+    first.host.remove();
+    const second = mount();
+    return { applied, saved, restored: second.ui.getMode() };
+  });
+  if (modeFlow.saved !== 'rally' || modeFlow.restored !== 'rally' || modeFlow.applied.at(-1) !== 'rally') {
+    throw new Error(`Game mode selection did not apply and persist: ${JSON.stringify(modeFlow)}`);
+  }
   if (errors.length) throw new Error(`Browser errors: ${errors.join(' | ')}`);
-  console.log('UI.mountGame verification passed: keyboard, touch and gamepad boot/play/pause/settings/results/menu paths; setting persistence/application; zero browser errors.');
+  console.log('UI.mountGame verification passed: keyboard, touch and gamepad flows; setting and mode application/persistence; zero browser errors.');
 } finally {
-  await context.close(); await browser.close(); await new Promise((resolve) => server.httpServer.close(resolve));
+  await context.close(); await browser.close();
 }

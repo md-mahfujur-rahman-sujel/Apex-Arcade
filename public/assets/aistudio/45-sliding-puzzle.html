@@ -13,6 +13,7 @@
   .t.ok { box-shadow: inset 0 -4px 0 rgba(0,0,0,.25), 0 0 0 3px rgba(74,222,128,.7); }
   .side { display: grid; gap: 12px; } .stats { display: flex; gap: 18px; color: var(--muted); font: 600 14px ui-monospace, Consolas, monospace; } .stats b { color: var(--text); }
 </style>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -39,7 +40,7 @@ const bd = $('#bd');
 const hue = (v) => `hsl(${(v - 1) / (N * N - 1) * 300 + 190} 75% 68%)`;
 const fmt = (ms) => { const s = ms / 1000 | 0; return (s / 60 | 0) + ':' + String(s % 60).padStart(2, '0'); };
 function newGame() {
-  N = +$('#size').value; B = [...Array(N * N).keys()].map((i) => (i + 1) % (N * N)); moves = 0; done = started = false; clearInterval(tick); $('#tm').textContent = '0:00';
+  N = +$('#size').value; B = [...Array(N * N).keys()].map((i) => (i + 1) % (N * N)); moves = 0; done = started = false; Board.cancel(tick); $('#tm').textContent = '0:00';
   let z = N * N - 1, last = -1; for (let k = 0; k < N * N * 40; k++) { const r = z / N | 0, c = z % N, o = []; if (r > 0) o.push(z - N); if (r < N - 1) o.push(z + N); if (c > 0) o.push(z - 1); if (c < N - 1) o.push(z + 1); const f = o.filter((x) => x !== last), n = f[Board.rand(f.length)]; B[z] = B[n]; B[n] = 0; last = z; z = n; }
   if (solved()) return newGame();
   bd.style.setProperty('--n', N); bd.innerHTML = '';
@@ -55,8 +56,8 @@ function layout() {
 function slide(i) { /* slide tile at i toward the gap if they share a line */
   if (done) return false; const z = B.indexOf(0), r = i / N | 0, c = i % N, zr = z / N | 0, zc = z % N; if (i === z || (r !== zr && c !== zc)) { Board.sfx('error'); return false; }
   const step = r === zr ? (zc > c ? 1 : -1) : (zr > r ? N : -N); let k = z; while (k !== i) { B[k] = B[k - step]; k -= step; } B[i] = 0; moves++;
-  if (!started) { started = true; t0 = Date.now(); tick = setInterval(() => { $('#tm').textContent = fmt(Date.now() - t0); }, 500); }
-  Board.sfx('step'); if (solved()) { done = true; clearInterval(tick); const b = +Board.ls.get('apex:slide:' + N) || 1e9; if (moves < b) { Board.ls.set('apex:slide:' + N, moves); $('#bs').textContent = moves + ' moves'; } Board.sfx('win'); layout(); setTimeout(() => Board.modal('Solved!', moves + ' moves in ' + fmt(Date.now() - t0) + '.', [['New puzzle', newGame], ['Close']]), 400); } else layout();
+  if (!started) { started = true; t0 = Board.now(); tick = Board.every(500, () => { $('#tm').textContent = fmt(Board.now() - t0); }); }
+  Board.sfx('step'); if (solved()) { done = true; Board.cancel(tick); const b = +Board.ls.get('apex:slide:' + N) || 1e9; if (moves < b) { Board.ls.set('apex:slide:' + N, moves); $('#bs').textContent = moves + ' moves'; } Board.sfx('win'); layout(); Board.after(400, () => Board.modal('Solved!', moves + ' moves in ' + fmt(Board.now() - t0) + '.', [['New puzzle', newGame], ['Close']])); } else layout();
   return true;
 }
 bd.addEventListener('click', (e) => { const d = e.target.closest('.t'); if (d) slide(B.indexOf(+d.dataset.v)); });
@@ -68,5 +69,6 @@ document.addEventListener('keydown', (e) => {
 $('#new').onclick = newGame; $('#size').onchange = (e) => { e.target.blur(); newGame(); };
 newGame();
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

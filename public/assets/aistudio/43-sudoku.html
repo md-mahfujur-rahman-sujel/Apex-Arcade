@@ -20,6 +20,7 @@
   .pad button { padding: 10px 0; font-size: 18px; position: relative; } .pad small { position: absolute; right: 4px; bottom: 1px; font-size: 9px; color: var(--muted); }
   .side { display: grid; gap: 12px; } .stats { display: flex; gap: 18px; color: var(--muted); font: 600 14px ui-monospace, Consolas, monospace; } .stats b { color: var(--text); }
 </style>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -68,8 +69,8 @@ const bd = $('#bd'), cells = [];
 for (let i = 0; i < 81; i++) { const d = document.createElement('div'); d.dataset.i = i; bd.appendChild(d); cells.push(d); }
 $('#pad').innerHTML = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `<button class="bk-btn" data-n="${n}">${n}<small></small></button>`).join('');
 function newGame() {
-  const clues = +$('#lvl').value; const r = gen(clues); sol = r.sol; giv = r.p.map((v) => v > 0); val = r.p.slice(); nts = Array(81).fill(0); sel = val.indexOf(0); hist = []; mist = 0; done = false; hintC = -1; t0 = Date.now(); render();
-  clearInterval(tick); tick = setInterval(() => { if (!done) $('#tm').textContent = fmt(Date.now() - t0); }, 500);
+  const clues = +$('#lvl').value; const r = gen(clues); sol = r.sol; giv = r.p.map((v) => v > 0); val = r.p.slice(); nts = Array(81).fill(0); sel = val.indexOf(0); hist = []; mist = 0; done = false; hintC = -1; t0 = Board.now(); render();
+  Board.cancel(tick); tick = Board.every(500, () => { if (!done) $('#tm').textContent = fmt(Board.now() - t0); });
 }
 const fmt = (ms) => { const s = ms / 1000 | 0; return (s / 60 | 0) + ':' + String(s % 60).padStart(2, '0'); };
 const wrong = (i) => val[i] && !giv[i] && val[i] !== sol[i];
@@ -92,7 +93,7 @@ function put(n) {
   else {
     val[sel] = val[sel] === n ? 0 : n; nts[sel] = 0; hintC = -1;
     if (val[sel]) { if (val[sel] !== sol[sel]) { mist++; Board.sfx('error'); } else { Board.sfx('move'); for (const j of PEERS[sel]) nts[j] &= ~(1 << n); } }
-    if (val.every((v, i) => v === sol[i])) { done = true; Board.sfx('win'); render(); Board.modal('Solved!', 'Time ' + fmt(Date.now() - t0) + ' · ' + mist + ' mistake' + (mist === 1 ? '' : 's') + '.', [['New puzzle', newGame], ['Close']]); return; }
+    if (val.every((v, i) => v === sol[i])) { done = true; Board.sfx('win'); render(); Board.modal('Solved!', 'Time ' + fmt(Board.now() - t0) + ' · ' + mist + ' mistake' + (mist === 1 ? '' : 's') + '.', [['New puzzle', newGame], ['Close']]); return; }
   }
   render();
 }
@@ -101,7 +102,7 @@ function undo() { if (!hist.length || done) return; const h = hist.pop(); val = 
 function hint() {
   if (done) return; let c = sel >= 0 && !giv[sel] && val[sel] !== sol[sel] ? sel : val.findIndex((v, i) => v !== sol[i]); if (c < 0) return;
   snap(); sel = c; val[c] = sol[c]; nts[c] = 0; hintC = c; Board.sfx('win');
-  if (val.every((v, i) => v === sol[i])) { done = true; render(); Board.modal('Solved!', 'Time ' + fmt(Date.now() - t0) + ' (with hints).', [['New puzzle', newGame], ['Close']]); return; } render();
+  if (val.every((v, i) => v === sol[i])) { done = true; render(); Board.modal('Solved!', 'Time ' + fmt(Board.now() - t0) + ' (with hints).', [['New puzzle', newGame], ['Close']]); return; } render();
 }
 const setNotes = () => { notesOn = !notesOn; $('#notes').textContent = '✏️ Notes: ' + (notesOn ? 'on' : 'off'); $('#notes').classList.toggle('bk-primary', notesOn); };
 bd.addEventListener('click', (e) => { const d = e.target.closest('.c'); if (d) { sel = +d.dataset.i; render(); } });
@@ -115,5 +116,6 @@ document.addEventListener('keydown', (e) => {
 });
 newGame();
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>

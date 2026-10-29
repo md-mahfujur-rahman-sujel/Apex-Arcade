@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, ArrowRight, Award, BookOpen, Clock3, Gamepad2, Link2, Settings, Sparkles, Trophy, Users } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Award, BookOpen, CheckCircle2, Clock3, Gamepad2, Link2, Settings, Sparkles, Trophy, Users } from 'lucide-react';
 import { GameInfo, PlayerStats } from '../types/game';
 import { LauncherHome } from '../components/LauncherHome';
 import { GameCatalog } from '../components/GameCatalog';
@@ -10,20 +10,20 @@ import { Button } from '../components/ui/Button';
 import { CardScenePreview } from '../components/CardScenePreview';
 import { Card } from '../components/ui/Card';
 import { useState } from 'react';
+import { MetaQuest, MetaState } from '../services/metaService';
 
 type CatalogProps = React.ComponentProps<typeof GameCatalog>;
 type ProfileProps = React.ComponentProps<typeof ProfileHub>;
 
-export function HomePage({ games, stats, onLaunchGame, onExplore, catalog, telemetry, about, profile }: {
+export function HomePage({ games, stats, onLaunchGame, onExplore, catalog, telemetry, about }: {
   games: GameInfo[]; stats: PlayerStats; onLaunchGame: (game: GameInfo, startLevel?: number, seed?: number) => void; onExplore: () => void;
-  catalog: CatalogProps; telemetry: React.ComponentProps<typeof TelemetryDashboard>; about: boolean; profile: ProfileProps;
+  catalog: CatalogProps; telemetry: React.ComponentProps<typeof TelemetryDashboard>; about: boolean;
 }) {
   return <>
     <LauncherHome games={games} stats={stats} onLaunchGame={onLaunchGame} onExplore={onExplore} />
     <GameCatalog {...catalog} />
     <TelemetryDashboard {...telemetry} />
     {about && <AboutAnthology />}
-    <ProfileHub {...profile} />
   </>;
 }
 
@@ -33,6 +33,43 @@ export function BrowsePage({ catalog }: { catalog: CatalogProps }) {
 
 export function ProfilePage({ profile }: { profile: ProfileProps }) {
   return <div className="min-h-[70vh] pt-8"><ProfileHub {...profile} /></div>;
+}
+
+function QuestList({ title, quests }: { title: string; quests: MetaQuest[] }) {
+  return <section className="space-y-3" aria-label={title}>
+    <h2 className="text-lg font-bold text-fg">{title}</h2>
+    {quests.length ? quests.map((quest) => {
+      const goal = Math.max(1, quest.goal || 1);
+      const progress = Math.min(goal, Math.max(0, quest.progress || 0));
+      return <Card key={quest.id} className="p-4">
+        <div className="flex items-start gap-3">{quest.done ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-success" /> : <span aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 rounded-full border-2 border-line-strong" />}<div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold text-fg">{quest.title}</h3><span className="text-xs font-medium text-fg-muted">{quest.done ? 'Complete' : `${progress} / ${goal}`}</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-2"><div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${Math.round((progress / goal) * 100)}%` }} /></div></div></div>
+      </Card>;
+    }) : <Card className="p-5 text-sm text-fg-muted">No quests are available right now.</Card>}
+  </section>;
+}
+
+export function QuestsPage({ meta }: { meta: MetaState }) {
+  const quests = meta.quests as { day?: MetaQuest[]; week?: MetaQuest[] };
+  const daily = Array.isArray(quests.day) ? quests.day : [];
+  const weekly = Array.isArray(quests.week) ? quests.week : [];
+  return <main className="mx-auto min-h-[70vh] w-full max-w-4xl space-y-8 px-4 py-10 sm:px-6 lg:px-8" data-quests-page>
+    <header><p className="text-xs font-bold uppercase tracking-[0.2em] text-accent">Play and progress</p><h1 className="mt-2 text-4xl font-black text-fg">Quests</h1><p className="mt-2 text-fg-muted">Daily and weekly goals update as your game sessions are recorded.</p><div className="mt-4 flex flex-wrap gap-3 text-sm"><span className="rounded-full border border-line bg-surface px-4 py-2 text-fg">Level {meta.level}</span><span className="rounded-full border border-line bg-surface px-4 py-2 text-fg">{meta.xp.toLocaleString()} XP</span><span className="rounded-full border border-line bg-surface px-4 py-2 text-fg">{meta.sparks.toLocaleString()} Sparks</span></div></header>
+    <div className="space-y-8"><QuestList title="Today" quests={daily} /><QuestList title="This week" quests={weekly} /></div>
+  </main>;
+}
+
+export function CollectionsPage({ games, slug, onPlay }: { games: GameInfo[]; slug?: string; onPlay: (game: GameInfo) => void }) {
+  const collections = [...new Set(games.flatMap((game) => game.collections || []))].sort((a, b) => a.localeCompare(b));
+  const selected = slug ? collections.find((collection) => collection.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-') === slug) : undefined;
+  const members = selected ? games.filter((game) => game.collections?.includes(selected)) : [];
+  return <main className="mx-auto min-h-[70vh] w-full max-w-6xl space-y-8 px-4 py-10 sm:px-6 lg:px-8" data-collections-page>
+    <header><p className="text-xs font-bold uppercase tracking-[0.2em] text-accent">Curated arcade shelves</p><h1 className="mt-2 text-4xl font-black text-fg">{selected || 'Collections'}</h1><p className="mt-2 text-fg-muted">Browse handpicked games grouped by the kind of session you want.</p></header>
+    {selected ? <><button type="button" onClick={() => { window.location.hash = '#/collections'; }} className="min-h-11 text-sm font-semibold text-accent hover:underline">← All collections</button><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{members.map((game) => <Card key={game.id} className="flex items-center gap-4 p-4"><span className="text-3xl" aria-hidden="true">{game.icon}</span><div className="min-w-0 flex-1"><h2 className="truncate font-bold text-fg">{game.title}</h2><p className="text-xs text-fg-muted">{game.genre} · {game.sessionMinutes} min</p></div><Button onClick={() => onPlay(game)}>Play</Button></Card>)}</div></> : <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{collections.map((collection) => {
+      const collectionSlug = collection.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-');
+      const count = games.filter((game) => game.collections?.includes(collection)).length;
+      return <Card key={collection} interactive className="p-5"><button type="button" onClick={() => { window.location.hash = `#/collections/${collectionSlug}`; }} className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><p className="text-xs font-bold uppercase tracking-[0.16em] text-accent">{count} games</p><h2 className="mt-2 text-xl font-bold text-fg">{collection}</h2><p className="mt-2 text-sm text-fg-muted">{collection === 'Brain games' ? 'Puzzles and classics for a thoughtful session.' : collection === 'Board night' ? 'Tabletop favorites to play solo or together.' : 'Arcade-inspired games with quick, familiar action.'}</p></button></Card>;
+    })}</div>}
+  </main>;
 }
 
 export function GamePage({ game, games, stats, onPlay, onBrowse }: { game?: GameInfo; games: GameInfo[]; stats: PlayerStats; onPlay: (game: GameInfo) => void; onBrowse: () => void }) {

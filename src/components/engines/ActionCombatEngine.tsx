@@ -227,6 +227,7 @@ export const ActionCombatEngine: React.FC<ActionCombatEngineProps> = ({
     const keys = new Set<string>();
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isPaused) return;
       keys.add(e.code);
       if (stateRef.current !== 'PLAYING') {
         if (e.code === 'Space') {
@@ -257,7 +258,7 @@ export const ActionCombatEngine: React.FC<ActionCombatEngineProps> = ({
     };
 
     const interval = setInterval(() => {
-      if (stateRef.current !== 'PLAYING') return;
+      if (isPaused || stateRef.current !== 'PLAYING') return;
       const p = playerRef.current;
       if (p.isDashing > 0) return;
 
@@ -285,7 +286,7 @@ export const ActionCombatEngine: React.FC<ActionCombatEngineProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [attack, startGame, useSpecial, variant]);
+  }, [attack, isPaused, startGame, useSpecial, variant]);
 
   // Main Loop
   useEffect(() => {
@@ -520,7 +521,7 @@ export const ActionCombatEngine: React.FC<ActionCombatEngineProps> = ({
           </div>
           <div className="w-full h-2.5 bg-slate-800 rounded-sm overflow-hidden">
             <div
-              className="h-full bg-cyan-400 transition-all duration-100"
+            className="h-full bg-cyan-400 transition-all duration-[var(--apex-motion-fast)]"
               style={{ width: `${playerHp}%` }}
             />
           </div>
@@ -534,7 +535,7 @@ export const ActionCombatEngine: React.FC<ActionCombatEngineProps> = ({
           </div>
           <div className="w-full h-2.5 bg-slate-800 rounded-sm overflow-hidden">
             <div
-              className="h-full bg-red-600 transition-all duration-100"
+            className="h-full bg-red-600 transition-all duration-[var(--apex-motion-fast)]"
               style={{ width: `${(enemyHp / 300) * 100}%` }}
             />
           </div>

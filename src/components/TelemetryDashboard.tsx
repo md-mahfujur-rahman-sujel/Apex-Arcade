@@ -1,27 +1,24 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { GameCategory, PlayerStats } from '../types/game';
+import { PlayerStats } from '../types/game';
 import { GAMES_DATA } from '../data/gamesData';
 import {
   Activity,
   Gauge,
   Clock,
   Trophy,
-  RotateCcw,
   Zap,
   Cpu,
   ShieldCheck,
-  CheckCircle2,
   Sliders,
 } from 'lucide-react';
 import { Card } from './ui/Card';
 import { ScreenBezel } from './ui/ScreenBezel';
 import { Chip } from './ui/Chip';
-import { Button } from './ui/Button';
 
 interface TelemetryDashboardProps {
   stats: PlayerStats;
-  onStatsReset: () => void;
-  onSelectGame: (gameId: string) => void;
+  preferredTier: HardwareTier;
+  onPreferredTierChange: (tier: HardwareTier) => void;
 }
 
 export type HardwareTier = 'ultra' | 'standard' | 'lite';
@@ -39,16 +36,14 @@ interface HardwareProfile {
 
 export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
   stats,
-  onStatsReset,
-  onSelectGame,
+  preferredTier,
+  onPreferredTierChange,
 }) => {
   // Live Frame Rate and Frame-Time state (calm updates once per second)
   const [fps, setFps] = useState<number | null>(null);
   const [avgFrameTime, setAvgFrameTime] = useState<number | null>(null);
   const [jitterMs, setJitterMs] = useState<number | null>(null);
-  const [manualTier, setManualTier] = useState<'auto' | HardwareTier>('auto');
-  const [tableFilter, setTableFilter] = useState<'all' | 'ranked' | GameCategory>('all');
-  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [sampledGameId, setSampledGameId] = useState<string | null>(null);
   // Live tier reported by window.Perf (perf-kit.js) running inside game iframes
   const [livePerfTier, setLivePerfTier] = useState<HardwareTier | null>(null);
   const sectionRef = useRef<HTMLElement | null>(null);
@@ -61,8 +56,9 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
 
   useEffect(() => {
     const onGameFrame = (event: Event) => {
-      const detail = (event as CustomEvent<{ avgMs: number }>).detail;
+      const detail = (event as CustomEvent<{ avgMs: number; gameId?: string }>).detail;
       if (!detail || !Number.isFinite(detail.avgMs) || detail.avgMs <= 0 || detail.avgMs > 200) return;
+      setSampledGameId(detail.gameId || null);
       const samples = gameFrameSamplesRef.current;
       samples[gameFrameHeadRef.current] = detail.avgMs;
       gameFrameHeadRef.current = (gameFrameHeadRef.current + 1) % samples.length;
@@ -86,6 +82,7 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
         setFps(null);
         setAvgFrameTime(null);
         setJitterMs(null);
+        setSampledGameId(null);
       }
     }, 1000);
     return () => {
@@ -94,37 +91,33 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
     };
   }, []);
 
-  // Hardware Profiler
+  // Device recommendation. Unknown RAM is treated conservatively.
   const detectedProfile = useMemo<HardwareProfile>(() => {
     const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 2 : 2;
-    const memoryGb = typeof navigator !== 'undefined' ? (navigator as unknown as { deviceMemory?: number }).deviceMemory || 0 : 0;
+    const reportedMemory = typeof navigator !== 'undefined' ? (navigator as unknown as { deviceMemory?: number }).deviceMemory : undefined;
+    const memoryGb = Number.isFinite(reportedMemory) && reportedMemory! > 0 ? reportedMemory! : null;
     const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
     const isMobile = typeof window !== 'undefined' && (coarse || navigator.maxTouchPoints > 1 && window.innerWidth < 900);
 
-    // Priority: livePerfTier from perf-kit.js > manualTier > auto-detect
+    // Use a conservative recommendation when browsers hide memory information.
     let computedTier: HardwareTier = 'standard';
-    if (livePerfTier && manualTier === 'auto') {
-      computedTier = livePerfTier;
-    } else if (manualTier !== 'auto') {
-      computedTier = manualTier;
+    if (isMobile || cores <= 2 || (memoryGb !== null && memoryGb <= 2)) {
+      computedTier = 'lite';
+    } else if (cores >= 8 && memoryGb !== null && memoryGb >= 8) {
+      computedTier = 'ultra';
+    } else if (cores >= 4) {
+      computedTier = 'standard';
     } else {
-      if (isMobile || cores <= 2 || (memoryGb > 0 && memoryGb <= 2)) {
-        computedTier = 'lite';
-      } else if (cores >= 8 && (memoryGb === 0 || memoryGb >= 8)) {
-        computedTier = 'ultra';
-      } else if (cores >= 4 && (memoryGb === 0 || memoryGb >= 4)) {
-        computedTier = 'standard';
-      } else {
-        computedTier = 'lite';
-      }
+      computedTier = 'lite';
     }
 
+    computedTier = livePerfTier || computedTier;
     if (computedTier === 'ultra') {
       return {
         tier: 'ultra',
         label: 'Ultra Performance Tier',
         cores,
-        memoryGb,
+        memoryGb: memoryGb ?? 0,
         targetFps: 60,
         particleBudget: '1,200 particles — 100% Full Fidelity',
         dprScale: Math.min(window.devicePixelRatio || 1, 2),
@@ -135,7 +128,7 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
         tier: 'lite',
         label: 'Lite Eco-Profile',
         cores,
-        memoryGb,
+        memoryGb: memoryGb ?? 0,
         targetFps: 30,
         particleBudget: '200 particles — Power Optimized',
         dprScale: 1.0,
@@ -147,15 +140,15 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
       tier: 'standard',
       label: 'Standard Balanced Profile',
       cores,
-      memoryGb,
+      memoryGb: memoryGb ?? 0,
       targetFps: 60,
       particleBudget: '600 particles — Balanced',
       dprScale: Math.min(window.devicePixelRatio || 1, 1.5),
       modeDescription: 'Rock-solid 60Hz lock with adaptive GPU hardware acceleration',
     };
-  }, [manualTier, livePerfTier]);
+  }, [livePerfTier]);
 
-  // Listen for perf-kit tier changes from game windows
+  // Listen for the active game's resolved tier and clear it when the game closes.
   useEffect(() => {
     const handlePerfEvent = (e: Event) => {
       const detail = (e as CustomEvent).detail;
@@ -171,21 +164,13 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
       }
     }
     window.addEventListener('apex:perf', handlePerfEvent);
-    return () => window.removeEventListener('apex:perf', handlePerfEvent);
+    const clearPerfEvent = () => setLivePerfTier(null);
+    window.addEventListener('apex:perf-clear', clearPerfEvent);
+    return () => {
+      window.removeEventListener('apex:perf', handlePerfEvent);
+      window.removeEventListener('apex:perf-clear', clearPerfEvent);
+    };
   }, []);
-
-  // Propagate manual tier selection to window.Perf if available
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.dispatchEvent(new CustomEvent('apex:perf-tier-request', { detail: { tier: manualTier === 'auto' ? null : manualTier } }));
-    const wPerf = (window as unknown as { Perf?: { setTier?: (t: string | null) => void } }).Perf;
-    if (!wPerf || typeof wPerf.setTier !== 'function') return;
-    if (manualTier === 'auto') {
-      wPerf.setTier(null);
-    } else {
-      wPerf.setTier(manualTier);
-    }
-  }, [manualTier]);
 
   // Frame timing loop with EMA smoothing and direct Canvas waveform
   useEffect(() => {
@@ -331,21 +316,31 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
   // Progression metrics safely computed
   const totalSessions = Math.max(0, stats?.totalPlayCount || 0);
   const scores = stats?.highScores || {};
-  const totalAccumulatedScore = Object.values(scores).reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
+  const totalAccumulatedScore = Object.values(scores).reduce((sum, score) => sum + (Number.isFinite(score) ? Math.max(0, score) : 0), 0);
+  const sampledGameTitle = sampledGameId ? GAMES_DATA.find((game) => game.id === sampledGameId)?.title : undefined;
 
   // Player Rank Tier
   const playerRank = useMemo(() => {
-    if (totalAccumulatedScore > 5000 || totalSessions >= 30) {
-      return { title: 'Apex Grandmaster', progress: 100, color: 'text-warning', nextTier: 'Max Rank' };
-    }
-    if (totalAccumulatedScore > 1500 || totalSessions >= 12) {
-      return { title: 'Retro Veteran', progress: 75, color: 'text-accent', nextTier: 'Grandmaster at 5,000 pts' };
-    }
-    if (totalAccumulatedScore > 300 || totalSessions >= 4) {
-      return { title: 'Challenger', progress: 45, color: 'text-success', nextTier: 'Veteran at 1,500 pts' };
-    }
-    return { title: 'Novice Cadet', progress: Math.min(30, totalSessions * 10), color: 'text-fg', nextTier: 'Challenger at 300 pts' };
-  }, [totalAccumulatedScore, totalSessions]);
+    const ranks = [
+      { title: 'Novice Cadet', floor: 0, ceiling: 300, color: 'text-fg' },
+      { title: 'Challenger', floor: 300, ceiling: 1500, color: 'text-success' },
+      { title: 'Retro Veteran', floor: 1500, ceiling: 5000, color: 'text-accent' },
+      { title: 'Apex Grandmaster', floor: 5000, ceiling: Infinity, color: 'text-warning' },
+    ];
+    const foundRankIndex = ranks.findIndex((rank) => totalAccumulatedScore < rank.ceiling);
+    const rankIndex = foundRankIndex < 0 ? ranks.length - 1 : foundRankIndex;
+    const rank = ranks[rankIndex];
+    const progress = Number.isFinite(rank.ceiling)
+      ? Math.max(0, Math.min(100, ((totalAccumulatedScore - rank.floor) / (rank.ceiling - rank.floor)) * 100))
+      : 100;
+    const nextRank = ranks[rankIndex + 1];
+    return {
+      title: rank.title,
+      progress,
+      color: rank.color,
+      nextTier: nextRank ? `${nextRank.title} at ${nextRank.floor.toLocaleString()} pts` : 'Max rank',
+    };
+  }, [totalAccumulatedScore]);
 
   const playedGameIds = new Set([
     ...Object.keys(scores).filter((id) => (scores[id] || 0) > 0),
@@ -360,33 +355,24 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
     { label: 'Levels cleared', value: completedLevels, detail: 'recorded progress' },
   ];
 
-  const catalogRecords = GAMES_DATA.map((game) => ({ id: game.id, title: game.title, cat: game.category }));
-
-  const filteredRecords = catalogRecords.filter((rec) => {
-    const s = scores[rec.id] || 0;
-    if (tableFilter === 'ranked') return s > 0;
-    if (tableFilter !== 'all') return rec.cat === tableFilter;
-    return true;
-  });
-
   return (
     <section ref={sectionRef} id="telemetry" className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 scroll-mt-20">
-      {/* Header with Hardware Auto-Tiering & Manual Override */}
+      {/* Device recommendation and saved game-quality preference */}
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8">
         <div>
           <div className="flex items-center gap-2 text-xs font-mono text-accent uppercase tracking-wider mb-2">
             <Activity className="w-4 h-4" />
-            <span>Interactive Telemetry &amp; Progression Engine</span>
+            <span>Live Performance &amp; Local Progress</span>
           </div>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-fg tracking-tight">
-            Performance Engine &amp; Progression Metrics
+            Performance &amp; Player Progress
           </h2>
           <p className="text-sm text-fg-muted mt-1 max-w-2xl">
-            Real-time sub-millisecond frame intervals, hardware auto-tiering, and client-side high-score progression tracked dynamically with zero server overhead.
+            Live game frame timing, device-aware graphics settings, and your locally saved play history.
           </p>
         </div>
 
-        {/* Hardware Auto-Tiering Badge & Mode Selector */}
+        {/* Device profile and preferred quality */}
         <Card className="p-3.5 shrink-0 self-start lg:self-auto flex flex-col gap-2">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -406,23 +392,23 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
             </span>
           </div>
 
-          <div className="text-[11px] text-fg-muted font-mono flex items-center gap-2">
-            <span>{detectedProfile.cores} Cores</span>
+          <div className="text-[11px] text-fg-muted font-mono flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span>{detectedProfile.cores} logical cores</span>
             <span>·</span>
-            <span>{detectedProfile.memoryGb}GB RAM</span>
+            <span>{detectedProfile.memoryGb ? `${detectedProfile.memoryGb}GB RAM` : 'RAM info unavailable'}</span>
             <span>·</span>
             <span>{detectedProfile.particleBudget}</span>
           </div>
 
-          {/* User selectable hardware tier preset */}
+          {/* This preference is saved and applied when a game is opened. */}
           <div className="flex items-center gap-1 pt-1.5 border-t border-line">
             <Sliders className="w-3 h-3 text-fg-muted mr-1" />
-            <span className="text-[10px] text-fg-muted mr-1">Profile:</span>
-            {(['auto', 'lite', 'standard', 'ultra'] as const).map((t) => (
+            <span className="text-[10px] text-fg-muted mr-1">Game quality:</span>
+            {(['lite', 'standard', 'ultra'] as const).map((t) => (
               <Chip
                 key={t}
-                selected={manualTier === t}
-                onClick={() => setManualTier(t)}
+                selected={preferredTier === t}
+                onClick={() => onPreferredTierChange(t)}
                 className="rounded-lg px-2 py-1 text-[10px] font-mono uppercase"
               >
                 {t.toUpperCase()}
@@ -434,10 +420,10 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
 
       {/* Top 4 Real-time Metric Cards (Responsive Grid 1-2-4 cols) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-8">
-        {/* Card 1: Display FPS */}
+        {/* Card 1: Game-loop FPS from the active iframe */}
         <Card className="p-4 sm:p-5 flex flex-col justify-between hover:border-line-strong transition-colors">
           <div className="flex items-center justify-between text-fg-muted text-xs mb-3">
-            <span>Client Display FPS</span>
+            <span>Game Loop FPS</span>
             <Gauge className="w-4 h-4 text-accent" />
           </div>
           <div className="flex items-baseline gap-2">
@@ -446,7 +432,7 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
           </div>
           <div className="mt-2 text-[11px] text-accent font-mono flex items-center gap-1">
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>{fps === null ? 'Open a game with performance reporting' : 'Reported by the active game loop'}</span>
+            <span>{fps === null ? 'Open a game to collect samples' : `Live sample · ${sampledGameTitle || 'active game'}`}</span>
           </div>
         </Card>
 
@@ -477,15 +463,15 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
             <span className="text-xs text-fg-muted">runs</span>
           </div>
           <div className="mt-2 text-[11px] text-fg-muted flex items-center justify-between">
-            <span>{GAMES_DATA.length} playable titles</span>
+            <span>{GAMES_DATA.length} games in catalog</span>
             <span className="text-warning font-mono">{totalAccumulatedScore.toLocaleString()} pts</span>
           </div>
         </Card>
 
-        {/* Card 4: Arcade Dwell Time */}
+        {/* Card 4: Total recorded play time */}
         <Card className="p-4 sm:p-5 flex flex-col justify-between hover:border-line-strong transition-colors">
           <div className="flex items-center justify-between text-fg-muted text-xs mb-3">
-            <span>Arcade Dwell Time</span>
+            <span>Total Play Time</span>
             <Clock className="w-4 h-4 text-accent" />
           </div>
           <div className="flex items-baseline gap-2">
@@ -494,7 +480,7 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
             </span>
           </div>
           <div className="mt-2 text-[11px] text-fg-muted font-mono">
-            Persistent local session
+            Across recorded sessions
           </div>
         </Card>
       </div>
@@ -515,10 +501,10 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
             </div>
             <div className="flex items-center gap-2 text-xs font-mono">
               <span className="text-accent bg-accent-soft px-2.5 py-1 rounded-md border border-accent/30">
-                60Hz Vsync: 16.6ms
+                60Hz frame budget: 16.6ms
               </span>
               <span className="text-success bg-success/10 px-2.5 py-1 rounded-md border border-success/30 hidden sm:inline">
-                120Hz Pro: 8.3ms
+                120Hz frame budget: 8.3ms
               </span>
             </div>
           </div>
@@ -532,8 +518,8 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
 
           <div className="flex flex-wrap items-center justify-between text-[11px] text-fg-muted font-mono mt-3 gap-2">
             <span>T-60 Rolling Samples</span>
-          <span>{jitterMs === null ? 'Jitter: —' : `Jitter: ±${jitterMs}ms`}</span>
-          <span className="text-accent font-semibold">{avgFrameTime === null ? 'No game sample' : `${avgFrameTime} ms / frame`}</span>
+            <span>{jitterMs === null ? 'Jitter: —' : `Jitter: ±${jitterMs}ms`}</span>
+            <span className="text-accent font-semibold">{avgFrameTime === null ? 'No game sample' : `${avgFrameTime} ms / frame`}</span>
           </div>
         </Card>
 
@@ -556,12 +542,12 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
             {/* Rank Progress Bar */}
             <div className="w-full bg-surface-2 rounded-full h-2 mb-2 overflow-hidden border border-line">
               <div
-                className="bg-accent h-full rounded-full transition-all duration-500"
+                className="bg-accent h-full rounded-full transition-all duration-[var(--apex-motion-slow)]"
                 style={{ width: `${playerRank.progress}%` }}
               />
             </div>
             <div className="flex justify-between text-[10px] text-fg-muted font-mono mb-2">
-              <span>{playerRank.title}</span>
+              <span>{totalAccumulatedScore.toLocaleString()} best-score pts</span>
               <span>{playerRank.nextTier}</span>
             </div>
           </div>
@@ -577,100 +563,6 @@ export const TelemetryDashboard: React.FC<TelemetryDashboardProps> = ({
         </Card>
       </div>
 
-      {/* High Scores & History Table with Category Filters (Responsive) */}
-      <Card className="p-5 sm:p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-          <div>
-            <h3 className="text-sm font-bold text-fg tracking-tight flex items-center gap-2">
-              <Trophy className="w-4 h-4 text-warning" />
-              <span>Local High Scores &amp; Session Records</span>
-            </h3>
-            <p className="text-xs text-fg-muted">
-              Preserved in your browser via localStorage with zero cloud telemetry
-            </p>
-          </div>
-
-          {/* Table filter tabs + Reset button */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex flex-wrap items-center gap-1 p-1 bg-surface-2 rounded-xl border border-line text-xs">
-              {(['all', 'ranked', 'arcade', 'board', 'sports', 'puzzle', 'cards'] as const).map((filterKey) => (
-                <Chip
-                  key={filterKey}
-                  selected={tableFilter === filterKey}
-                  onClick={() => setTableFilter(filterKey)}
-                  className="rounded-lg px-3 py-1.5 text-xs capitalize"
-                >
-                  {filterKey}
-                </Chip>
-              ))}
-            </div>
-
-            {confirmingReset ? <div role="group" aria-label="Confirm save reset" className="flex items-center gap-2 rounded-xl border border-danger/30 bg-danger/10 px-2 py-1">
-              <span className="text-[10px] text-danger">Erase local stats?</span>
-              <button onClick={() => { onStatsReset(); setConfirmingReset(false); }} className="min-h-11 rounded-lg bg-danger px-2.5 py-1 text-[11px] font-bold text-accent-fg hover:brightness-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-offset-2 focus-visible:ring-offset-bg">Confirm</button>
-              <Button variant="ghost" onClick={() => setConfirmingReset(false)} className="min-h-11 rounded-lg px-2 py-1 text-[11px]">Cancel</Button>
-            </div> : <button
-              onClick={() => setConfirmingReset(true)}
-              className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-xl border border-line bg-surface-2 px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset</span>
-            </button>}
-          </div>
-        </div>
-
-        <div className="overflow-x-auto -mx-5 px-5 sm:mx-0 sm:px-0">
-          <table className="w-full text-left text-xs min-w-[500px]">
-            <thead>
-              <tr className="border-b border-line text-fg-muted font-mono">
-                <th className="py-2.5 px-3">Title &amp; Engine</th>
-                <th className="py-2.5 px-3">Category</th>
-                <th className="py-2.5 px-3">Personal Best</th>
-                <th className="py-2.5 px-3">Status</th>
-                <th className="py-2.5 px-3 text-right">Quick Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {filteredRecords.map((item) => {
-                const score = scores[item.id] || 0;
-                return (
-                  <tr key={item.id} className="transition-colors hover:bg-surface-2">
-                    <td className="py-3 px-3 font-medium text-fg flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-accent" />
-                      <span>{item.title}</span>
-                    </td>
-                    <td className="py-3 px-3 text-fg-muted uppercase font-mono text-[10px]">
-                      {item.cat}
-                    </td>
-                    <td className="py-3 px-3 font-mono text-accent font-bold tabular-nums">
-                      {score > 0 ? score.toLocaleString() : '—'}
-                    </td>
-                    <td className="py-3 px-3 text-fg-muted">
-                      {score > 0 ? (
-                        <span className="text-success font-semibold flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Ranked</span>
-                        </span>
-                      ) : (
-                        <span className="text-fg-muted">Unplayed</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-3 text-right">
-                      <button
-                        data-ui-open
-                        onClick={() => onSelectGame(item.id)}
-                        className="px-3 py-1.5 text-[11px] font-semibold text-accent hover:text-fg bg-accent-soft hover:bg-surface border border-accent/30 rounded-lg transition-colors cursor-pointer min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-                      >
-                        Play
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
     </section>
   );
 };

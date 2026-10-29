@@ -74,17 +74,20 @@ try {
   }
   await openGame();
   const frame = page.frameLocator('#playable-theater-modal iframe');
-  await frame.getByRole('button', { name: 'Customize' }).click();
-  await frame.getByRole('button', { name: 'Buy Ember for 100 Sparks' }).click();
+  const menu = frame.locator('.apex-menu-root');
+  await menu.locator('[data-menu-action="customize"]').click();
+  await menu.getByRole('button', { name: 'Ember · 100 Sparks' }).click();
   await page.waitForFunction(() => JSON.parse(localStorage.getItem('apex:meta') || '{}').sparks === 150);
-  await frame.getByRole('button', { name: 'Equip Ember' }).click();
+  await menu.getByRole('button', { name: 'Ember · Equip' }).click();
   await page.waitForFunction(() => JSON.parse(localStorage.getItem('apex:save:glowmoth') || '{}').cosmetics?.equipped?.skin === 'glowmoth:ember');
+  await menu.getByRole('button', { name: 'Ember · Equipped' }).waitFor();
+  await menu.getByRole('button', { name: 'Back', exact: true }).click();
   await page.reload();
   await openGame();
   const restoredItems = await page.locator('#playable-theater-modal iframe').evaluate((iframe) => iframe.contentWindow.Meta.getCosmetics('glowmoth'));
   if (!restoredItems.find((item) => item.id === 'glowmoth:ember')?.equipped) throw new Error('Ember was not equipped after reloading the game page');
   if (errors.length) throw new Error(`Browser errors: ${errors.join(' | ')}`);
-  console.log('PASS game 01 Customize flow buys Ember, equips it, and restores the equipped skin after a page reload with zero browser errors');
+  console.log('PASS Glowmoth launch-menu Customize buys Ember, equips it, and restores the equipped skin after a page reload with zero browser errors');
 } finally {
   await browser.close();
   await new Promise((resolve) => server.httpServer.close(resolve));

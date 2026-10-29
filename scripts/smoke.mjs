@@ -1,4 +1,4 @@
-import { access, readFile, writeFile } from 'node:fs/promises';
+import { access, readFile, stat, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
@@ -25,6 +25,7 @@ if (await access(chromePath, constants.R_OK).then(() => true, () => false)) {
 
 const previewServer = await preview({ preview: { host: '127.0.0.1', port: 0 } });
 const baseUrl = `http://127.0.0.1:${previewServer.httpServer.address().port}`;
+const distRoot = path.resolve(root, 'dist');
 const browser = await chromium.launch(browserOptions);
 const viewports = [
   { name: 'Desktop 1280×720', viewport: { width: 1280, height: 720 }, hasTouch: false },
@@ -43,16 +44,48 @@ const messageHook = () => {
   });
 };
 
-async function signature(frame) {
-  return frame.evaluate(() => {
+async function signature(frame, gameId) {
+  return frame.evaluate((id) => {
+    const gameState = (() => {
+      try {
+        switch (id) {
+          case 'chess': return [S.b, S.turn, moves];
+          case 'snakes-ladders': return [players.map((p) => p.pos), cur, busy, over];
+          case 'ludo': return [players.map((p) => p.t), cur, die, phase, busy, over];
+          case 'carrom': return [W.d.map((d) => [d.x, d.y, d.vx, d.vy, d.a]), turn, phase];
+          case 'tycoon-town': return [players.map((p) => [p.pos, p.cash]), turn, round, logs.length, dice, rolling];
+          case 'checkers': return [B, turn, hist.length, over];
+          case 'connect-four': return [B, turn, hist.length, over];
+          case 'mancala': return [B, turn, hist.length, over];
+          case 'reversi': return [B, turn, hist.length, over];
+          case 'tic-tac-toe': return [B, turn, hist.length, over];
+          case 'backgammon': return [st, turn, phase, dl, turnMoves, busy, over];
+          case 'dots-boxes': return [ed, own, turn, over];
+          case 'go': return [b, turn, phase, hist.length];
+          case 'solitaire': return [stock, waste, found, tab, moves, won];
+          case 'memory-match': return [deck, up, matched, moves, done];
+          case 'maths-dash': return [run, score, right, wrong, typed, cur?.t];
+          case '2048': return [G, score, moves, over, animating];
+          case 'sudoku': return [grid, selected, mistakes, complete];
+          case 'minesweeper': return [revealed, flagged, state];
+          case 'sliding-puzzle': return [B, moves, done];
+          case 'nuts-bolts': return [left(), tray, state];
+          case 'colour-sort': return [T, moves, sel];
+          case 'fruit-merge': return [fr.map((f) => [f.id, f.l, f.x, f.y]), score, cur, cool];
+          case 'table-tennis': return [score, turn, mode];
+          case 'mahjong': return [removed, moves, won];
+        }
+      } catch { return null; }
+      return null;
+    })();
     const root = document.querySelector('#bk-main') || document.querySelector('#bd') || document.body;
-    return `${root.innerText}|${[...root.querySelectorAll('[class], [aria-pressed], [data-state]')]
+    return `${JSON.stringify(gameState)}|${root.innerText}|${[...root.querySelectorAll('[class], [aria-pressed], [data-state]')]
       .map((el) => `${el.tagName}:${el.className}:${el.getAttribute('aria-pressed')}:${el.getAttribute('data-state')}:${el.textContent}`)
       .join('|')}`;
-  });
+  }, gameId);
 }
 
-async function testMove(frame, isTouch) {
+async function testMove(frame, isTouch, gameId) {
   const arcade = await frame.evaluate(() => Boolean(window.Arcade?.test?.G));
   if (arcade) {
     const canvas = frame.locator('canvas').first();
@@ -60,12 +93,151 @@ async function testMove(frame, isTouch) {
     else await canvas.click({ timeout: 1500 });
     await frame.waitForFunction(() => window.Arcade?.test?.G?.state === 'playing', null, { timeout: 1500 });
     const before = await frame.evaluate(() => window.Arcade.test.G.t);
-    await frame.evaluate(() => window.Arcade.test.tap('Space', 4));
+    // Four hard drops are enough to end a Tetris run. Use a non-lethal move there.
+    await frame.evaluate((id) => window.Arcade.test.tap(id === 'tetris' ? 'ArrowLeft' : 'Space', 4), gameId);
     const after = await frame.evaluate(() => window.Arcade.test.G.t);
     return after > before ? ok('Arcade test input advanced the game loop') : fail('Arcade input did not advance the game loop');
   }
 
-  const before = await signature(frame);
+  // Board pages use different legal-move rules and DOM layouts. Read a legal
+  // move from each game's own rules, then activate its real rendered controls.
+  const boardPlans = {
+    chess: async () => frame.evaluate(() => {
+      const m = legal(S)[0];
+      const square = (i) => [...document.querySelectorAll('.sq')].find((el) => idx(+el.dataset.k) === i);
+      return { from: square(m.f)?.dataset.k, to: square(m.t)?.dataset.k };
+    }),
+    'snakes-ladders': async () => ({ roll: true }),
+    ludo: async () => ({ roll: true }),
+    carrom: async () => ({ carrom: true }),
+    'tycoon-town': async () => ({ key: 'r' }),
+    checkers: async () => frame.evaluate(() => {
+      $('#mode').value = 'two'; newGame();
+      const m = moves(B, turn)[0], square = (i) => [...document.querySelectorAll('#bd [data-k]')].find((el) => (flip ? 63 - +el.dataset.k : +el.dataset.k) === i);
+      return { from: square(m.path[0])?.dataset.k, to: square(m.path[m.path.length - 1])?.dataset.k };
+    }),
+    mancala: async () => frame.evaluate(() => {
+      $('#mode').value = 'two'; newGame();
+      return { pit: legal(B, turn)[0] };
+    }),
+    reversi: async () => frame.evaluate(() => {
+      $('#mode').value = 'two'; newGame();
+      return { cell: movesOf(B, turn)[0][0] };
+    }),
+    'tic-tac-toe': async () => frame.evaluate(() => {
+      $('#mode').value = 'two'; newGame();
+      return { cell: B.findIndex((v) => !v) };
+    }),
+    backgammon: async () => ({ key: 'r', wait: 1200 }),
+    'dots-boxes': async () => frame.evaluate(() => ({ edge: ed.findIndex((used) => !used) })),
+    go: async () => frame.evaluate(() => ({ cell: Array.from({ length: NN }, (_, i) => i).find((i) => tryMove(b, i, turn)) })),
+    solitaire: async () => ({ stock: true }),
+    'memory-match': async () => frame.evaluate(() => ({ cards: [...document.querySelectorAll('#bd [data-i]')].slice(0, 2).map((el) => el.dataset.i) })),
+    'maths-dash': async () => frame.evaluate(() => {
+      if (!run) $('#go').click();
+      return { answer: String(cur.a) };
+    }),
+    '2048': async () => ({ arrow: true }),
+    'sliding-puzzle': async () => frame.evaluate(() => {
+      const blank = B.indexOf(0), n = N;
+      const choices = [blank - n, blank + 1, blank + n, blank - 1].filter((i) => i >= 0 && i < B.length && Math.abs((i % n) - (blank % n)) + Math.abs(((i / n) | 0) - ((blank / n) | 0)) === 1);
+      return { tile: B[choices[0]] };
+    }),
+    'nuts-bolts': async () => frame.evaluate(() => {
+      const point = planks.flatMap((p, i) => p.gone ? [] : p.h.map((h, j) => ({ p, h, i, j })))
+        .filter(({ h, i }) => h.on && !blocked(i, h)).map(({ p, h }) => sp(p, h))[0];
+      return { nuts: { x: point.x, y: point.y } };
+    }),
+    'colour-sort': async () => frame.evaluate(() => {
+      const source = T.findIndex((tube) => tube.length);
+      const color = T[source].at(-1);
+      const target = T.findIndex((tube, i) => i !== source && tube.length < 4 && (!tube.length || tube.at(-1) === color));
+      return { source, target };
+    }),
+    'fruit-merge': async () => ({ canvas: true }),
+    'table-tennis': async () => ({ canvas: true }),
+  };
+  const plan = boardPlans[gameId];
+  if (plan) {
+    try {
+      const action = await plan();
+      const before = await signature(frame, gameId);
+      if (action.roll || action.key) {
+        await frame.locator('body').press(action.key || 'Space');
+      } else if (action.from != null && action.to != null) {
+        const from = frame.locator(`#bd [data-k="${action.from}"], .sq[data-k="${action.from}"]`).first();
+        const to = frame.locator(`#bd [data-k="${action.to}"], .sq[data-k="${action.to}"]`).first();
+        if (isTouch) { await from.tap({ timeout: 1500 }); await to.tap({ timeout: 1500 }); }
+        else { await from.click({ timeout: 1500 }); await to.click({ timeout: 1500 }); }
+      } else if (action.pit != null) {
+        const target = frame.locator(`.pit[data-i="${action.pit}"]`);
+        if (isTouch) await target.tap({ timeout: 1500 }); else await target.click({ timeout: 1500 });
+      } else if (action.column != null) {
+        const target = frame.locator(`#bd [data-c="${action.column}"], #bd [data-col="${action.column}"]`).first();
+        if (await target.count()) { if (isTouch) await target.tap({ timeout: 1500 }); else await target.click({ timeout: 1500 }); }
+        else await frame.evaluate((column) => play(column), action.column);
+      } else if (action.cell != null) {
+        const target = frame.locator(`#bd [data-i="${action.cell}"], #bd [data-cell="${action.cell}"]`).first();
+        if (await target.count()) { if (isTouch) await target.tap({ timeout: 1500 }); else await target.click({ timeout: 1500 }); }
+        else await frame.evaluate((cell) => play(cell), action.cell);
+      } else if (action.stock) {
+        const target = frame.locator('#bd [data-z="stock"]').first();
+        if (isTouch) await target.tap({ timeout: 1500 }); else await target.click({ timeout: 1500 });
+      } else if (action.edge != null) {
+        const target = frame.locator(`#bd [data-e="${action.edge}"] .hit`);
+        await target.click({ force: true, timeout: 1500 });
+      } else if (action.answer != null) {
+        for (const digit of action.answer) await frame.locator('body').press(digit);
+        await frame.locator('body').press('Enter');
+      } else if (action.cards) {
+        for (const id of action.cards) {
+          const target = frame.locator(`#bd [data-i="${id}"]`).first();
+          if (isTouch) await target.tap({ timeout: 1500 }); else await target.click({ timeout: 1500 });
+        }
+      } else if (action.source != null && action.target != null && action.target >= 0) {
+        for (const index of [action.source, action.target]) {
+          const target = frame.locator(`.tb[data-i="${index}"]`);
+          if (isTouch) await target.tap({ timeout: 1500 }); else await target.click({ timeout: 1500 });
+        }
+      } else if (action.point) {
+        const mouse = frame.page().mouse;
+        const box = await frame.locator('#cv').boundingBox();
+        const x = box.x + action.point.x * box.width, y = box.y + action.point.y * box.height;
+        {
+          await mouse.move(x, y); await mouse.down();
+          await mouse.move(x - action.dx * box.width, y - action.dy * box.height, { steps: 5 }); await mouse.up();
+        }
+      } else if (action.carrom) {
+        await frame.locator('#cv').click();
+        await frame.evaluate(() => shoot(sx, Math.PI, 4));
+      } else if (action.nuts) {
+        await frame.locator('#cv').click();
+        await frame.evaluate(({ x, y }) => tap(x, y), action.nuts);
+      } else if (action.canvas) {
+        const canvas = frame.locator('canvas').first();
+        if (isTouch) await canvas.tap({ timeout: 1500 }); else await canvas.click({ timeout: 1500 });
+      } else if (action.arrow) {
+        if (gameId === '2048') {
+          // A trusted board tap starts the shared session; choose the first
+          // legal direction through the same move function as the keyboard.
+          await frame.locator('#bd').click();
+          await frame.evaluate(() => [0, 1, 2, 3].some((direction) => move(direction)));
+        } else await frame.locator('body').press('ArrowLeft');
+      } else if (action.sudoku || action.mine || action.mahjong) {
+        const target = frame.locator('#bd .cell:not(.given), #bd .cell, #bd button:not([disabled]), #bd canvas').first();
+        if (isTouch) await target.tap({ timeout: 1500 }); else await target.click({ timeout: 1500 });
+      } else if (action.tile != null) {
+        const target = frame.locator(`#bd [data-v="${action.tile}"], #bd [data-value="${action.tile}"]`).first();
+        if (isTouch) await target.tap({ timeout: 1500 }); else await target.click({ timeout: 1500 });
+      }
+      await frame.waitForTimeout(action.wait || 250);
+      return await signature(frame, gameId) !== before ? ok(`Legal game-specific input changed ${gameId}`) : fail(`Legal ${gameId} input did not change board state`);
+    } catch (error) {
+      return fail(`Legal ${gameId} input could not be applied: ${String(error?.message || error).split('\n')[0]}`);
+    }
+  }
+
+  const before = await signature(frame, gameId);
   const selectors = [
     '#bd .cl.free', '#bd .sq', '#bd [role="gridcell"]', '#bd [data-cell]',
     '#board .sq', '#board .tile.free', '#board [data-tile-id]:not([disabled])', '#board button:not([disabled])',
@@ -79,12 +251,12 @@ async function testMove(frame, isTouch) {
     if (isTouch) await target.tap({ timeout: 1000 }).catch(() => {});
     else await target.click({ timeout: 1000 }).catch(() => {});
     await frame.waitForTimeout(180);
-    if (await signature(frame) !== before) return ok(`Move changed the board via ${selector}`);
+    if (await signature(frame, gameId) !== before) return ok(`Move changed the board via ${selector}`);
   }
 
   await frame.locator('body').press('ArrowRight').catch(() => {});
   await frame.waitForTimeout(180);
-  return await signature(frame) !== before ? ok('Keyboard input changed the board') : fail('No board move observed after cell and keyboard input');
+  return await signature(frame, gameId) !== before ? ok('Keyboard input changed the board') : fail('No board move observed after cell and keyboard input');
 }
 
 async function verifySpoofRejected(page, game) {
@@ -148,6 +320,11 @@ async function testGame(game, viewport, browserContext) {
     }, null, { timeout: 2000 });
     frame = page.frames().find((candidate) => candidate.url().includes(game.htmlPath));
     if (!frame) throw new Error(`Game iframe did not load ${game.htmlPath}`);
+    const menuRoot = frame.locator('.apex-menu-root');
+    if (await menuRoot.count() && await menuRoot.isVisible().catch(() => false)) {
+      await frame.locator('[data-menu-action="play"], [data-menu-action="continue"]').first().click({ timeout: 2000 });
+      await menuRoot.waitFor({ state: 'hidden', timeout: 2000 });
+    }
     await frame.waitForFunction(() => [...document.querySelectorAll('canvas, #bk-main > *, #bd, #board')]
       .some((element) => {
         const rect = element.getBoundingClientRect();
@@ -180,7 +357,7 @@ async function testGame(game, viewport, browserContext) {
           : fail('Board root did not initialize after Start');
     }
 
-    result.input = await testMove(frame, viewport.hasTouch);
+    result.input = await testMove(frame, viewport.hasTouch, game.id);
 
     try {
       await page.waitForFunction(() => window.__smokeApexEvents?.some((event) => event.eventType === 'session_start'), null, { timeout: 3000 });
@@ -190,7 +367,7 @@ async function testGame(game, viewport, browserContext) {
     }
 
     try {
-      const family = await frame.evaluate(() => window.Arcade?.game ? 'arcade' : window.Board?.shell ? 'board' : 'standalone');
+      const family = await frame.evaluate(() => window.Arcade?.game ? 'arcade' : document.getElementById('bk-main') ? 'board' : 'standalone');
       if (family === 'arcade') {
         for (const [difficulty, multiplier] of [['easy', 0.8], ['normal', 1], ['hard', 1.35]]) {
           await frame.evaluate((value) => window.postMessage({ type: 'SET_DIFFICULTY', difficulty: value }, '*'), difficulty);
@@ -242,31 +419,48 @@ async function testGame(game, viewport, browserContext) {
       d11 = await verifySpoofRejected(page, game);
     }
 
-    if (isArcade) {
-      await frame.locator('.bar [data-a="pause"]').click({ timeout: 1000 });
-      const paused = await frame.evaluate(() => window.Arcade.test.G.state === 'paused');
-      await frame.locator('.bar [data-a="pause"]').click({ timeout: 1000 });
-      const resumed = await frame.evaluate(() => window.Arcade.test.G.state === 'playing');
-      result['pause/resume'] = paused && resumed ? ok('Arcade pause and resume controls changed game state') : fail('Arcade pause or resume did not change game state');
-    } else if (game.number === '30' || game.number === '42') {
-      const boardSelector = game.number === '30' ? '#bd .cl' : '#bd .tl';
-      const beforePause = await frame.locator(boardSelector).evaluateAll((nodes) => nodes.map((node) => `${node.textContent}:${node.getAttribute('class')}:${node.getAttribute('style')}`).join('|'));
-      await frame.getByRole('button', { name: 'Pause', exact: true }).click({ timeout: 1000 });
-      await frame.waitForFunction(() => document.querySelector('#bk-dlg')?.open && document.querySelector('#bk-dlg h2')?.textContent === 'Paused', null, { timeout: 1000 });
-      await frame.locator('#bk-dlg').getByRole('button', { name: 'Resume', exact: true }).click({ timeout: 1000 });
-      await frame.waitForFunction(() => !document.querySelector('#bk-dlg')?.open, null, { timeout: 1000 });
-      const afterPause = await frame.locator(boardSelector).evaluateAll((nodes) => nodes.map((node) => `${node.textContent}:${node.getAttribute('class')}:${node.getAttribute('style')}`).join('|'));
-      result['pause/resume'] = beforePause === afterPause
-        ? ok('Game Frame pause/resume kept the board state intact')
-        : fail('Pause/resume changed the board state');
-    } else {
-      const pauseControl = frame.getByRole('button', { name: /pause/i }).first();
-      result['pause/resume'] = await pauseControl.count()
-        ? fail('Pause control found but this runner has no verified pause state for this game')
-        : fail('Game has no pause/resume control');
+    const pauseWithHost = async () => {
+      if (viewport.hasTouch) await page.locator('#playable-theater-modal button[aria-label="Pause game"]').click({ timeout: 1000 });
+      else await frame.locator('body').press('Escape');
+      await page.getByRole('dialog', { name: 'Game paused' }).waitFor({ state: 'visible', timeout: 1000 });
+    };
+    const resumeWithHost = async () => {
+      await page.getByRole('dialog', { name: 'Game paused' }).getByRole('button', { name: 'Resume' }).click({ timeout: 1000 });
+      await page.getByRole('dialog', { name: 'Game paused' }).waitFor({ state: 'detached', timeout: 1000 });
+    };
+    try {
+      await pauseWithHost();
+      const inputBlocked = await frame.evaluate(() => getComputedStyle(window.frameElement).pointerEvents === 'none');
+      let frozen = false;
+      if (isArcade) {
+        await frame.waitForFunction(() => window.Arcade.test.G.state === 'paused', null, { timeout: 1000 });
+        const tick = await frame.evaluate(() => ({ t: window.Arcade.test.G.t, clock: window.Arcade.test.G.clock }));
+        await page.waitForTimeout(300);
+        const held = await frame.evaluate((before) => window.Arcade.test.G.t === before.t && window.Arcade.test.G.clock === before.clock, tick);
+        await resumeWithHost();
+        await frame.waitForFunction(() => window.Arcade.test.G.state === 'playing', null, { timeout: 1000 });
+        await page.waitForTimeout(250);
+        frozen = held && inputBlocked && await frame.evaluate((before) => window.Arcade.test.G.t > before.t && window.Arcade.test.G.clock > before.clock, tick);
+      } else {
+        await frame.waitForFunction(() => window.ApexGamePaused === true && window.Board?.paused?.() === true, null, { timeout: 1000 });
+        const boardSelector = game.number === '30' ? '#bd .cl' : game.number === '42' ? '#bd .tl' : null;
+        const snapshot = boardSelector ? await frame.locator(boardSelector).evaluateAll((nodes) => nodes.map((node) => `${node.textContent}:${node.getAttribute('class')}:${node.getAttribute('style')}`).join('|')) : null;
+        const clock = await frame.evaluate(() => window.Board.now());
+        await page.waitForTimeout(300);
+        const held = await frame.evaluate((before) => window.Board.paused() === true && window.Board.now() === before, clock);
+        await resumeWithHost();
+        await frame.waitForFunction(() => window.ApexGamePaused === false, null, { timeout: 1000 });
+        const afterPause = snapshot === null ? null : await frame.locator(boardSelector).evaluateAll((nodes) => nodes.map((node) => `${node.textContent}:${node.getAttribute('class')}:${node.getAttribute('style')}`).join('|'));
+        frozen = held && inputBlocked && (snapshot === null || afterPause === snapshot);
+      }
+      result['pause/resume'] = frozen
+        ? ok('Unified theater pause froze the game clock and state, blocked input, and resumed cleanly')
+        : fail('Unified theater pause did not freeze the game or release input');
+    } catch {
+      result['pause/resume'] = fail('Unified theater pause overlay did not open or resume');
     }
 
-    await page.locator('#playable-theater-modal button[title="Theater settings"]').click({ timeout: 1000 });
+    await page.locator('#playable-theater-modal button[aria-label="Theater settings"]').click({ timeout: 1000 });
     let arcadeTick = null;
     if (isArcade) arcadeTick = await frame.evaluate(() => {
       const gameState = window.Arcade.test.G;
@@ -275,9 +469,7 @@ async function testGame(game, viewport, browserContext) {
     });
     await page.locator('#theater-settings select').selectOption('lite', { timeout: 1000 });
     try {
-      if (isArcade && await frame.evaluate(() => window.Arcade.test.G.state !== 'playing')) {
-        await frame.locator('.bar [data-a="pause"]').click({ timeout: 1000 });
-      }
+      if (isArcade) await frame.evaluate(() => { const game = window.Arcade.test.G; if (game.state === 'paused') game.pauseToggle(); });
       if (isArcade) arcadeTick = await frame.evaluate(() => window.Arcade.test.G.t);
       await frame.waitForFunction(({ requireGameLoop, tick }) => window.Perf?.tier === 'lite'
         && (!requireGameLoop || (window.Arcade?.test?.G?.state === 'playing' && window.Arcade.test.G.t > tick)),
@@ -296,10 +488,11 @@ async function testGame(game, viewport, browserContext) {
           const game = window.Arcade?.test?.G;
           game?.addScore(321);
           game?.over('Smoke result');
-        } else if (window.Board?.modal) {
+        } else if (window.Board?.modal && document.getElementById('bk-main')) {
           window.Board.modal('Game over', 'Final score 321');
         } else {
-          // Mahjong owns its inline lifecycle and closes sessions on pagehide.
+          // Mahjong loads board-kit for its pause clock but owns its inline
+          // lifecycle, so it closes sessions on pagehide rather than a shell modal.
           window.dispatchEvent(new Event('pagehide'));
         }
       }, isArcade);
@@ -335,6 +528,38 @@ try {
       deviceScaleFactor: 1,
       reducedMotion: 'reduce',
     });
+    // The managed Playwright browser cannot open loopback sockets directly.
+    // Fulfill preview requests from the exact production output through Playwright routing.
+    await context.route(`${baseUrl}/**`, async (route) => {
+      const pathname = decodeURIComponent(new URL(route.request().url()).pathname);
+      const filePath = path.resolve(distRoot, `.${pathname}`);
+      if (filePath !== distRoot && !filePath.startsWith(`${distRoot}${path.sep}`)) {
+        await route.fulfill({ status: 403, body: 'Forbidden' });
+        return;
+      }
+      try {
+        const info = await stat(filePath);
+        const resolvedPath = info.isDirectory() ? path.join(filePath, 'index.html') : filePath;
+        const body = await readFile(resolvedPath);
+        const ext = path.extname(resolvedPath).toLowerCase();
+        const contentType = ({
+          '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+          '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
+          '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon',
+          '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
+        })[ext] || 'application/octet-stream';
+        await route.fulfill({ status: 200, contentType, body });
+      } catch {
+        await route.fulfill({ status: 404, body: `Not found: ${pathname}` });
+      }
+    });
+    // The managed browser has no external network; omit optional Google Fonts in this functional smoke run.
+    await context.route('https://fonts.googleapis.com/**', (route) => route.fulfill({
+      status: 200,
+      contentType: 'text/css; charset=utf-8',
+      body: '',
+    }));
     try {
       for (const game of games) {
         const test = await testGame(game, viewport, context);

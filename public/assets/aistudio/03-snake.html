@@ -18,6 +18,8 @@
 <script src="score-bridge.js"></script>
 <script src="ui-kit.js"></script>
 <script src="fx-kit.js"></script>
+<script src="music-kit.js"></script>
+<script src="menu-kit.js"></script>
 <script>
 /* Ember Serpent — grid-snake with smooth movement, bonus fruit, levels and rock hazards.
    Two skins share the same rules (press K, or the paint button on touch, to switch; the choice is remembered):
@@ -350,11 +352,82 @@ function drawEmber(G, c) {
 
 function draw(G, c) { if (skin === 'classic') drawClassic(G, c); else drawEmber(G, c); }
 
-Arcade.game({
+const emberSerpentGame = Arcade.game({
   id: 'ember-serpent', title: 'Ember Serpent', subtitle: 'Eat, grow, survive ten levels', color: '#fb923c',
   help: 'Arrow keys or WASD steer (you can queue turns). Eat fruit; golden gems are timed bonuses. Rocks appear each level. T toggles wrap-around vs solid walls (walls score +50%). K switches between the Ember and Classic skins (remembered). P pauses, M mutes.',
   w: W, h: H, touchL: [['◀', 'ArrowLeft'], ['▲', 'ArrowUp'], ['🎨', 'KeyK']], touchR: [['▼', 'ArrowDown'], ['▶', 'ArrowRight']], init, update, draw,
 });
+
+function emberMenuScene(c, frame) {
+  const w = frame.width, h = frame.height, motion = !frame.static && !frame.reducedMotion;
+  const sky = c.createLinearGradient(0, 0, w, h);
+  sky.addColorStop(0, '#120b13'); sky.addColorStop(0.56, '#27131a'); sky.addColorStop(1, '#411d18');
+  c.fillStyle = sky; c.fillRect(0, 0, w, h);
+  const glow = c.createRadialGradient(w * 0.75, h * 0.48, 0, w * 0.75, h * 0.48, Math.max(w, h) * 0.55);
+  glow.addColorStop(0, 'rgba(251,146,60,.26)'); glow.addColorStop(0.5, 'rgba(220,69,35,.10)'); glow.addColorStop(1, 'rgba(18,11,19,0)');
+  c.fillStyle = glow; c.fillRect(0, 0, w, h);
+  const layers = Math.min(frame.quality.layers, 3);
+  for (let layer = 0; layer < layers; layer++) {
+    const base = h * (0.65 + layer * 0.11), amp = h * (0.035 + layer * 0.013), drift = motion ? frame.time * (0.00008 + layer * 0.00004) : 0;
+    c.beginPath(); c.moveTo(0, h);
+    for (let x = 0; x <= w + 6; x += Math.max(20, w / 30)) {
+      const ridge = base - (Math.sin(x / w * 8 + drift + layer) * 0.6 + Math.sin(x / w * 15 - drift * 0.7) * 0.28) * amp;
+      c.lineTo(x, ridge);
+    }
+    c.lineTo(w, h); c.closePath(); c.fillStyle = ['#381d20', '#29161c', '#1b1119'][layer]; c.fill();
+  }
+  // A small original ember serpent curls around a molten seed on the clear right side.
+  c.save(); c.translate(w * 0.77, h * 0.52); c.rotate(motion ? Math.sin(frame.time * 0.0004) * 0.025 : 0);
+  c.shadowColor = '#fb923c'; c.shadowBlur = frame.quality.glow ? 18 : 5;
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  c.strokeStyle = '#7c2d12'; c.lineWidth = Math.max(14, h * 0.045); c.beginPath();
+  c.moveTo(-w * 0.16, h * 0.1); c.bezierCurveTo(-w * 0.23, -h * 0.12, -w * 0.04, -h * 0.25, w * 0.02, -h * 0.08); c.bezierCurveTo(w * 0.1, h * 0.15, -w * 0.03, h * 0.22, -w * 0.11, h * 0.08); c.stroke();
+  c.strokeStyle = '#f97316'; c.lineWidth = Math.max(7, h * 0.021); c.stroke();
+  c.fillStyle = '#fde047'; c.beginPath(); c.arc(w * 0.02, -h * 0.08, Math.max(9, h * 0.024), 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#14532d'; c.beginPath(); c.arc(w * 0.02, -h * 0.08, Math.max(4, h * 0.011), 0, Math.PI * 2); c.fill();
+  c.restore();
+  const sparks = Math.min(frame.quality.particles, 28);
+  for (let i = 0; i < sparks; i++) {
+    const x = ((i * 137.3 + 29) % 997) / 997 * w;
+    const drift = motion ? frame.time * (0.008 + (i % 4) * 0.003) : 0;
+    const y = ((i * 193.7 + drift) % 991) / 991 * h;
+    c.globalAlpha = motion ? 0.22 + 0.28 * Math.abs(Math.sin(frame.time * 0.001 + i)) : 0.34;
+    c.fillStyle = i % 4 ? '#fb923c' : '#fde047'; c.fillRect(x, y, 2 + i % 2, 2 + i % 2);
+  }
+  c.globalAlpha = 1;
+}
+
+const emberSerpentMenu = Menu.mount({
+  gameId: 'ember-serpent', title: 'Ember Serpent', tagline: 'Follow the fire. Grow through the cavern.',
+  archetype: 'banner', items: ['play', 'options', 'about', 'exit'],
+  theme: {
+    frame: 'basalt-arch', button: 'molten-facet',
+    palette: { bg: '#120b13', panel: 'rgba(30,17,23,0.84)', accent: '#fb923c', button: '#f6bd75', buttonText: '#32150f', text: '#fff4e8', danger: '#ef4444' },
+    type: { title: 'system-ui, sans-serif', body: 'system-ui, sans-serif' },
+    scene: emberMenuScene, sceneFallback: emberMenuScene,
+    music: { tempo: 82, root: 40, scale: 'minor', layers: ['bass', 'pad', 'lead'] },
+    sfx: { hover: 'tick', select: 'select', back: 'blip' }
+  },
+  options: { difficulty: 'normal' },
+  onSettingChange: function (key, value) {
+    if (key === 'difficulty') A.difficulty = value;
+    if (key === 'sfxVol') A.sfxVolume = Math.max(0, Math.min(1, Number(value) || 0));
+  },
+  onPlay: function () { emberSerpentGame.inputLocked = false; emberSerpentGame.begin(); },
+  onRestart: function () { emberSerpentGame.restart(true); },
+  onResume: function () { if (emberSerpentGame.state === 'paused') emberSerpentGame.pauseToggle(); },
+  screens: {
+    about: function (view) {
+      const doc = view.panel.ownerDocument;
+      const heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Into the ember caverns'; view.panel.appendChild(heading);
+      const story = doc.createElement('p'); story.className = 'apex-menu-tagline'; story.textContent = 'Eat fruit to grow, collect timed golden gems, and climb through ten increasingly dangerous levels.'; view.panel.appendChild(story);
+      const controls = doc.createElement('p'); controls.className = 'apex-menu-tagline'; controls.textContent = 'Steer with Arrow keys or WASD. Queue one safe turn. T switches walls or wrap; K changes the serpent skin. P pauses, M mutes.'; view.panel.appendChild(controls);
+      const note = doc.createElement('p'); note.className = 'apex-menu-caption'; note.textContent = 'Solid walls award a 50% food bonus. The Classic skin changes the look only.'; view.panel.appendChild(note);
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    }
+  }
+});
+emberSerpentGame.inputLocked = true;
 </script>
 </body>
 </html>

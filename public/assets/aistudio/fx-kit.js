@@ -363,6 +363,177 @@
     }
   };
 
+  /* ── menu scene renderer ───────────────────────────────────── */
+  /*
+   * Fx.menuScene(canvas, sceneFn, opts) calls sceneFn(ctx, frame), where frame
+   * includes CSS-pixel dimensions, elapsed time, tier, reducedMotion, a stable
+   * random source, shared state, and quality budgets. Lite/reduced-motion mode
+   * paints one offscreen frame and blits it until resize or tier change.
+   */
+  Fx.menuScene = function (canvas, sceneFn, opts) {
+    if (!canvas || !canvas.getContext) throw new Error('Fx.menuScene requires a canvas');
+    opts = opts || {};
+    var ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Fx.menuScene could not create a 2D context');
+    var gameId = opts.gameId || '', palette = opts.palette || {};
+    var tierName = validTier(tier()), reduced = Fx.reducedMotion(gameId), raf = 0;
+    var width = 0, height = 0, dpr = 1, elapsed = 0, lastFrame = 0, destroyed = false, manuallyPaused = false;
+    var bake = null, bakeCtx = null, bakeDirty = true, state = {}, seed = hashSeed(gameId || 'apex-menu');
+    var resizeObserver = null, media = null;
+
+    function validTier(value) { return value === 'lite' || value === 'standard' || value === 'ultra' ? value : 'standard'; }
+    function hashSeed(value) {
+      var result = 2166136261, j;
+      for (j = 0; j < value.length; j++) { result ^= value.charCodeAt(j); result = Math.imul(result, 16777619); }
+      return result >>> 0 || 1;
+    }
+    function randomSource(initial) {
+      var value = initial >>> 0 || 1;
+      return function () { value = (Math.imul(value, 1664525) + 1013904223) >>> 0; return value / 4294967296; };
+    }
+    function profile() {
+      var current = window.Perf && typeof Perf.profile === 'function' ? Perf.profile() : null;
+      var ratio = current && current.dpr || window.devicePixelRatio || 1;
+      if (tierName === 'lite') ratio = 1;
+      else if (tierName === 'standard') ratio = Math.min(1.5, ratio);
+      else ratio = Math.min(2, ratio);
+      return { dpr: Math.max(1, ratio), layers: tierName === 'ultra' ? 3 : tierName === 'standard' ? 2 : 1, particles: tierName === 'ultra' ? 80 : tierName === 'standard' ? 28 : 0, glow: tierName === 'ultra' };
+    }
+    function drawDefault(c, w, h, frame) {
+      var g = c.createLinearGradient(0, 0, w, h);
+      g.addColorStop(0, palette.bg || '#101426'); g.addColorStop(1, '#070a13');
+      c.fillStyle = g; c.fillRect(0, 0, w, h);
+      var glow = c.createRadialGradient(w * 0.54, h * 0.34, 0, w * 0.54, h * 0.34, Math.max(w, h) * 0.62);
+      glow.addColorStop(0, withAlpha(palette.accent || '#67e8f9', tierName === 'lite' ? 0.08 : 0.14));
+      glow.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = glow; c.fillRect(0, 0, w, h);
+      if (frame && frame.quality.layers > 1) {
+        c.save(); c.globalAlpha = 0.12; c.strokeStyle = palette.accent || '#67e8f9'; c.lineWidth = 1;
+        var i, spacing = Math.max(44, Math.round(Math.min(w, h) / 8));
+        for (i = 0; i < w; i += spacing) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i, h); c.stroke(); }
+        for (i = 0; i < h; i += spacing) { c.beginPath(); c.moveTo(0, i); c.lineTo(w, i); c.stroke(); }
+        c.restore();
+      }
+    }
+    function withAlpha(color, alpha) {
+      if (typeof color !== 'string') return 'rgba(103,232,249,' + alpha + ')';
+      var match = /^#([0-9a-f]{6})$/i.exec(color);
+      if (!match) return color;
+      var hex = match[1];
+      return 'rgba(' + parseInt(hex.slice(0, 2), 16) + ',' + parseInt(hex.slice(2, 4), 16) + ',' + parseInt(hex.slice(4, 6), 16) + ',' + alpha + ')';
+    }
+    function frameData(delta, staticFrame) {
+      var quality = profile();
+      return {
+        gameId: gameId, width: width, height: height, time: staticFrame ? 0 : elapsed,
+        delta: staticFrame ? 0 : delta, tier: tierName, reducedMotion: !!(reduced || staticFrame),
+        quality: quality, random: randomSource(seed), state: state, static: !!staticFrame
+      };
+    }
+    function draw(c, frame) {
+      c.save();
+      try {
+        c.setTransform(dpr, 0, 0, dpr, 0, 0);
+        c.clearRect(0, 0, width, height);
+        if (typeof sceneFn === 'function') sceneFn(c, frame);
+        else drawDefault(c, width, height, frame);
+      } finally { c.restore(); }
+    }
+    function ensureBake() {
+      if (!bake) { bake = document.createElement('canvas'); bakeCtx = bake.getContext('2d'); }
+      if (!bakeDirty) return;
+      bake.width = Math.max(1, Math.round(width * dpr)); bake.height = Math.max(1, Math.round(height * dpr));
+      bakeCtx.setTransform(dpr, 0, 0, dpr, 0, 0); bakeCtx.clearRect(0, 0, width, height);
+      var staticFn = typeof opts.fallback === 'function' ? opts.fallback : sceneFn;
+      var priorScene = sceneFn;
+      try {
+        sceneFn = staticFn;
+        draw(bakeCtx, frameData(0, true));
+      } catch (error) {
+        bakeCtx.setTransform(dpr, 0, 0, dpr, 0, 0); bakeCtx.clearRect(0, 0, width, height);
+        drawDefault(bakeCtx, width, height, frameData(0, true));
+        if (typeof opts.onError === 'function') opts.onError(error);
+      } finally { sceneFn = priorScene; }
+      bakeDirty = false;
+    }
+    function paintStatic() {
+      if (!width || !height) return;
+      ensureBake();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, width, height);
+      ctx.drawImage(bake, 0, 0, width, height);
+    }
+    function staticMode() { return !sceneFn || tierName === 'lite' || reduced; }
+    function stopLoop() { if (raf) { window.cancelAnimationFrame(raf); raf = 0; } lastFrame = 0; }
+    function schedule() {
+      if (destroyed || manuallyPaused || document.hidden || staticMode() || raf) return;
+      raf = window.requestAnimationFrame(tick);
+    }
+    function tick(timestamp) {
+      raf = 0;
+      if (destroyed || manuallyPaused || document.hidden || staticMode()) { paintStatic(); return; }
+      var minInterval = tierName === 'ultra' ? 1000 / 60 : 1000 / 40;
+      if (lastFrame && timestamp - lastFrame < minInterval - 1) { schedule(); return; }
+      var delta = lastFrame ? Math.min(64, timestamp - lastFrame) : 16.67;
+      lastFrame = timestamp; elapsed += delta / 1000;
+      try { draw(ctx, frameData(delta, false)); }
+      catch (error) {
+        stopLoop(); tierName = 'lite'; reduced = true; bakeDirty = true; paintStatic();
+        if (typeof opts.onError === 'function') opts.onError(error);
+        return;
+      }
+      schedule();
+    }
+    function resize() {
+      if (destroyed) return;
+      var rect = canvas.getBoundingClientRect();
+      var nextWidth = Math.max(0, rect.width || canvas.clientWidth || 0), nextHeight = Math.max(0, rect.height || canvas.clientHeight || 0);
+      if (!nextWidth || !nextHeight) return;
+      var p = profile();
+      width = nextWidth; height = nextHeight; dpr = p.dpr;
+      canvas.width = Math.max(1, Math.round(width * dpr)); canvas.height = Math.max(1, Math.round(height * dpr));
+      bakeDirty = true;
+      stopLoop();
+      if (staticMode()) paintStatic(); else schedule();
+    }
+    function setTier(next) {
+      next = validTier(next); if (tierName === next) return;
+      tierName = next; resize();
+    }
+    function setReducedMotion(value) {
+      value = !!value || !!(media && media.matches); if (reduced === value) return;
+      reduced = value; bakeDirty = true; stopLoop();
+      if (staticMode()) paintStatic(); else schedule();
+    }
+    function onPerf(event) { var detail = event && event.detail; if (detail && detail.tier) setTier(detail.tier); }
+    function onVisibility() { if (document.hidden) stopLoop(); else if (staticMode()) paintStatic(); else schedule(); }
+    function onMotion(event) { setReducedMotion(!!(event.matches || (opts.motionElement && opts.motionElement.hasAttribute('data-reduced-motion')))); }
+    function destroy() {
+      if (destroyed) return; destroyed = true; stopLoop();
+      window.removeEventListener('resize', resize); window.removeEventListener('apex:perf', onPerf);
+      document.removeEventListener('visibilitychange', onVisibility);
+      if (resizeObserver) resizeObserver.disconnect();
+      if (media && media.removeEventListener) media.removeEventListener('change', onMotion);
+      if (media && media.removeListener) media.removeListener(onMotion);
+    }
+
+    if (window.Perf && typeof Perf.profile === 'function') tierName = validTier(Perf.profile().tier);
+    try { reduced = Fx.reducedMotion(gameId) || !!(opts.motionElement && opts.motionElement.hasAttribute('data-reduced-motion')); } catch (e) { reduced = false; }
+    if (window.matchMedia) { try { media = window.matchMedia('(prefers-reduced-motion: reduce)'); if (media.addEventListener) media.addEventListener('change', onMotion); else if (media.addListener) media.addListener(onMotion); } catch (e) {} }
+    if (window.ResizeObserver) { resizeObserver = new ResizeObserver(resize); resizeObserver.observe(canvas); }
+    window.addEventListener('resize', resize); window.addEventListener('apex:perf', onPerf);
+    document.addEventListener('visibilitychange', onVisibility);
+    resize();
+    return {
+      canvas: canvas,
+      pause: function () { manuallyPaused = true; stopLoop(); },
+      resume: function () { manuallyPaused = false; if (staticMode()) paintStatic(); else schedule(); },
+      setTier: setTier,
+      setReducedMotion: setReducedMotion,
+      redraw: function () { bakeDirty = true; if (staticMode()) paintStatic(); else schedule(); },
+      destroy: destroy,
+      profile: function () { return { tier: tierName, dpr: dpr, static: staticMode(), reducedMotion: reduced, layers: profile().layers, particles: profile().particles }; }
+    };
+  };
+
   /* ── bloom ──────────────────────────────────────────────────── */
   var bloomA = null, bloomB = null, bloomBw = 0, bloomBh = 0, bloomTick = 0;
 

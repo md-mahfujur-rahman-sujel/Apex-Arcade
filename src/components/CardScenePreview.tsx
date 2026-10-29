@@ -193,7 +193,7 @@ export const CardScenePreview: React.FC<CardScenePreviewProps> = ({ game, isHove
         data-card-scene-canvas
         ref={canvasRef}
         aria-hidden="true"
-        className={`absolute inset-0 w-full h-full ${game.gameNumber === 5 ? 'object-contain' : 'object-cover'} transition-opacity duration-300 ${
+        className={`absolute inset-0 w-full h-full ${game.gameNumber === 5 ? 'object-contain' : 'object-cover'} transition-opacity duration-[var(--apex-motion-fast)] ${
           isHovered ? 'opacity-100 scale-105' : 'opacity-85'
         }`}
       />

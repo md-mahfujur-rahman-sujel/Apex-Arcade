@@ -302,7 +302,7 @@ export const ChronoBattleEngine: React.FC<ChronoBattleEngineProps> = ({
           </div>
           <div className="w-full h-2.5 bg-slate-800 rounded-sm overflow-hidden">
             <div
-              className="h-full bg-cyan-400 transition-all duration-150"
+              className="h-full bg-cyan-400 transition-all duration-[var(--apex-motion-fast)]"
               style={{ width: `${(cronoHp / 250) * 100}%` }}
             />
           </div>
@@ -316,7 +316,7 @@ export const ChronoBattleEngine: React.FC<ChronoBattleEngineProps> = ({
           </div>
           <div className="w-full h-2.5 bg-slate-800 rounded-sm overflow-hidden">
             <div
-              className="h-full bg-red-600 transition-all duration-150"
+              className="h-full bg-red-600 transition-all duration-[var(--apex-motion-fast)]"
               style={{ width: `${(bossHp / 600) * 100}%` }}
             />
           </div>
@@ -339,7 +339,7 @@ export const ChronoBattleEngine: React.FC<ChronoBattleEngineProps> = ({
         </div>
         <div className="w-full h-2 bg-slate-900 rounded-full overflow-hidden mb-2">
           <div
-            className={`h-full transition-all duration-75 ${
+            className={`h-full transition-all duration-[var(--apex-motion-fast)] ${
               atb >= 100 ? 'bg-cyan-400 shadow-[0_0_10px_#38bdf8]' : 'bg-cyan-700'
             }`}
             style={{ width: `${atb}%` }}

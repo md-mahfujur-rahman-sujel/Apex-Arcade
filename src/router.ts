@@ -73,12 +73,32 @@ export function navigate(route: Exclude<AppRoute, { type: 'not-found' }>, option
 }
 
 export function closePlayRoute(): void {
-  if (window.history.state?.apexPreviousHash) {
-    window.history.back();
+  const previousHash = window.history.state?.apexPreviousHash;
+  if (!previousHash) {
+    window.history.replaceState({ apexRoute: '#/' }, '', '#/');
+    window.dispatchEvent(new Event(NAV_EVENT));
     return;
   }
-  window.history.replaceState({ apexRoute: '#/' }, '', '#/');
-  window.dispatchEvent(new Event(NAV_EVENT));
+  const playHash = window.location.hash;
+  let settled = false;
+  const settle = () => {
+    if (settled) return false;
+    settled = true;
+    window.removeEventListener('popstate', check);
+    return true;
+  };
+  const forceClose = () => {
+    if (!settle()) return;
+    if (window.location.hash !== playHash) return;
+    // A game frame navigation can sit in front of the play entry in the joint
+    // session history, so the back step never reaches the host route.
+    window.history.replaceState({ apexRoute: previousHash }, '', previousHash);
+    window.dispatchEvent(new Event(NAV_EVENT));
+  };
+  const check = () => window.setTimeout(forceClose, 0);
+  window.addEventListener('popstate', check);
+  window.history.back();
+  window.setTimeout(forceClose, 200);
 }
 
 export function subscribeToRoute(listener: (route: AppRoute) => void): () => void {

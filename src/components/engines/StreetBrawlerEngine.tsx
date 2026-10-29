@@ -144,6 +144,7 @@ export const StreetBrawlerEngine: React.FC<StreetBrawlerEngineProps> = ({
     const keys = new Set<string>();
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isPaused) return;
       keys.add(e.code);
       if (stateRef.current !== 'PLAYING') {
         if (e.code === 'Space') {
@@ -176,7 +177,7 @@ export const StreetBrawlerEngine: React.FC<StreetBrawlerEngineProps> = ({
     };
 
     const interval = setInterval(() => {
-      if (stateRef.current !== 'PLAYING') return;
+      if (isPaused || stateRef.current !== 'PLAYING') return;
       const p = playerRef.current;
       if (p.actionTimer > 0) return;
 
@@ -200,7 +201,7 @@ export const StreetBrawlerEngine: React.FC<StreetBrawlerEngineProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [playerHadoken, playerKick, playerPunch, startGame]);
+  }, [isPaused, playerHadoken, playerKick, playerPunch, startGame]);
 
   // Round Timer
   useEffect(() => {
@@ -520,7 +521,7 @@ export const StreetBrawlerEngine: React.FC<StreetBrawlerEngineProps> = ({
           </div>
           <div className="w-full h-4 bg-slate-900 rounded-sm border border-white/20 overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-cyan-500 to-sky-300 transition-all duration-100"
+            className="h-full bg-gradient-to-r from-cyan-500 to-sky-300 transition-all duration-[var(--apex-motion-fast)]"
               style={{ width: `${playerHp}%` }}
             />
           </div>
@@ -539,7 +540,7 @@ export const StreetBrawlerEngine: React.FC<StreetBrawlerEngineProps> = ({
           </div>
           <div className="w-full h-4 bg-slate-900 rounded-sm border border-white/20 overflow-hidden">
             <div
-              className="h-full bg-gradient-to-l from-red-600 to-rose-400 transition-all duration-100 ml-auto"
+            className="h-full bg-gradient-to-l from-red-600 to-rose-400 transition-all duration-[var(--apex-motion-fast)] ml-auto"
               style={{ width: `${aiHp}%` }}
             />
           </div>

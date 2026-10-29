@@ -22,6 +22,7 @@ main{width:min(1320px,100%);margin:auto;padding:24px clamp(12px,3vw,32px) 40px}.
 @media(max-width:600px){header{padding:12px}.brand h1{font-size:13px}.hero{align-items:start;flex-direction:column}.hud{grid-template-columns:repeat(2,minmax(0,1fr))}.board-top{font-size:9px}#board{justify-content:flex-start;min-height:350px}.layout{margin-left:8px}.footer{align-items:flex-start}.actions button{padding:9px 11px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
 </style>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 <header><div class="brand"><div class="logo">麻</div><div><h1>JADE TABLE</h1><p>Mahjong Solitaire</p></div></div><button id="newTop" aria-label="Start a new game">↻ New game</button></header>
@@ -36,6 +37,7 @@ main{width:min(1320px,100%);margin:auto;padding:24px clamp(12px,3vw,32px) 40px}.
 <script src="save-kit.js"></script>
 <script src="meta-config.js"></script>
 <script src="meta-kit.js"></script>
+<script src="board-kit.js"></script>
 <script src="score-bridge.js"></script>
 <script src="ui-kit.js"></script>
 <script>
@@ -48,7 +50,7 @@ const faces=[['竹','🀐'],['竹','🀑'],['竹','🀒'],['竹','🀓'],['竹',
 let tiles=[],selected=null,history=[],moves=0,score=0,hints=3,start=0,timer=null,elapsed=0,locked=false,difficulty='normal';
 const hintAllowance=()=>difficulty==='easy'?5:difficulty==='hard'?1:3;
 try{const q=new URLSearchParams(location.search).get('diff');if(['easy','normal','hard'].includes(q))difficulty=q}catch(e){}
-window.addEventListener('message',e=>{if(e.data?.type!=='SET_DIFFICULTY')return;difficulty=['easy','normal','hard'].includes(e.data.difficulty)?e.data.difficulty:'normal';hints=hintAllowance();updateHUD();});
+window.addEventListener('message',e=>{if((e.source!==window.parent&&e.source!==window)||e.origin!==window.location.origin||e.data?.type!=='SET_DIFFICULTY')return;difficulty=['easy','normal','hard'].includes(e.data.difficulty)?e.data.difficulty:'normal';hints=hintAllowance();updateHUD();});
 const GAME_ID='mahjong';let sessionStarted=false,sessionEnded=false,sessionStartTime=0;
 function report(type,detail){try{if(window.Apex&&Apex.report)Apex.report(Object.assign({gameId:GAME_ID,type},detail||{}))}catch(e){}}
 function startSession(){if(sessionStarted)return;sessionStarted=true;sessionEnded=false;sessionStartTime=Date.now();if(window.Save&&Save.load)Save.load(GAME_ID);if(window.Save&&Save.update){const saved=Save.load(GAME_ID);Save.update(GAME_ID,{stats:{plays:(saved.stats.plays||0)+1}})}report('session_start')}
@@ -72,20 +74,21 @@ for(let y=2;y<4;y++)for(let x=2;x<10;x++)positions.push({x,y,z:2});
 for(let y=2;y<4;y++)for(let x=4;x<8;x++)positions.push({x,y,z:3});
 positions=positions.slice(0,144);
 const facesList=[];for(let f=0;f<36;f++)for(let j=0;j<4;j++)facesList.push(f);shuffle(facesList);
-tiles=positions.map((p,i)=>({...p,id:i,face:facesList[i],removed:false}));selected=null;history=[];moves=score=0;hints=hintAllowance();elapsed=0;locked=false;start=Date.now();if(timer)clearInterval(timer);timer=setInterval(tick,1000);render();updateHUD();$('message').textContent='Choose any glowing tile to begin.';$('hintCount').textContent=hints}
+tiles=positions.map((p,i)=>({...p,id:i,face:facesList[i],removed:false}));selected=null;history=[];moves=score=0;hints=hintAllowance();elapsed=0;locked=false;start=Board.now();Board.cancel(timer);timer=Board.every(1000,tick);render();updateHUD();$('message').textContent='Choose any glowing tile to begin.';$('hintCount').textContent=hints}
 function neighbors(t){return tiles.filter(o=>!o.removed&&o.z===t.z&&o.y===t.y&&Math.abs(o.x-t.x)===1)}
 function free(t){if(t.removed)return false;const covered=tiles.some(o=>!o.removed&&o.z>t.z&&Math.abs(o.x-t.x)<=1&&Math.abs(o.y-t.y)<=1);if(covered)return false;const left=tiles.some(o=>!o.removed&&o.z===t.z&&o.y===t.y&&o.x===t.x-1),right=tiles.some(o=>!o.removed&&o.z===t.z&&o.y===t.y&&o.x===t.x+1);return !left||!right}
 function availablePairs(){let a=tiles.filter(t=>!t.removed&&free(t)),out=[];for(let i=0;i<a.length;i++)for(let j=i+1;j<a.length;j++)if(a[i].face===a[j].face)out.push([a[i],a[j]]);return out}
 function render(){board.innerHTML='';const root=document.createElement('div');root.className='layout';let tw=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tilew'))||50;const cell=tw*.88,stepY=tw*1.05;let maxX=0,maxY=0;tiles.forEach(t=>{maxX=Math.max(maxX,t.x+t.z*.45);maxY=Math.max(maxY,t.y+t.z*.45)});root.style.width=(maxX*cell+tw+20)+'px';root.style.height=(maxY*stepY+tw*1.18+20)+'px';tiles.forEach(t=>{if(t.removed)return;const b=document.createElement('button');b.dataset.tileId=t.id;b.className='tile '+(free(t)?'free':'blocked')+(selected===t.id?' selected':'');b.style.left=(t.x*cell+t.z*tw*.25+6)+'px';b.style.top=(t.y*stepY-t.z*tw*.25+6)+'px';b.style.zIndex=10+t.z*200+t.y*10+t.x;b.setAttribute('aria-label',`Tile ${faces[t.face][0]} ${free(t)?'available':'blocked'}`);b.disabled=!free(t)||locked;b.innerHTML=`<span><span class="glyph">${faces[t.face][1]}</span><span class="sub">${faces[t.face][0]}</span></span>`;b.addEventListener('click',()=>choose(t.id));root.appendChild(b)});board.appendChild(root);updateHUD()}
-function choose(id){if(locked)return;const t=tiles.find(x=>x.id===id);if(!t||!free(t))return;startSession();if(selected===id){selected=null;render();return}if(selected===null){selected=id;render();return}const a=tiles.find(x=>x.id===selected);if(a&&a.face===t.face){history.push({a:a.id,b:t.id,moves,score});a.removed=t.removed=true;selected=null;moves++;score+=100;render();reportScore();$('message').innerHTML='Beautiful match. <b>+100 points</b>';if(tiles.every(x=>x.removed))win();else if(!availablePairs().length) $('message').textContent='No matches remain. Try Shuffle to continue.'}else{selected=id;render();$('message').textContent='Not a match — find the same symbol.'}}
+function choose(id){if(locked||Board.paused())return;const t=tiles.find(x=>x.id===id);if(!t||!free(t))return;startSession();if(selected===id){selected=null;render();return}if(selected===null){selected=id;render();return}const a=tiles.find(x=>x.id===selected);if(a&&a.face===t.face){history.push({a:a.id,b:t.id,moves,score});a.removed=t.removed=true;selected=null;moves++;score+=100;render();reportScore();$('message').innerHTML='Beautiful match. <b>+100 points</b>';if(tiles.every(x=>x.removed))win();else if(!availablePairs().length) $('message').textContent='No matches remain. Try Shuffle to continue.'}else{selected=id;render();$('message').textContent='Not a match — find the same symbol.'}}
 function updateHUD(){const n=tiles.filter(t=>t.removed).length/2;$('pairs').textContent=`${n} / 72`;$('moves').textContent=moves;$('score').textContent=score.toLocaleString();$('hintCount').textContent=hints}
-function tick(){elapsed=Math.floor((Date.now()-start)/1000);$('time').textContent=`${String(Math.floor(elapsed/60)).padStart(2,'0')}:${String(elapsed%60).padStart(2,'0')}`}
-function hint(){if(hints<=0){$('message').textContent='No hints left this round. Undo or shuffle can help.';return}const p=availablePairs();if(!p.length){$('message').textContent='No available pair. Try Shuffle.';return}hints--;selected=null;render();const [a,b]=p[Math.floor(Math.random()*p.length)];[a,b].forEach(t=>{const el=board.querySelector(`[data-tile-id="${t.id}"]`);if(el){el.style.outline='2px solid #f3c96b';el.style.boxShadow='0 0 0 4px #f3c96b66,0 8px 18px #0006';}});$('message').textContent='Two matching tiles are highlighted. Make your move.';$('hintCount').textContent=hints}
-function undo(){const h=history.pop();if(!h){$('message').textContent='Nothing to undo yet.';return}tiles[h.a].removed=tiles[h.b].removed=false;moves=h.moves;score=h.score;selected=null;render();$('message').textContent='Last match restored.'}
-function shuffleRemaining(){let rem=tiles.filter(t=>!t.removed);const fs=shuffle(rem.map(t=>t.face));rem.forEach((t,i)=>t.face=fs[i]);selected=null;render();$('message').textContent='Remaining tiles reshuffled. Find a new path.'}
-function win(){clearInterval(timer);reportScore();endSession('win');$('modalIcon').textContent='🏆';$('modalTitle').textContent='A beautiful clear.';$('modalText').textContent=`All 72 pairs cleared in ${$('time').textContent}, with ${moves} moves and ${score.toLocaleString()} points. Your next table is waiting.`;$('overlay').classList.add('show');$('modalSecondary').textContent='View board';$('modalPrimary').textContent='Play again'}
+function tick(){elapsed=Math.floor((Board.now()-start)/1000);$('time').textContent=`${String(Math.floor(elapsed/60)).padStart(2,'0')}:${String(elapsed%60).padStart(2,'0')}`}
+function hint(){if(Board.paused())return;if(hints<=0){$('message').textContent='No hints left this round. Undo or shuffle can help.';return}const p=availablePairs();if(!p.length){$('message').textContent='No available pair. Try Shuffle.';return}hints--;selected=null;render();const [a,b]=p[Math.floor(Math.random()*p.length)];[a,b].forEach(t=>{const el=board.querySelector(`[data-tile-id="${t.id}"]`);if(el){el.style.outline='2px solid #f3c96b';el.style.boxShadow='0 0 0 4px #f3c96b66,0 8px 18px #0006';}});$('message').textContent='Two matching tiles are highlighted. Make your move.';$('hintCount').textContent=hints}
+function undo(){if(Board.paused())return;const h=history.pop();if(!h){$('message').textContent='Nothing to undo yet.';return}tiles[h.a].removed=tiles[h.b].removed=false;moves=h.moves;score=h.score;selected=null;render();$('message').textContent='Last match restored.'}
+function shuffleRemaining(){if(Board.paused())return;let rem=tiles.filter(t=>!t.removed);const fs=shuffle(rem.map(t=>t.face));rem.forEach((t,i)=>t.face=fs[i]);selected=null;render();$('message').textContent='Remaining tiles reshuffled. Find a new path.'}
+function win(){Board.cancel(timer);reportScore();endSession('win');$('modalIcon').textContent='🏆';$('modalTitle').textContent='A beautiful clear.';$('modalText').textContent=`All 72 pairs cleared in ${$('time').textContent}, with ${moves} moves and ${score.toLocaleString()} points. Your next table is waiting.`;$('overlay').classList.add('show');$('modalSecondary').textContent='View board';$('modalPrimary').textContent='Play again'}
 $('hintBtn').onclick=hint;$('undoBtn').onclick=undo;$('shuffleBtn').onclick=shuffleRemaining;$('newTop').onclick=()=>{if(confirm('Start a new Mahjong game? Your current round will be lost.'))deal()};$('modalPrimary').onclick=()=>{$('overlay').classList.remove('show');deal()};$('modalSecondary').onclick=()=>$('overlay').classList.remove('show');
 deal();
 })();
 </script>
+<script src="menu-bootstrap.js"></script>
 </body></html>

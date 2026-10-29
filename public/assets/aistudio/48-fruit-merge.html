@@ -12,6 +12,7 @@
   .side { display: grid; gap: 12px; } .sc { display: flex; gap: 10px; } .sc div { flex: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; } .sc b { display: block; font-size: 26px; color: var(--text); letter-spacing: 0; }
   .chain { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; color: var(--muted); font-size: 22px; } .chain i { font-style: normal; font-size: 12px; }
 </style>
+<script src="music-kit.js"></script><script src="menu-kit.js"></script>
 </head>
 <body>
 
@@ -81,7 +82,7 @@ function tick(dt) {
   clock += dt;
   if (over) return; cool -= dt; for (let k = 0; k < 3; k++) step(dt / 3);
   const hi = fr.some((f) => f.age > 1 && f.y - f.r < LINE && Math.hypot(f.vx, f.vy) < 60); overT = hi ? overT + dt : Math.max(0, overT - dt * 2);
-  if (overT > 2.2) { over = true; Board.sfx('lose'); upd(); setTimeout(() => over && Board.modal('Basket full!', 'Score ' + score + (score >= best && score > 0 ? ' — a new best!' : '') + '.', [['Play again', newGame], ['Close']]), 500); }
+  if (overT > 2.2) { over = true; Board.sfx('lose'); upd(); Board.after(500, () => over && Board.modal('Basket full!', 'Score ' + score + (score >= best && score > 0 ? ' — a new best!' : '') + '.', [['Play again', newGame], ['Close']])); }
   for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 400 * dt; p.life -= dt; } parts = parts.filter((p) => p.life > 0);
   for (const r of rings) r.t += dt; rings = rings.filter((r) => r.t < 0.5);
   for (const f of floaters) f.t += dt; floaters = floaters.filter((f) => f.t < 0.9);
@@ -206,7 +207,8 @@ document.addEventListener('keydown', (e) => {
   if (k === 'arrowleft' || k === 'a') { aimX -= 16; e.preventDefault(); } else if (k === 'arrowright' || k === 'd') { aimX += 16; e.preventDefault(); } else if (k === ' ' || k === 'arrowdown' || k === 's') { e.preventDefault(); drop(); } else if (k === 'n') newGame();
 });
 newGame();
-let last = 0; (function loop(t) { requestAnimationFrame(loop); const dt = Math.min(0.033, (t - last) / 1000 || 0); last = t; if (!document.getElementById('bk-dlg')?.open) tick(dt); draw(); })(0);
+let last = 0; (function loop(t) { requestAnimationFrame(loop); const dt = Math.min(0.033, (t - last) / 1000 || 0); last = t; if (Board.paused()) return; if (!document.getElementById('bk-dlg')?.open) tick(dt); draw(); })(0);
 </script>
+<script src="menu-bootstrap.js"></script>
 </body>
 </html>
