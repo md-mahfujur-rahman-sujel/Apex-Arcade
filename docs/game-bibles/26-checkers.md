@@ -50,7 +50,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `26-checkers.html`. Current family: Board Kit (No). Catalog description: “Standard 8x8 draughts with mandatory captures, multi-hop chains, king crown promotions, and computer opponent.” Controls: Click piece, then click green destination square. U undo, F flip. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `26-checkers/index.html`. Current family: Board Kit (No). Catalog description: “Standard 8x8 draughts with mandatory captures, multi-hop chains, king crown promotions, and computer opponent.” Controls: Click piece, then click green destination square. U undo, F flip. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

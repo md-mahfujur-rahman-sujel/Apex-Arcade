@@ -54,7 +54,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `09-mario-world.html`. Current family: Platform Kit (Arcade) (Yes). Catalog description: “A nimble double-jumping frog crosses sky isles, floating clouds, and moving mechanical platforms.” Controls: A/D run, Space jump, press jump again mid-air for double jump. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `09-mario-world/index.html`. Current family: Platform Kit (Arcade) (Yes). Catalog description: “A nimble double-jumping frog crosses sky isles, floating clouds, and moving mechanical platforms.” Controls: A/D run, Space jump, press jump again mid-air for double jump. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

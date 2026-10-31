@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="../../../apex-icon.svg" type="image/svg+xml">
+<title>Glowmoth Gauntlet</title>
+</head>
+<body>
+
+
+
+
+
+
+
+<script src="../../kits/perf-kit.js"></script>
+<script src="../../kits/save-kit.js"></script>
+<script src="../../kits/meta-config.js"></script>
+<script src="../../kits/meta-kit.js"></script>
+<script src="../../kits/arcade-core.js"></script>
+<script src="../../kits/score-bridge.js"></script>
+<script src="../../kits/ui-kit.js"></script>
+<script src="../../kits/fx-kit.js"></script>
+<script src="../../kits/music-kit.js"></script>
+<script src="../../kits/menu-kit.js"></script>
+<script>
+/* Glowmoth Gauntlet — one-button gravity glider through crystal caverns. */
+const A = Arcade;
+const W = 420, H = 640, GROUND = 566, R = 12, PW = 58, LIP = 7, SPACING = 215;
+let bird, pillars, speed, scroll, lastCenter, flapReq, bound, flies, stars, medalShown, orbs;
+let irisT = 1, fadeT = 0, artReady = false, glowmothLooks = { skin: '', palette: '', theme: '' }, glowmothTrail = '';
+let musicScore = -1;
+const MUSIC = { gameId: 'glowmoth', tempo: 104, root: 45, scale: 'minor', layers: ['bass', 'pad', 'lead', 'drums'] };
+const PARA = [
+  { speed: 0.15, color: '#2a1a58', y: GROUND, base: 330, amp: 90, w: W },
+  { speed: 0.35, color: '#1c1243', y: GROUND, base: 400, amp: 70, w: W },
+  { speed: 0.6, color: '#120c30', y: GROUND, base: 470, amp: 55, w: W },
+];
+
+function bakeArt() {
+  if (artReady || !window.Fx) return;
+  artReady = true;
+  const hues = [['#7c3aed', '#a78bfa'], ['#0ea5e9', '#7dd3fc'], ['#db2777', '#f9a8d4']];
+  hues.forEach((cols, hue) => {
+    Fx.bake('crystal-shaft-' + hue, PW + 8, 64, (c, w, h) => {
+      const g = c.createLinearGradient(0, 0, PW, 0);
+      g.addColorStop(0, cols[1]); g.addColorStop(0.45, cols[0]); g.addColorStop(1, A.shade(cols[0], -0.5));
+      c.fillStyle = g; c.fillRect(0, 0, PW, h);
+      c.fillStyle = 'rgba(255,255,255,.14)';
+      for (let i = 0; i < 3; i++) c.fillRect(8 + i * 15, 0, 2, h);
+      c.fillStyle = A.shade(cols[0], -0.45); c.fillRect(PW, 0, 8, h);
+    });
+    Fx.bake('crystal-cap-' + hue, PW + LIP * 2 + 8, 30, (c) => {
+      A.block3d(c, 0, 7, PW + LIP * 2, 22, 7, cols[0]);
+      c.fillStyle = 'rgba(255,255,255,.28)'; c.fillRect(4, 11, 10, 14);
+    });
+  });
+  Fx.bake('moth-body', 48, 40, (c) => {
+    c.translate(24, 20);
+    c.fillStyle = '#fff1c2'; c.beginPath(); c.ellipse(0, 0, 14, 11, 0, 0, A.TAU); c.fill();
+    c.fillStyle = '#f59e0b'; c.beginPath(); c.ellipse(-4, 2, 7, 6, 0, 0, A.TAU); c.fill();
+    c.fillStyle = '#1e1b4b'; c.beginPath(); c.arc(7, -3, 3, 0, A.TAU); c.fill();
+    c.fillStyle = '#fff'; c.fillRect(8, -4.5, 1.6, 1.6);
+    c.strokeStyle = '#fde68a'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(8, -9); c.quadraticCurveTo(14, -17, 20, -12); c.stroke();
+  });
+}
+
+function startIris() {
+  irisT = (window.Fx && !Fx.reducedMotion('glowmoth')) ? 0 : 1;
+  if (window.Music) Music.play(MUSIC);
+}
+const MEDALS = [[40, 'Platinum', '#e2e8f0'], [30, 'Gold', '#fbbf24'], [20, 'Silver', '#cbd5e1'], [10, 'Bronze', '#d97706']];
+const medalFor = (s) => MEDALS.find((m) => s >= m[0]);
+
+function spawn(x) {
+  const score = A.G ? A.G.score : 0;
+  const gap = Math.max(116, 170 - score * 1.5 + A.rand(-8, 10));
+  const lo = 80 + gap / 2, hi = GROUND - 70 - gap / 2;
+  const center = A.clamp(lastCenter + A.rand(-150, 150), lo, hi);
+  lastCenter = center;
+  const moving = score >= 8 && Math.random() < 0.4;
+  pillars.push({ x, gap, base: center, center, amp: moving ? A.rand(18, 34) : 0, ph: A.rand(0, 6), passed: false, hue: A.randi(0, 2) });
+}
+
+function init(G) {
+  bakeArt();
+  bird = { x: 110, y: 300, vy: 0, flapT: 0, rot: 0 };
+  pillars = []; speed = 2.4; scroll = 0; lastCenter = 300; flapReq = false; medalShown = 0; orbs = [];
+  fadeT = 0;
+  musicScore = -1;
+  stars = A.makeStars(60, W, 330);
+  flies = Array.from({ length: 22 }, () => ({ x: A.rand(0, W), y: A.rand(120, 500), p: A.rand(0, 6), z: A.rand(0.3, 1) }));
+  spawn(W + 120); spawn(W + 120 + SPACING);
+  if (!bound) { bound = true; G.canvas.addEventListener('pointerdown', () => { flapReq = true; }); }
+  G.hudL = '';
+  if (G.state === 'playing') startIris();
+  if (window.Save) {
+    const save = Save.load('glowmoth');
+    if (save.achievements && save.achievements.length) {
+      if (save.achievements.indexOf('platinum-medal') !== -1) medalShown = 40;
+      else if (save.achievements.indexOf('gold-medal') !== -1) medalShown = 30;
+      else if (save.achievements.indexOf('silver-medal') !== -1) medalShown = 20;
+      else if (save.achievements.indexOf('bronze-medal') !== -1) medalShown = 10;
+    }
+  }
+}
+
+function die(G) {
+  A.sfx('hit'); A.sfx('hurt');
+  G.shake(12); G.freeze(6);
+  G.burst(bird.x, bird.y, 28, { color: ['#fde68a', '#f0abfc', '#67e8f9'], speed: 5, glow: true, life: 40, grav: 0.1 });
+  G.ring(bird.x, bird.y, '#fde68a', 60);
+  if (window.Fx) {
+    Fx.squash.punch('moth', { sx: 0.7, sy: 1.25 });
+    fadeT = Fx.reducedMotion('glowmoth') ? 0 : 0.58;
+  }
+  if (window.Music) Music.stop(0.32);
+  const m = medalFor(G.score);
+  G.over('Lost in the Dark', m ? m[1] + ' medal earned' : 'Reach 10 for a Bronze medal');
+}
+
+function update(G) {
+  if (window.Fx) Fx.update(1);
+  if (window.Music && musicScore !== G.score) {
+    musicScore = G.score;
+    Music.setIntensity(Math.min(1, 0.24 + G.score * 0.045));
+  }
+  if (irisT < 1) irisT = Math.min(1, irisT + 0.055);
+  if (fadeT > 0.02) fadeT *= 0.86; else fadeT = 0;
+  if (A.hit('Space', 'ArrowUp', 'KeyW') || flapReq) {
+    bird.vy = -6.7; bird.flapT = 12; A.sfx('flap');
+    if (window.Fx) Fx.squash.punch('moth', { sx: 1.15, sy: 0.82 });
+    G.burst(bird.x - 8, bird.y + 6, 4, { color: ['#fde68a', '#f9a8d4'], speed: 1.6, glow: true, life: 22, angle: Math.PI * 0.75, spread: 0.6 });
+  }
+  flapReq = false;
+  bird.vy = Math.min(9, bird.vy + 0.38);
+  bird.y += bird.vy;
+  bird.rot = A.clamp(bird.vy * 0.07, -0.5, 1.1);
+  if (bird.flapT > 0) bird.flapT--;
+  if (bird.y - R < 0) { bird.y = R; bird.vy = Math.max(bird.vy, 0); }
+
+  speed = 2.4 + Math.min(1.9, G.score * 0.045);
+  scroll += speed;
+  for (const p of pillars) {
+    p.x -= speed;
+    if (p.amp) p.center = p.base + Math.sin(G.t * 0.025 + p.ph) * p.amp;
+  }
+  if (pillars[0].x < -PW - LIP * 2 - 10) pillars.shift();
+  const lastP = pillars[pillars.length - 1];
+  if (lastP.x < W - SPACING + 20) spawn(lastP.x + SPACING);
+
+  for (const f of flies) { f.x -= f.z * speed * 0.35; f.y += Math.sin(G.t * 0.03 + f.p) * 0.2; if (f.x < -4) { f.x = W + 4; f.y = A.rand(120, 500); } }
+
+  for (const p of pillars) {
+    if (!p.passed && p.x + PW < bird.x) {
+      p.passed = true; G.addScore(1); A.sfx('pop');
+      G.popup(bird.x + 30, bird.y - 20, '+1', '#fde68a', 18);
+      const m = medalFor(G.score);
+      if (m && m[0] > medalShown) {
+        medalShown = m[0];
+        A.sfx('power');
+        G.popup(W / 2, 150, m[1] + ' medal!', m[2], 26);
+        G.ring(bird.x, bird.y, m[2], 90, 34);
+        const achId = m[1].toLowerCase() + '-medal';
+        if (window.Apex) Apex.report({ gameId: 'glowmoth', type: 'achievement', achievementId: achId });
+        if (window.Save) Save.update('glowmoth', { achievements: [achId] });
+      }
+    }
+    const x0 = p.x - LIP, x1 = p.x + PW + LIP;
+    if (bird.x + R > x0 && bird.x - R < x1) {
+      const top = p.center - p.gap / 2, bot = p.center + p.gap / 2;
+      if (bird.y - R + 3 < top || bird.y + R - 3 > bot) return die(G);
+    }
+  }
+  if (bird.y + R >= GROUND) { bird.y = GROUND - R; return die(G); }
+}
+
+function crystal(c, x, yTop, h, flip, hue) {
+  if (window.Fx && Fx.has('crystal-shaft-' + hue)) {
+    Fx.drawSprite(c, 'crystal-shaft-' + hue, x, yTop, { ox: 0, oy: 0, w: PW + 8, h: Math.max(1, h) });
+    const ly = flip ? yTop : yTop + h - 22;
+    Fx.drawSprite(c, 'crystal-cap-' + hue, x - LIP, ly - 7, { ox: 0, oy: 0 });
+    return;
+  }
+  const cols = [['#7c3aed', '#a78bfa'], ['#0ea5e9', '#7dd3fc'], ['#db2777', '#f9a8d4']][hue];
+  const g = c.createLinearGradient(x, 0, x + PW, 0);
+  g.addColorStop(0, cols[1]); g.addColorStop(0.45, cols[0]); g.addColorStop(1, A.shade(cols[0], -0.5));
+  c.fillStyle = g; c.fillRect(x, yTop, PW, h);
+  c.fillStyle = 'rgba(255,255,255,.14)';
+  for (let i = 0; i < 3; i++) c.fillRect(x + 8 + i * 15, yTop, 2, h);
+  c.fillStyle = A.shade(cols[0], -0.45); c.fillRect(x + PW, yTop, 8, h);
+  const ly = flip ? yTop : yTop + h - 22;
+  A.block3d(c, x - LIP, ly, PW + LIP * 2, 22, 7, cols[0]);
+  c.fillStyle = 'rgba(255,255,255,.28)'; c.fillRect(x - LIP + 4, ly + 4, 10, 14);
+}
+
+function draw(G, c) {
+  const t = G.clock;
+  A.sky(c, W, H, ['#0b1030', '#241552', '#4b1d6b', '#7a2d73']);
+  A.drawStars(c, stars, t, W, 330, 0.02, '#fff');
+  if (window.Fx) Fx.parallax(c, PARA, scroll);
+  else {
+    const layers = [[0.15, '#2a1a58', 330, 90], [0.35, '#1c1243', 400, 70], [0.6, '#120c30', 470, 55]];
+    for (const [par, col, base, amp] of layers) {
+      c.fillStyle = col; c.beginPath(); c.moveTo(0, GROUND);
+      for (let x = 0; x <= W + 20; x += 20) {
+        const wx = x + scroll * par;
+        c.lineTo(x, base - (Math.sin(wx * 0.011) + Math.sin(wx * 0.027 + 2) * 0.6) * amp * 0.5 - amp * 0.4);
+      }
+      c.lineTo(W, GROUND); c.closePath(); c.fill();
+    }
+  }
+  // fireflies
+  c.save(); c.globalCompositeOperation = 'lighter';
+  for (const f of flies) { c.fillStyle = 'rgba(253,230,138,' + (0.3 + 0.5 * Math.abs(Math.sin(t * 0.04 + f.p))) + ')'; c.beginPath(); c.arc(f.x, f.y, 1.5 + f.z * 1.5, 0, A.TAU); c.fill(); }
+  c.restore();
+  // pillars
+  for (const p of pillars) {
+    const top = p.center - p.gap / 2, bot = p.center + p.gap / 2;
+    crystal(c, p.x, -20, top + 20, true, p.hue);
+    crystal(c, p.x, bot, GROUND - bot, false, p.hue);
+    if (p.amp) { c.fillStyle = 'rgba(253,230,138,.55)'; c.fillRect(p.x + PW / 2 - 2, top + 4, 4, 4); c.fillRect(p.x + PW / 2 - 2, bot - 8, 4, 4); }
+  }
+  // ground
+  const off = scroll % 40;
+  c.fillStyle = '#1a1033'; c.fillRect(0, GROUND, W, H - GROUND);
+  for (let x = -40; x < W + 40; x += 40) A.block3d(c, x - off, GROUND, 40, 22, 8, '#3b2a6b');
+  c.fillStyle = 'rgba(0,0,0,.25)'; c.fillRect(0, GROUND + 22, W, H - GROUND - 22);
+  // moth
+  const bob = G.state === 'ready' ? Math.sin(t * 0.08) * 8 : 0;
+  const bx = bird.x, by = bird.y + bob;
+  A.shadow(c, bx, GROUND + 6, 14 * (1 - A.clamp((GROUND - by) / 500, 0, 0.6)), 4, 0.35);
+  const sq = window.Fx ? Fx.squash.get('moth') : { sx: 1, sy: 1 };
+  c.save(); c.translate(bx, by); c.rotate(G.state === 'over' ? 0.9 : bird.rot); c.scale(sq.sx, sq.sy);
+  const lookFilters = {
+    'glowmoth:ember': 'sepia(.3) saturate(1.35) hue-rotate(-12deg)', 'glowmoth:moonstone': 'brightness(1.2) saturate(.7)',
+    'glowmoth:tideglass': 'saturate(1.5) hue-rotate(150deg)', 'glowmoth:sunflare': 'sepia(.55) saturate(1.8)',
+    'glowmoth:voidwing': 'brightness(.65) saturate(.7)', 'glowmoth:dusk': 'brightness(.8) hue-rotate(205deg)',
+    'glowmoth:aurora': 'saturate(1.7) hue-rotate(95deg)', 'glowmoth:mint-glow': 'saturate(1.5) hue-rotate(70deg)',
+    'glowmoth:coral-bloom': 'saturate(1.6) hue-rotate(-35deg)', 'glowmoth:prism': 'saturate(2) hue-rotate(135deg)',
+    'glowmoth:crystal-garden': 'brightness(1.1) hue-rotate(55deg)', 'glowmoth:deep-night': 'brightness(.7) hue-rotate(220deg)',
+  };
+  c.filter = ['skin', 'palette', 'theme'].map((slot) => lookFilters[glowmothLooks[slot]] || '').filter(Boolean).join(' ') || 'none';
+  const wing = G.state === 'ready' ? Math.sin(t * 0.3) : (bird.flapT > 0 ? Math.sin(bird.flapT * 0.9) : 0.2);
+  c.shadowColor = '#fde68a'; c.shadowBlur = (window.Perf && typeof Perf.blur === 'function') ? Perf.blur(22) : 22;
+  for (const s of [-1, 1]) {
+    c.fillStyle = s < 0 ? 'rgba(249,168,212,.75)' : 'rgba(196,181,253,.9)';
+    c.beginPath(); c.moveTo(-2, 0); c.quadraticCurveTo(-24, -26 * wing - 6, -6 + (s < 0 ? -8 : 6), 8 + (s > 0 ? 3 : 0)); c.fill();
+  }
+  c.shadowBlur = 0;
+  if (window.Fx && Fx.has('moth-body')) Fx.drawSprite(c, 'moth-body', 0, 0);
+  else {
+    c.fillStyle = '#fff1c2'; c.beginPath(); c.ellipse(0, 0, 14, 11, 0, 0, A.TAU); c.fill();
+    c.fillStyle = '#f59e0b'; c.beginPath(); c.ellipse(-4, 2, 7, 6, 0, 0, A.TAU); c.fill();
+    c.fillStyle = '#1e1b4b'; c.beginPath(); c.arc(7, -3, 3, 0, A.TAU); c.fill();
+    c.fillStyle = '#fff'; c.fillRect(8, -4.5, 1.6, 1.6);
+    c.strokeStyle = '#fde68a'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(8, -9); c.quadraticCurveTo(14, -17, 20, -12); c.stroke();
+  }
+  c.restore();
+  if (glowmothTrail && G.state === 'playing') {
+    const trailColors = { 'glowmoth:comet-trail': '#7dd3fc', 'glowmoth:stardust-trail': '#c4b5fd', 'glowmoth:firefly-trail': '#bef264', 'glowmoth:nebula-trail': '#f0abfc' };
+    c.save(); c.globalAlpha = .65; c.fillStyle = trailColors[glowmothTrail] || '#7dd3fc';
+    for (let i = 1; i <= 3; i++) { c.beginPath(); c.arc(bx - i * 10, by + Math.sin(t * .12 + i) * 5, 4 - i * .7, 0, A.TAU); c.fill(); }
+    c.restore();
+  }
+  if (window.Fx) Fx.bloom(c, W, H);
+  A.vignette(c, W, H, 0.35);
+  G.drawFX(c);
+  if (G.state !== 'ready') A.glowText(c, String(G.score), W / 2, 90, 54, '#fff', 'center', 14);
+  if (G.state === 'ready') A.text(c, 'Tap · Space · ↑ to flap', W / 2, H - 40, 15, '#c4b5fd', 'center');
+  if (window.Fx) {
+    if (G.state !== 'playing' && fadeT > 0.02) fadeT *= 0.86;
+    else if (G.state !== 'playing') fadeT = 0;
+    if (irisT < 0.999) Fx.transition.iris(c, W, H, irisT, { x: bx, y: by });
+    if (fadeT > 0.02) Fx.transition.fade(c, W, H, 1 - fadeT);
+  }
+}
+
+const glowmothGame = Arcade.game({
+  id: 'glowmoth', title: 'Glowmoth Gauntlet', subtitle: 'Glide through the crystal caverns', color: '#a78bfa',
+  help: 'Space, ↑, W or click/tap to flap. Slip through the gaps between crystal columns; some columns drift. Medals at 10 / 20 / 30 / 40. P pauses, M mutes.',
+  w: W, h: H, touchR: [['↑', 'Space']], init, update, draw, onStart: startIris,
+});
+
+if (window.UI) {
+  var glowmothShake = 1;
+  var glowmothConfig = {
+    id: 'glowmoth', title: 'Glowmoth Gauntlet', subtitle: 'Carry the Dawn Spark through the crystal caverns.', accent: '#a78bfa',
+    modes: [{ id: 'classic', name: 'Classic', blurb: 'Endless crystal flight.', seeded: true, unlock: null, seasonTargets: [10, 25, 50] }],
+    settings: [{ key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 }],
+    achievements: [
+      { id: 'bronze-medal', name: 'Bronze', desc: 'Score 10', rarity: 'common', hidden: false },
+      { id: 'silver-medal', name: 'Silver', desc: 'Score 20', rarity: 'rare', hidden: false },
+      { id: 'gold-medal', name: 'Gold', desc: 'Score 30', rarity: 'epic', hidden: false },
+      { id: 'platinum-medal', name: 'Platinum', desc: 'Score 40', rarity: 'legendary', hidden: false },
+    ],
+    tutorial: { type: 'guided', steps: [{ text: 'Tap, click, or press Space to flap.', hold: 'Space' }, { text: 'Slip through the crystal gaps to score.', hold: 'Space' }] },
+    hooks: {
+      onPause: function () {}, onResume: function () {}, applyCosmetic: function (slot, id) { if (slot === 'trail') glowmothTrail = id; else if (Object.prototype.hasOwnProperty.call(glowmothLooks, slot)) glowmothLooks[slot] = id; },
+      applySetting: function (key, value) { if (key === 'shake') glowmothShake = Number(value); },
+      getResult: function () { return { win: glowmothGame.state === 'won', score: glowmothGame.score, stats: { best: glowmothGame.hi } }; },
+    },
+    chapter: 'CAVERN 1 · CRYSTAL', levels: [{}, {}, {}, {}, {}],
+  };
+  glowmothGame.shake = (function (shake) { return function (amount) { shake(amount * glowmothShake); }; })(glowmothGame.shake);
+  glowmothShake = Number((Save.load('glowmoth').settings || {}).shake == null ? 1 : Save.load('glowmoth').settings.shake);
+  glowmothGame.ui = UI.mountGame(glowmothGame, glowmothConfig);
+}
+if (window.Music) Music.bindArcade(glowmothGame, MUSIC);
+
+function glowmothMenuScene(c, frame) {
+  const w = frame.width, h = frame.height, t = frame.time;
+  const sky = c.createLinearGradient(0, 0, w, h);
+  sky.addColorStop(0, '#0b1030'); sky.addColorStop(0.58, '#17123e'); sky.addColorStop(1, '#241552');
+  c.fillStyle = sky; c.fillRect(0, 0, w, h);
+  const light = c.createRadialGradient(w * 0.76, h * 0.42, 0, w * 0.76, h * 0.42, Math.max(w, h) * 0.58);
+  light.addColorStop(0, 'rgba(103,232,249,.24)'); light.addColorStop(0.42, 'rgba(167,139,250,.11)'); light.addColorStop(1, 'rgba(11,16,48,0)');
+  c.fillStyle = light; c.fillRect(0, 0, w, h);
+  const layers = frame.quality.layers;
+  for (let layer = 0; layer < layers; layer++) {
+    const base = h * (0.57 + layer * 0.13), amp = h * (0.035 + layer * 0.012), shift = t * (0.006 + layer * 0.004);
+    c.beginPath(); c.moveTo(0, h);
+    for (let x = 0; x <= w + 8; x += Math.max(18, w / 32)) {
+      const ridge = base - (Math.sin(x / w * 9 + shift + layer) * 0.55 + Math.sin(x / w * 17 - shift * 0.7) * 0.3) * amp;
+      c.lineTo(x, ridge);
+    }
+    c.lineTo(w, h); c.closePath(); c.fillStyle = ['#22154d', '#17123f', '#100d32'][layer]; c.fill();
+  }
+  // A crystal arch frames the scene from the right side of the menu card.
+  c.save(); c.translate(w * 0.78, h * 0.52); c.globalAlpha = 0.82;
+  c.shadowColor = '#67e8f9'; c.shadowBlur = frame.quality.glow ? 22 : 8;
+  c.strokeStyle = 'rgba(103,232,249,.65)'; c.lineWidth = Math.max(2, Math.min(w, h) * 0.006);
+  c.beginPath(); c.moveTo(-w * 0.15, h * 0.18); c.lineTo(-w * 0.12, -h * 0.12); c.lineTo(-w * 0.04, -h * 0.29); c.lineTo(w * 0.04, -h * 0.29); c.lineTo(w * 0.13, -h * 0.08); c.lineTo(w * 0.15, h * 0.18); c.stroke();
+  c.fillStyle = 'rgba(103,232,249,.12)'; c.beginPath(); c.moveTo(-w * 0.13, h * 0.18); c.lineTo(-w * 0.1, -h * 0.1); c.lineTo(-w * 0.035, -h * 0.25); c.lineTo(w * 0.035, -h * 0.25); c.lineTo(w * 0.11, -h * 0.06); c.lineTo(w * 0.13, h * 0.18); c.closePath(); c.fill();
+  c.restore();
+  const specks = frame.quality.particles;
+  for (let i = 0; i < specks; i++) {
+    const x = ((i * 97.13 + 21) % 997) / 997 * w;
+    const y = ((i * 173.7 + 47) % 991) / 991 * h;
+    const pulse = 0.3 + 0.7 * Math.abs(Math.sin(t * 0.001 + i * 2.1));
+    c.globalAlpha = pulse * 0.7; c.fillStyle = i % 3 ? '#fde68a' : '#a5f3fc';
+    c.beginPath(); c.arc(x, y, 1 + (i % 3) * 0.45, 0, Math.PI * 2); c.fill();
+  }
+  c.globalAlpha = 1;
+  // Original moth mark, kept clear of the menu text.
+  const mx = w * 0.79, my = h * 0.45 + Math.sin(t * 0.0015) * h * 0.012;
+  c.save(); c.translate(mx, my); c.shadowColor = '#fde68a'; c.shadowBlur = frame.quality.glow ? 18 : 6;
+  c.fillStyle = 'rgba(249,168,212,.82)'; c.beginPath(); c.ellipse(-8, -5, 12, 7, -0.48, 0, Math.PI * 2); c.ellipse(8, -5, 12, 7, 0.48, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#fde68a'; c.beginPath(); c.ellipse(0, 0, 5, 9, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = '#fde68a'; c.lineWidth = 1.4; c.beginPath(); c.moveTo(-2, -7); c.quadraticCurveTo(-8, -16, -11, -12); c.moveTo(2, -7); c.quadraticCurveTo(8, -16, 11, -12); c.stroke(); c.restore();
+}
+
+const glowmothMenu = Menu.mount({
+  gameId: 'glowmoth', title: 'Glowmoth Gauntlet', tagline: 'Carry the Dawn Spark through the crystal caverns.',
+  archetype: 'banner', items: ['play', 'customize', 'options', 'about', 'stats', 'exit'],
+  theme: {
+    frame: 'crystal-corner', button: 'faceted-banner',
+    palette: { bg: '#0b1030', panel: 'rgba(12,18,40,0.82)', accent: '#67e8f9', button: '#fde68a', buttonText: '#241552', text: '#f4f0ff' },
+    type: { title: 'system-ui, sans-serif', body: 'system-ui, sans-serif' },
+    scene: glowmothMenuScene,
+    sceneFallback: glowmothMenuScene,
+    music: { tempo: 76, root: 45, scale: 'dorian', layers: ['bass', 'pad', 'lead'] },
+    sfx: { hover: 'tick', select: 'select', back: 'blip' }
+  },
+  onPlay: function () { glowmothGame.inputLocked = false; glowmothGame.begin(); },
+  onRestart: function () { glowmothGame.restart(true); },
+  onResume: function () { if (glowmothGame.state === 'paused') glowmothGame.pauseToggle(); },
+  screens: {
+    customize: function (view) {
+      const doc = view.panel.ownerDocument, meta = window.Meta, wallet = meta && meta.read ? meta.read().sparks : 0;
+      const heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Customize'; view.panel.appendChild(heading);
+      const balance = doc.createElement('p'); balance.className = 'apex-menu-tagline';
+      balance.textContent = 'Sparks: ' + wallet + ' · Owned items are saved on this device.'; view.panel.appendChild(balance);
+      (meta && meta.getCosmetics ? meta.getCosmetics('glowmoth') : []).forEach(function (item) {
+        const button = doc.createElement('button'); button.type = 'button'; button.className = 'apex-menu-action';
+        button.textContent = item.name + ' · ' + (item.equipped ? 'Equipped' : item.owned ? 'Equip' : item.cost + ' Sparks');
+        button.disabled = item.equipped || (!item.owned && wallet < item.cost);
+        button.addEventListener('click', function () {
+          const result = item.owned ? meta.equipCosmetic('glowmoth', item.id) : meta.purchaseCosmetic('glowmoth', item.id);
+          if (result && result.ok && item.owned) glowmothConfig.hooks.applyCosmetic(item.slot, item.id);
+          view.refresh();
+        });
+        view.panel.appendChild(button);
+      });
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    },
+    about: function (view) {
+      const doc = view.panel.ownerDocument;
+      const heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'About the flight'; view.panel.appendChild(heading);
+      const story = doc.createElement('p'); story.className = 'apex-menu-tagline'; story.textContent = 'Guide the last Glowmoth through the crystal caverns and carry the Dawn Spark toward the Lumen Tree.'; view.panel.appendChild(story);
+      const controls = doc.createElement('p'); controls.className = 'apex-menu-tagline'; controls.textContent = 'Controls: Space, ↑, W, click, or tap to flap. Press P or Escape to pause. M toggles mute.'; view.panel.appendChild(controls);
+      const medals = doc.createElement('p'); medals.className = 'apex-menu-caption'; medals.textContent = 'Bronze 10 · Silver 20 · Gold 30 · Platinum 40'; view.panel.appendChild(medals);
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    },
+    stats: function (view) {
+      const doc = view.panel.ownerDocument, save = Save.load('glowmoth');
+      const heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Flight records'; view.panel.appendChild(heading);
+      const result = doc.createElement('p'); result.className = 'apex-menu-tagline'; result.textContent = 'Best score: ' + glowmothGame.hi + ' · Runs played: ' + ((save.stats && save.stats.plays) || 0); view.panel.appendChild(result);
+      const medals = doc.createElement('p'); medals.className = 'apex-menu-tagline'; medals.textContent = 'Medals earned: ' + ((save.achievements || []).filter(function (id) { return /-medal$/.test(id); }).length) + ' of 4'; view.panel.appendChild(medals);
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    }
+  },
+  options: { difficulty: 'normal' },
+});
+glowmothGame.inputLocked = true;
+</script>
+</body>
+</html>

@@ -1,22 +1,24 @@
-const CACHE_NAME = 'apex-arcade-v15';
+const CACHE_NAME = 'apex-arcade-v16';
 const BASE_PATH = new URL('.', self.location.href).pathname;
 const GAME_FILES = [
-  '01-flappy-bird.html', '02-pong.html', '03-snake.html', '04-space-invaders.html', '05-tetris.html',
-  '06-pac-man.html', '07-asteroids.html', '08-mario.html', '09-mario-world.html', '10-sonic.html',
-  '11-street-fighter.html', '12-chrono-adventure.html', '13-castlevania.html', '14-metroid.html',
-  '15-hollow-knight.html', '16-celeste.html', '17-cuphead.html', '18-dead-cells.html', '19-ori.html',
-  '20-rayman.html', '21-chess.html', '22-snakes-ladders.html', '23-ludo.html', '24-carrom.html',
-  '25-tycoon-town.html', '26-checkers.html', '27-connect-four.html', '28-mancala.html', '29-reversi.html',
-  '30-tic-tac-toe.html', '31-backgammon.html', '32-dots-boxes.html', '33-go.html', '34-solitaire.html',
-  '35-memory-match.html', '36-maths-dash.html', '37-pool.html', '38-bowling.html', '39-basketball.html',
-  '40-mini-golf.html', '41-soccer-pool.html', '42-2048.html', '43-sudoku.html', '44-minesweeper.html',
-  '45-sliding-puzzle.html', '46-nuts-bolts.html', '47-colour-sort.html', '48-fruit-merge.html',
-  '49-table-tennis.html', '50-mahjong.html',
-].map((file) => `${BASE_PATH}assets/aistudio/${file}`);
+  '01-flappy-bird/index.html', '02-pong/index.html', '03-snake/index.html', '04-space-invaders/index.html',
+  '05-tetris/index.html', '06-pac-man/index.html', '07-asteroids/index.html', '08-mario/index.html',
+  '09-mario-world/index.html', '10-sonic/index.html', '11-street-fighter/index.html', '12-chrono-adventure/index.html',
+  '13-castlevania/index.html', '14-metroid/index.html', '15-hollow-knight/index.html', '16-celeste/index.html',
+  '17-cuphead/index.html', '18-dead-cells/index.html', '19-ori/index.html', '20-rayman/index.html',
+  '21-chess/index.html', '22-snakes-ladders/index.html', '23-ludo/index.html', '24-carrom/index.html',
+  '25-tycoon-town/index.html', '26-checkers/index.html', '27-connect-four/index.html', '28-mancala/index.html',
+  '29-reversi/index.html', '30-tic-tac-toe/index.html', '31-backgammon/index.html', '32-dots-boxes/index.html',
+  '33-go/index.html', '34-solitaire/index.html', '35-memory-match/index.html', '36-maths-dash/index.html',
+  '37-pool/index.html', '38-bowling/index.html', '39-basketball/index.html', '40-mini-golf/index.html',
+  '41-soccer-pool/index.html', '42-2048/index.html', '43-sudoku/index.html', '44-minesweeper/index.html',
+  '45-sliding-puzzle/index.html', '46-nuts-bolts/index.html', '47-colour-sort/index.html', '48-fruit-merge/index.html',
+  '49-table-tennis/index.html', '50-mahjong/index.html',
+].map((file) => `${BASE_PATH}assets/games/${file}`);
 const GAME_KITS = [
   'meta-config.js', 'meta-kit.js', 'perf-kit.js', 'arcade-core.js', 'platform-kit.js', 'act-kit.js', 'board-kit.js', 'board-art.js', 'save-kit.js', 'score-bridge.js',
   'fx-kit.js', 'ui-kit.js', 'music-kit.js', 'card-scenes.js', 'menu-kit.js', 'menu-kit.css', 'menu-bootstrap.js',
-].map((file) => `${BASE_PATH}assets/aistudio/${file}`);
+].map((file) => `${BASE_PATH}assets/kits/${file}`);
 const APP_SHELL = [BASE_PATH, `${BASE_PATH}manifest.webmanifest`, `${BASE_PATH}apex-icon.svg`];
 
 self.addEventListener('install', (event) => {

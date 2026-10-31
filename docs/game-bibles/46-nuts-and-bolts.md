@@ -50,7 +50,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `46-nuts-bolts.html`. Current family: Board Kit (No). Catalog description: “Free wooden planks by unscrewing unblocked bolts into the color-matching tray; 3 matched bolts pop and drop the planks.” Controls: Click or tap a free bolt to unscrew it into the tray. U undo, R restart. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `46-nuts-bolts/index.html`. Current family: Board Kit (No). Catalog description: “Free wooden planks by unscrewing unblocked bolts into the color-matching tray; 3 matched bolts pop and drop the planks.” Controls: Click or tap a free bolt to unscrew it into the tray. U undo, R restart. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

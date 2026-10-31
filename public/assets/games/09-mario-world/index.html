@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cloudhop Pip</title>
+<script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
+</head>
+<body>
+
+
+<script src="../../kits/perf-kit.js"></script>
+<script src="../../kits/save-kit.js"></script>
+<script src="../../kits/meta-config.js"></script>
+<script src="../../kits/meta-kit.js"></script>
+<script src="../../kits/arcade-core.js"></script>
+<script src="../../kits/platform-kit.js"></script>
+<script src="../../kits/score-bridge.js"></script>
+<script src="../../kits/ui-kit.js"></script>
+<script>
+/* Cloudhop Pip — sky-island platformer: a frog with a double jump, moving platforms, springs,
+   checkpoints and three courses. Built on platform-kit.js. */
+const A = Arcade, P = Plat, TAU = Math.PI * 2;
+
+/* ---- course 1: Floating Isles ---- */
+const S1 = P.make('1 \u00b7 Floating Isles', 110, (g) => {
+  g.ground(0, 14); g.set(2, 11, 'P'); g.coins(6, 10, 4);
+  g.ground(18, 28); g.set(22, 11, 'w'); g.set(24, 8, '?'); g.coins(20, 9, 3);
+  g.ground(33, 44); g.set(38, 11, 'S'); g.plat(38, 5, 5); g.coins(38, 4, 5);
+  g.ground(49, 62); g.set(52, 11, 'C'); g.set(56, 11, 'h'); g.plat(58, 8, 3); g.coins(58, 7, 3);
+  g.set(66, 11, 'M'); g.coins(66, 9, 3);
+  g.ground(74, 90); g.set(78, 11, 'w'); g.set(82, 9, 'b'); g.coins(80, 8, 6); g.set(86, 11, '^');
+  g.ground(94, 110); g.stairs(97, 3); g.set(106, 11, 'F');
+});
+S1.hint = 'Press jump again in mid-air for a double jump';
+
+/* ---- course 2: Windmill Heights ---- */
+const S2 = P.make('2 \u00b7 Windmill Heights', 120, (g) => {
+  g.ground(0, 10); g.set(2, 11, 'P');
+  g.plat(13, 10, 3); g.plat(18, 8, 3); g.plat(23, 6, 3); g.coins(23, 5, 3);
+  g.ground(28, 40, 8); g.set(32, 7, 'w'); g.set(35, 7, 'C');
+  g.set(44, 8, 'M'); g.coins(44, 6, 3);
+  g.ground(52, 66, 8); g.set(55, 7, 'h'); g.set(60, 7, 'w'); g.coins(57, 5, 5); g.set(63, 7, 'S'); g.plat(63, 2, 4); g.coins(63, 1, 4);
+  g.plat(70, 5, 3); g.plat(75, 8, 3); g.plat(80, 10, 3);
+  g.ground(85, 100, 11); g.set(88, 8, 'b'); g.set(92, 10, 's'); g.set(96, 10, 'C'); g.coins(90, 8, 5);
+  g.plat(103, 10, 3); g.plat(108, 9, 3);
+  g.ground(112, 120, 11); g.set(117, 10, 'F');
+});
+S2.hint = 'Climb up, then drop down the other side';
+
+/* ---- course 3: Starlit Bridge ---- */
+const S3 = P.make('3 \u00b7 Starlit Bridge', 120, (g) => {
+  g.ground(0, 12); g.set(2, 11, 'P'); g.coins(6, 10, 4);
+  g.set(17, 11, 'M'); g.set(28, 11, 'M'); g.coins(17, 9, 3); g.coins(28, 9, 3);
+  g.ground(36, 48, 11); g.set(40, 10, 'w'); g.set(44, 10, 'C'); g.coins(38, 8, 5);
+  g.plat(52, 10, 2); g.plat(56, 9, 2); g.plat(60, 8, 2); g.plat(64, 9, 2); g.set(58, 6, 'b');
+  g.ground(68, 82, 11); g.set(71, 10, 'h'); g.set(75, 10, '^'); g.set(76, 10, '^'); g.set(79, 10, 's');
+  g.set(86, 11, 'M'); g.coins(86, 9, 3);
+  g.ground(94, 108, 11); g.set(97, 10, 'w'); g.set(100, 8, 'b'); g.set(103, 10, 'C');
+  g.plat(110, 10, 3);
+  g.ground(114, 120, 11); g.set(117, 10, 'F');
+});
+S3.hint = 'The last bridge \u2014 keep your double jump handy';
+
+const PAL = [
+  { sky: ['#60a5fa', '#bfdbfe', '#fef9c3'], solid: '#a16207', top: '#86efac', plat: '#d6a56b' },
+  { sky: ['#f97316', '#fdba74', '#fef3c7'], solid: '#7c2d12', top: '#a3e635', plat: '#92400e' },
+  { sky: ['#0f172a', '#312e81', '#6d28d9'], solid: '#312e81', top: '#c4b5fd', plat: '#6366f1' },
+];
+S1.theme = PAL[0]; S2.theme = PAL[1]; S3.theme = PAL[2];
+
+function bg(c, cam, t, lvl) {
+  const W = 800, H = 480;
+  A.sky(c, W, H, PAL[lvl].sky);
+  if (lvl === 2) {
+    A.drawStars(c, bg.stars || (bg.stars = A.makeStars(90, W, H * 0.8)), t, W, H, 0.04, '#e0e7ff');
+    c.fillStyle = '#fef3c7'; c.beginPath(); c.arc(600, 90, 34, 0, TAU); c.fill();
+    c.fillStyle = PAL[2].sky[1]; c.beginPath(); c.arc(612, 84, 30, 0, TAU); c.fill();
+    P.clouds(c, cam, t, 0.1, 'rgba(165,180,252,.25)');
+    P.ridge(c, 400, 28, 3, cam.x * 0.25, '#1e1b4b');
+  } else {
+    if (lvl === 0) { c.fillStyle = '#fef08a'; c.beginPath(); c.arc(640, 90, 38, 0, TAU); c.fill(); }
+    P.clouds(c, cam, t, 0.1);
+    P.ridge(c, 360, 30, lvl + 1, cam.x * 0.2, lvl ? '#fb923c' : '#93c5fd');
+    P.ridge(c, 400, 24, lvl + 4, cam.x * 0.4, lvl ? '#b45309' : '#6ee7b7');
+    if (lvl === 1) for (let i = 0; i < 3; i++) {
+      const x = ((i * 520 - cam.x * 0.35) % 1560 + 1560) % 1560 - 100, a = t * 0.03;
+      c.fillStyle = '#7c2d12'; c.beginPath(); c.moveTo(x, 400); c.lineTo(x + 8, 300); c.lineTo(x + 24, 300); c.lineTo(x + 32, 400); c.fill();
+      c.strokeStyle = '#fef3c7'; c.lineWidth = 4; c.beginPath();
+      for (let k = 0; k < 4; k++) { c.moveTo(x + 16, 300); c.lineTo(x + 16 + Math.cos(a + k * 1.571) * 54, 300 + Math.sin(a + k * 1.571) * 54); } c.stroke();
+    }
+  }
+}
+
+/* Pip the frog: big eyes, yellow belly, legs that stretch in the air */
+function drawPip(c, p, G) {
+  const cx = p.x + p.w / 2, base = p.y + p.h, f = p.face, air = !p.ground, run = p.ground ? Math.sin(p.walk) : 0;
+  A.shadow(c, cx, base + 1, 11, 3, 0.25);
+  c.save(); c.translate(cx, base); c.scale(f * (1 + p.sq * 0.5), 1 - p.sq * 0.5);
+  c.fillStyle = '#15803d';
+  if (air) { c.fillRect(-9, -8, 5, 8); c.fillRect(4, -8, 5, 8); c.fillRect(-12, -3, 7, 4); }
+  else { c.fillRect(-9 + run * 3, -6, 6, 6); c.fillRect(3 - run * 3, -6, 6, 6); }
+  c.fillStyle = '#22c55e'; A.roundRect(c, -10, -22, 20, 17, 8); c.fill();
+  c.fillStyle = '#fef08a'; c.beginPath(); c.ellipse(1, -10, 6, 5, 0, 0, TAU); c.fill();
+  c.fillStyle = '#22c55e'; c.beginPath(); c.arc(-2, -25, 6, 0, TAU); c.arc(8, -25, 6, 0, TAU); c.fill();
+  c.fillStyle = '#fff'; c.beginPath(); c.arc(-2, -25, 4.2, 0, TAU); c.arc(8, -25, 4.2, 0, TAU); c.fill();
+  c.fillStyle = '#111'; c.beginPath(); c.arc(-1, -25, 2, 0, TAU); c.arc(9, -25, 2, 0, TAU); c.fill();
+  c.strokeStyle = '#166534'; c.lineWidth = 1.6; c.beginPath(); c.arc(4, -16, 5, 0.2, Math.PI - 0.2); c.stroke();
+  c.strokeStyle = '#f43f5e'; c.lineWidth = 3; c.lineCap = 'round'; c.beginPath(); c.moveTo(-8, -17); c.lineTo(-16, -15 + Math.sin(G.clock * 0.3) * 2); c.stroke();
+  c.restore();
+}
+
+P.game({
+  id: 'cloudhop-pip', title: 'Cloudhop Pip', subtitle: 'Double-jump across the sky isles', color: '#4ade80',
+  controls: [['\u2190 \u2192  /  A D', 'Run'], ['Space  /  \u2191  /  W', 'Jump \u2014 press again for a double jump'], ['\u2193 + Jump', 'Drop through thin platforms'], ['Moving platforms', 'Ride them across gaps'], ['Land on enemies', 'Stomp them (spikes hurt)']],
+  help: '\u2190 \u2192 or A D run \u00b7 Space, \u2191 or W jump, press again in mid-air to double jump \u00b7 \u2193 + jump drops through thin platforms \u00b7 ride moving platforms \u00b7 stomp enemies, avoid spikes \u00b7 reach the flag',
+  levels: [S1, S2, S3], bg, drawHero: drawPip, winTitle: 'Sky Cleared!',
+  phys: { jumps: 2, run: 3.6, jump: 10.2, grav: 0.5, cut: 0.5 },
+});
+</script>
+<script src="../../kits/menu-bootstrap.js"></script>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<script>(()=>{const raw=new URLSearchParams(location.search).get('seed');if(raw!==null&&/^\d+$/.test(raw)){let state=Number(raw)>>>0;Math.random=()=>{state=(state+0x6D2B79F5)>>>0;let value=state;value=Math.imul(value^(value>>>15),value|1);value^=value+Math.imul(value^(value>>>7),value|61);return((value^(value>>>14))>>>0)/4294967296}}})();</script>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Minefield</title>
+<style>
+  .ms { display: grid; gap: 14px; justify-items: start; }
+  .top { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .lcd { font: 800 22px ui-monospace, Consolas, monospace; color: #fb7185; background: #0b0d16; border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; min-width: 76px; text-align: center; }
+  #bd { display: grid; gap: 2px; padding: 8px; background: #2a2f45; border-radius: 12px; user-select: none; touch-action: manipulation; box-shadow: 0 20px 50px -20px #000; max-width: 100%; overflow: auto; }
+  .k { width: var(--z); height: var(--z); border-radius: 4px; display: flex; align-items: center; justify-content: center; font: 800 calc(var(--z) * .58) "Segoe UI", sans-serif; background: linear-gradient(#5b6490, #454d75); cursor: pointer; box-shadow: inset 0 -3px 0 rgba(0,0,0,.28); }
+  .k:hover { filter: brightness(1.15); } .k.o { background: #181c2e; box-shadow: none; cursor: default; } .k.cur { outline: 3px solid #fde047; outline-offset: -2px; }
+  .k.m { background: #7f1d1d; } .k.x { background: #ef4444; } .k.w { background: #3b1d28; }
+  .n1 { color: #60a5fa; } .n2 { color: #4ade80; } .n3 { color: #f87171; } .n4 { color: #a78bfa; } .n5 { color: #fb923c; } .n6 { color: #22d3ee; } .n7 { color: #e2e8f0; } .n8 { color: #94a3b8; }
+</style>
+<script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
+</head>
+<body>
+
+<script src="../../kits/perf-kit.js"></script>
+<script src="../../kits/save-kit.js"></script>
+<script src="../../kits/meta-config.js"></script>
+<script src="../../kits/meta-kit.js"></script>
+<script src="../../kits/board-kit.js"></script>
+<script src="../../kits/score-bridge.js"></script>
+<script src="../../kits/ui-kit.js"></script>
+<script>
+const ui = Board.shell({
+  id: 'minesweeper', title: 'Minefield', subtitle: 'Clear the field without touching a mine',
+  rules: 'Reveal every safe square. A number tells you how many of the eight surrounding squares hide a mine. Use the numbers to work out where the mines are and flag them. Your first click is always safe. Clicking a revealed number whose flags match its count opens all its remaining neighbours (a "chord"). Reveal a mine and it is game over.',
+  controls: [['Click', 'Reveal a square (or chord on a number)'], ['Right-click / long-press / F', 'Flag a square'], ['Flag mode button', 'Tap to flag on touch screens'], ['Arrows + Space', 'Move the cursor and reveal'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
+});
+ui.main.innerHTML = `<div class="ms">
+  <div class="top"><span class="lcd" id="mn">000</span><span class="lcd" id="tm">000</span>
+    <label class="bk-row" style="color:var(--muted)">Field <select class="bk-select" id="lvl"><option value="9,9,10">Easy 9×9 · 10</option><option value="16,16,40" selected>Medium 16×16 · 40</option><option value="22,14,55">Hard 22×14 · 55</option></select></label>
+    <button class="bk-btn" id="fl">🚩 Flag mode: off</button><button class="bk-btn bk-primary" id="new">New game</button></div>
+  <div class="bk-status" id="st" style="min-width:260px"></div>
+  <div id="bd"></div></div>`;
+const $ = (s) => ui.main.querySelector(s);
+let W, H, M, mines, rev, flag, over, started, t0, tick, cur, flagMode, left;
+const bd = $('#bd');
+const nb = (i) => { const r = i / W | 0, c = i % W, o = []; for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) { if (!dr && !dc) continue; const rr = r + dr, cc = c + dc; if (rr >= 0 && rr < H && cc >= 0 && cc < W) o.push(rr * W + cc); } return o; };
+function newGame() {
+  [W, H, M] = $('#lvl').value.split(',').map(Number); mines = Array(W * H).fill(0); rev = Array(W * H).fill(0); flag = Array(W * H).fill(0); over = null; started = false; left = W * H - M; cur = (H >> 1) * W + (W >> 1);
+  Board.cancel(tick); $('#tm').textContent = '000';
+  const z = Math.max(22, Math.min(36, Math.floor((Math.min(innerWidth - 56, 980)) / W))); bd.style.setProperty('--z', z + 'px'); bd.style.gridTemplateColumns = `repeat(${W}, var(--z))`;
+  bd.innerHTML = ''; for (let i = 0; i < W * H; i++) { const d = document.createElement('div'); d.dataset.i = i; bd.appendChild(d); }
+  render();
+}
+function seed(safe) { const ban = new Set([safe, ...nb(safe)]); const c = []; for (let i = 0; i < W * H; i++) if (!ban.has(i)) c.push(i); Board.shuffle(c).slice(0, M).forEach((i) => { mines[i] = 1; }); started = true; t0 = Board.now(); tick = Board.every(500, () => { $('#tm').textContent = String(Math.min(999, (Board.now() - t0) / 1000 | 0)).padStart(3, '0'); }); }
+const cnt = (i) => nb(i).filter((j) => mines[j]).length;
+function open(i) {
+  if (over || rev[i] || flag[i]) return;
+  if (!started) seed(i);
+  if (mines[i]) return lose(i);
+  const st = [i]; while (st.length) { const k = st.pop(); if (rev[k] || flag[k]) continue; rev[k] = 1; left--; if (!cnt(k)) for (const j of nb(k)) if (!rev[j] && !mines[j]) st.push(j); }
+  Board.sfx('step'); if (left === 0) win(); render();
+}
+function chord(i) { if (!rev[i]) return; const n = nb(i), f = n.filter((j) => flag[j]).length; if (f !== cnt(i)) return; for (const j of n) if (!flag[j] && !rev[j]) { open(j); if (over) return; } }
+function lose(i) { over = 'lose'; Board.cancel(tick); window.boom = i; Board.sfx('lose'); render(); $('#st').textContent = '💥 Boom! You hit a mine.'; Board.after(500, () => Board.modal('Boom!', 'You hit a mine.', [['New game', newGame], ['Close']])); }
+function win() { over = 'win'; Board.cancel(tick); const t = Math.floor((Board.now() - t0) / 1000), k = 'apex:ms:' + $('#lvl').value, b = +Board.ls.get(k) || 1e9; if (t < b) Board.ls.set(k, t); Board.sfx('win'); Board.after(400, () => Board.modal('Field cleared!', 'Time ' + t + ' s' + (t < b ? ' — new best!' : ' (best ' + b + ' s)') + '.', [['New game', newGame], ['Close']])); }
+function render() {
+  const fc = flag.reduce((a, b) => a + b, 0);
+  [...bd.children].forEach((d, i) => {
+    let c = 'k', t = '';
+    if (rev[i]) { c += ' o'; const n = cnt(i); if (n) { c += ' n' + n; t = n; } }
+    else if (over && mines[i] && !flag[i]) { c += ' m'; t = '💣'; if (i === window.boom) c += ' x'; }
+    else if (flag[i]) { t = '🚩'; if (over === 'lose' && !mines[i]) { c += ' w'; t = '❌'; } }
+    else if (over === 'win' && mines[i]) t = '🚩';
+    if (i === cur && !over) c += ' cur'; d.className = c; d.textContent = t;
+  });
+  $('#mn').textContent = String(Math.max(-99, M - fc)).padStart(3, '0'); if (!over) $('#st').textContent = left + ' safe squares to go'; if (over === 'win') $('#st').textContent = '🎉 Field cleared!';
+}
+function toggleFlag(i) { if (over || rev[i]) return; flag[i] ^= 1; Board.sfx('click'); render(); }
+let lp = null;
+bd.addEventListener('contextmenu', (e) => e.preventDefault());
+bd.addEventListener('pointerdown', (e) => { const d = e.target.closest('.k'); if (!d) return; const i = +d.dataset.i; cur = i; lp = { i, long: false, t: Board.after(450, () => { lp.long = true; toggleFlag(i); }), btn: e.button }; });
+bd.addEventListener('pointerup', (e) => {
+  if (!lp) return; Board.cancel(lp.t); const { i, long, btn } = lp; lp = null; if (long) return;
+  if (btn === 2 || flagMode) toggleFlag(i); else if (rev[i]) chord(i); else open(i);
+});
+bd.addEventListener('pointerleave', () => { if (lp) { Board.cancel(lp.t); lp = null; } });
+$('#fl').onclick = () => { flagMode = !flagMode; $('#fl').textContent = '🚩 Flag mode: ' + (flagMode ? 'on' : 'off'); $('#fl').classList.toggle('bk-primary', flagMode); };
+$('#new').onclick = (e) => { e.target.blur(); newGame(); }; $('#lvl').onchange = (e) => { e.target.blur(); newGame(); };
+document.addEventListener('keydown', (e) => {
+  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || document.getElementById('bk-dlg')?.open) return; const k = e.key.toLowerCase();
+  if (k === 'n') newGame(); else if (k === 'f') toggleFlag(cur); else if (k === ' ' || k === 'enter') { e.preventDefault(); rev[cur] ? chord(cur) : open(cur); }
+  else if (k.startsWith('arrow')) { e.preventDefault(); const r = Math.max(0, Math.min(H - 1, (cur / W | 0) + (k === 'arrowdown') - (k === 'arrowup'))), c = Math.max(0, Math.min(W - 1, cur % W + (k === 'arrowright') - (k === 'arrowleft'))); cur = r * W + c; render(); }
+});
+newGame();
+</script>
+<script src="../../kits/menu-bootstrap.js"></script>
+</body>
+</html>

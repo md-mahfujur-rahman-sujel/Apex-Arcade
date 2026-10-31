@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tic-Tac-Toe</title>
+<style>
+  .tt { display: grid; grid-template-columns: auto minmax(240px, 1fr); gap: 22px; align-items: start; }
+  @media (max-width: 860px) { .tt { grid-template-columns: 1fr; } }
+  #bd { --s: max(270px, min(100vw - 40px, 480px)); width: var(--s); aspect-ratio: 1; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 8px; padding: 8px; background: #0f121c; border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 20px 50px -20px #000; user-select: none; touch-action: manipulation; }
+  #bd.four { gap: 5px; }
+  #bd.ultimate { gap: 3px; padding: 6px; }
+  #bd.ultimate .cl { border-radius: 7px; font-size: calc(var(--s) / 13); }
+  #bd.ultimate .cl.sub-top { border-top: 2px solid rgba(167,139,250,.55); }
+  #bd.ultimate .cl.sub-left { border-left: 2px solid rgba(167,139,250,.55); }
+  #bd.ultimate .cl.sub-win { background: rgba(16,185,129,.22); border-color: var(--emerald); }
+  #bd.four .cl { border-radius: 9px; font-size: calc(var(--s) / 5); }
+  .cl { position: relative; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; display: flex; align-items: center; justify-content: center; font: 800 calc(var(--s) / 4) / 1 "Segoe UI", system-ui, sans-serif; }
+  .cl.free:hover { background: #1b2133; border-color: rgba(255,255,255,.25); }
+  .cl.free:focus-visible { outline: 3px solid #f8fafc; outline-offset: 2px; z-index: 2; }
+  .cl.free { transition: background .18s ease, border-color .18s ease, transform .18s ease, box-shadow .18s ease; }
+  .cl.free:active { transform: scale(.97); }
+  .cl:not(.free) { cursor: default; }
+  .cl .n { position: absolute; left: 9px; top: 6px; font: 600 11px ui-monospace, Consolas, monospace; color: var(--muted); opacity: .55; }
+  .cl .m { animation: pop .38s ease-out; }
+  .cl.x .m { color: #22d3ee; text-shadow: 0 0 18px rgba(34,211,238,.45); }
+  .cl.o .m { color: #f59e0b; text-shadow: 0 0 18px rgba(245,158,11,.45); }
+  .cl.pick { background: #1b2133; border-color: var(--amber); }
+  .cl.hint { border-color: #32d5ef; box-shadow: inset 0 0 0 2px rgba(50,213,239,.38), 0 0 20px rgba(50,213,239,.22); }
+  .cl.win { background: rgba(16,185,129,.22); border-color: var(--emerald); }
+  .cl.win .m { animation: pulse .6s ease-in-out infinite alternate; }
+  @keyframes pop { from { transform: scale(.3); opacity: 0; } }
+  @keyframes pulse { to { transform: scale(1.12); } }
+  .side { display: grid; gap: 12px; }
+  .sb { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .sb div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 13px; color: var(--muted); }
+  .sb b { display: block; font-size: 28px; color: var(--text); }
+  .sb .xx b { color: #22d3ee; }
+  .sb .oo b { color: #f59e0b; }
+  .capt { color: var(--muted); line-height: 1.7; font-size: 13px; }
+  .achievement-toast { position: fixed; z-index: 20; left: 50%; bottom: 22px; transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 11px 16px; border: 1px solid rgba(34,211,238,.55); border-radius: 12px; background: rgba(12,18,31,.96); color: #e6e9f5; box-shadow: 0 12px 36px rgba(0,0,0,.42); font-weight: 700; animation: toast-in .24s ease-out; }
+  .achievement-toast small { display: block; margin-top: 3px; color: #8b93b3; font-weight: 500; }
+  @keyframes toast-in { from { opacity: 0; translate: 0 8px; } to { opacity: 1; translate: 0 0; } }
+  @media (prefers-reduced-motion: reduce) { .achievement-toast { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .cl, .cl.free { transition: none; } .cl.free:active { transform: none; } }
+</style>
+</head>
+<body>
+
+
+
+
+
+<script src="../../kits/perf-kit.js"></script>
+<script src="../../kits/save-kit.js"></script>
+<script src="../../kits/meta-config.js"></script>
+<script src="../../kits/meta-kit.js"></script>
+<script src="../../kits/board-kit.js"></script>
+<script src="../../kits/score-bridge.js"></script>
+<script src="../../kits/ui-kit.js"></script>
+<script src="../../kits/board-art.js"></script>
+<script src="../../kits/fx-kit.js"></script>
+<script src="../../kits/music-kit.js"></script>
+<script src="../../kits/menu-kit.js"></script>
+<script>
+const ui = Board.shell({
+  id: 'tic-tac-toe', cpu: true, title: 'Tic-Tac-Toe', subtitle: 'Line up three marks — can you beat the unbeatable computer?',
+  rules: 'Classic: line up three marks on a 3×3 grid. 4×4: line up four. Ultimate: your move sends the opponent to the matching small board; if that board is closed, they may choose any open board. A closed mini-board counts as won or drawn. X starts. Select two players or face the computer.',
+  controls: [['Click a square', 'Place your mark'], ['1 – 9', 'Place a mark (numpad layout: 7 8 9 on top)'], ['U', 'Undo'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
+});
+const MUSIC = { gameId: 'tic-tac-toe', tempo: 92, root: 48, scale: 'pentatonic', layers: ['bass', 'pad', 'lead', 'drums'] };
+Music.play(MUSIC); // The kit waits for the first user gesture before starting audio.
+const GAME_ID = 'tic-tac-toe', SESSION_START = Date.now();
+const readSave = () => window.Save && Save.load ? Save.load(GAME_ID) : { achievements: [], stats: {} };
+window.addEventListener('pagehide', () => {
+  const durationSec = Math.max(0, Math.floor((Date.now() - SESSION_START) / 1000));
+  if (window.Save && Save.update) { const saved = readSave(); Save.update(GAME_ID, { stats: { secondsPlayed: (saved.stats.secondsPlayed || 0) + durationSec } }); }
+  if (window.Apex && Apex.report) Apex.report({ gameId: GAME_ID, type: 'session_end', score: readSave().stats.ticTacToe?.wins || 0, durationSec });
+});
+ui.main.innerHTML = `
+<div class="tt">
+  <div id="bd"></div>
+  <div class="side">
+    <div class="bk-status" id="st"></div>
+    <div class="sb" id="sb"></div>
+    <div class="bk-row">
+      <label>Board <select class="bk-select" id="format"><option value="classic">Classic 3×3</option><option value="four">Four in a row 4×4</option><option value="ultimate">Ultimate 3×3</option></select></label>
+      <label>Play <select class="bk-select" id="mode"><option value="x">X (first) vs computer</option><option value="o">O vs computer</option><option value="two">Two players</option></select></label>
+      <label>AI strength <select class="bk-select" id="lvl"><option value="auto" selected>Contract (auto)</option><option value="1">Level 1 — forgiving</option><option value="2">Level 2 — learning</option><option value="3">Level 3 — capable</option><option value="4">Level 4 — expert</option><option value="5">Level 5 — perfect</option></select></label>
+    </div>
+    <div class="bk-row"><button class="bk-btn bk-primary" id="new">New game</button><button class="bk-btn" id="pause">Pause</button><button class="bk-btn" id="undo">Undo</button><button class="bk-btn" id="hint" title="Available on Easy difficulty">Hint</button><button class="bk-btn" id="stats">Statistics</button><button class="bk-btn" id="rs">Reset score</button></div>
+    <div class="capt">Contract strength follows the selected difficulty. Computer thinking pace is a separate setting.</div>
+  </div>
+</div>`;
+const $ = (s) => ui.main.querySelector(s);
+const LINES = {};
+function linesFor(n, need) {
+  const key = `${n}:${need}`; if (LINES[key]) return LINES[key];
+  const a = [], add = (r, c, dr, dc) => { const line = []; for (let i = 0; i < need; i++) line.push((r + dr * i) * n + c + dc * i); a.push(line); };
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+    if (c + need <= n) add(r, c, 0, 1);
+    if (r + need <= n) add(r, c, 1, 0);
+    if (r + need <= n && c + need <= n) add(r, c, 1, 1);
+    if (r + need <= n && c - need + 1 >= 0) add(r, c, 1, -1);
+  }
+  LINES[key] = a; return a;
+}
+const other = (s) => (s === 'x' ? 'o' : 'x');
+const NUMPAD = [7, 8, 9, 4, 5, 6, 1, 2, 3]; /* label shown in each square, top-left to bottom-right */
+const KEY2IDX = {}; NUMPAD.forEach((k, i) => { KEY2IDX[k] = i; });
+
+/* ---- rules & computer ---- */
+function winner(b, lines) { for (const line of lines) { const p = b[line[0]]; if (p && line.every((i) => b[i] === p)) return { p, line }; } return null; }
+const classicLines = linesFor(3, 3), fourLines = linesFor(4, 4), ultimateLines = classicLines;
+function mm(b, s, me, depth) {
+  const w = winner(b, classicLines); if (w) return w.p === me ? 10 - depth : depth - 10;
+  if (b.every(Boolean)) return 0;
+  let best = s === me ? -99 : 99;
+  for (let i = 0; i < b.length; i++) if (!b[i]) {
+    b[i] = s; const v = mm(b, other(s), me, depth + 1); b[i] = '';
+    best = s === me ? Math.max(best, v) : Math.min(best, v);
+  }
+  return best;
+}
+function candidatesFor(board, boardWins, forcedBoard, format) {
+  if (format !== 'ultimate') return board.map((v, i) => !v ? i : -1).filter((i) => i >= 0);
+  const out = [];
+  for (let i = 0; i < 81; i++) {
+    const r = Math.floor(i / 9), c = i % 9, sub = Math.floor(r / 3) * 3 + Math.floor(c / 3);
+    if (!board[i] && !boardWins[sub] && (forcedBoard == null || forcedBoard === sub)) out.push(i);
+  }
+  return out;
+}
+function simulateUltimate(board, boardWins, move, player) {
+  const b = board.slice(), wins = boardWins.slice(), r = Math.floor(move / 9), c = move % 9, sub = Math.floor(r / 3) * 3 + Math.floor(c / 3);
+  b[move] = player;
+  const local = Array.from({ length: 9 }, (_, i) => (Math.floor(sub / 3) * 3 + Math.floor(i / 3)) * 9 + (sub % 3) * 3 + i % 3);
+  const localWin = winner(local.map((i) => b[i]), ultimateLines);
+  if (localWin) wins[sub] = player;
+  else if (local.every((i) => b[i])) wins[sub] = 'draw';
+  const overall = winner(wins, ultimateLines);
+  const target = (r % 3) * 3 + c % 3;
+  return { board: b, boardWins: wins, overall, forcedBoard: wins[target] ? null : target };
+}
+function cpuMove(state, s, L) {
+  const { board, boardWins, forcedBoard, format, size, need } = state;
+  const free = candidatesFor(board, boardWins, forcedBoard, format), rnd = (a) => a[Board.rand(a.length)];
+  L = Math.max(1, Math.min(5, +L || 3)); if (free.length < 1) return -1;
+  const lines = format === 'four' ? fourLines : classicLines;
+  const makesLine = (idx, player) => {
+    if (format === 'ultimate') { const sim = simulateUltimate(board, boardWins, idx, player); return !!sim.overall || sim.boardWins.some((v, n) => v === player && boardWins[n] !== player); }
+    const b = board.slice(); b[idx] = player; return !!winner(b, lines);
+  };
+  if (L === 1) return rnd(free);
+  const immediate = free.find((i) => makesLine(i, s)); if (immediate !== undefined) return immediate;
+  const blocks = free.filter((i) => makesLine(i, other(s)));
+  if (blocks.length) return rnd(blocks);
+  if (format === 'classic') {
+    if (L === 2) return board[4] === '' ? 4 : rnd(free);
+    let best = -99, moves = [];
+    for (const i of free) { board[i] = s; const v = mm(board, other(s), s, 1); board[i] = ''; if (v > best) { best = v; moves = [i]; } else if (v === best) moves.push(i); }
+    if (L === 3 && Math.random() < .18) return rnd(free);
+    if (L === 4 && Math.random() < .04) return rnd(free);
+    return rnd(moves);
+  }
+  if (format === 'ultimate') {
+    if (L === 2) {
+      const localThreat = free.find((i) => { const sim = simulateUltimate(board, boardWins, i, s); return sim.boardWins.some((v, n) => v === s && boardWins[n] !== s); });
+      return localThreat === undefined ? rnd(free) : localThreat;
+    }
+    let best = -Infinity, moves = [];
+    for (const i of free) {
+      const sim = simulateUltimate(board, boardWins, i, s); let v = sim.overall ? 10000 : 0;
+      const local = Math.floor(Math.floor(i / 9) / 3) * 3 + Math.floor((i % 9) / 3), rr = Math.floor(i / 9), cc = i % 9, localCells = Array.from({ length: 9 }, (_, q) => (Math.floor(local / 3) * 3 + Math.floor(q / 3)) * 9 + (local % 3) * 3 + q % 3);
+      const localBoard = localCells.map((q) => board[q]);
+      for (const line of ultimateLines) { const own = line.filter((q) => localBoard[q] === s).length, opp = line.filter((q) => localBoard[q] === other(s)).length; if (!opp) v += [0, 2, 10, 70][own] || 0; }
+      if (sim.forcedBoard != null && sim.boardWins[sim.forcedBoard]) v += 6; // route the rival to a closed board
+      v += (4 - Math.abs(rr % 3 - 1) - Math.abs(cc % 3 - 1)) * .12;
+      if (v > best) { best = v; moves = [i]; } else if (v === best) moves.push(i);
+    }
+    if (L === 3 && Math.random() < .22) return rnd(free);
+    if (L === 4 && Math.random() < .06) return rnd(free);
+    return rnd(moves);
+  }
+  if (L === 2) return rnd(free);
+  let best = -Infinity, moves = [];
+  for (const i of free) {
+    let value = (size / 2 - Math.abs(i % size - (size - 1) / 2)) + (size / 2 - Math.abs(Math.floor(i / size) - (size - 1) / 2));
+    for (const line of lines) if (line.includes(i)) {
+      const own = line.filter((q) => board[q] === s).length, opp = line.filter((q) => board[q] === other(s)).length;
+      if (!opp) value += [1, 2, 7, 24, 120][own];
+      if (!own && opp) value -= [1, 3, 10, 38, 160][opp];
+    }
+    value += Math.random() * (L === 3 ? 2.5 : L === 4 ? .65 : .08);
+    if (value > best) { best = value; moves = [i]; } else if (value === best) moves.push(i);
+  }
+  return rnd(moves);
+}
+
+/* ---- state & UI ---- */
+let B, turn, over, mode, gameFormat, busy, paused = false, hist, wl, gen = 0, levelOverride = null, boardWins, forcedBoard, size, target, hintIndex = null;
+const prior = readSave().stats.ticTacToe || {};
+const score = { x: prior.x || 0, o: prior.o || 0, d: prior.draws || 0 };
+let threatenedThisGame = false;
+const bd = $('#bd'), cells = [];
+if (window.BoardArt) BoardArt.frame(bd, { material: 'slate', accent: '#8b5cf6' });
+const human = () => mode === 'two' || turn === mode;
+const activeLevel = () => levelOverride == null ? (window.Board && Board.level ? Board.level() : 3) : levelOverride;
+function syncContractLevel() {
+  if (levelOverride == null) $('#lvl').value = 'auto';
+}
+function newGame() {
+  const restart = gen > 0; gen++; paused = false; $('#pause').textContent = 'Pause'; hintIndex = null; mode = $('#mode').value; gameFormat = $('#format').value; size = gameFormat === 'four' ? 4 : gameFormat === 'ultimate' ? 9 : 3; target = gameFormat === 'four' ? 4 : 3;
+  B = Array(size * size).fill(''); boardWins = Array(9).fill(''); forcedBoard = null; turn = 'x'; over = ''; busy = false; hist = []; wl = null; threatenedThisGame = false;
+  if (restart) Board.sfx('start'); if (window.Music) Music.setIntensity(0.2);
+  bd.classList.remove('four', 'ultimate'); if (gameFormat !== 'classic') bd.classList.add(gameFormat);
+  bd.style.gridTemplateColumns = `repeat(${size}, minmax(0, 1fr))`; bd.style.gridTemplateRows = `repeat(${size}, minmax(0, 1fr))`;
+  while (cells.length > 0) cells.pop().remove();
+  for (let i = 0; i < B.length; i++) { const d = document.createElement('div'); d.className = 'cl'; d.dataset.i = i; cells.push(d); bd.appendChild(d); }
+  render(); cpu();
+}
+function render(dropped) {
+  cells.forEach((d, i) => {
+    const p = B[i], can = !over && !busy && human() && !p;
+    const row = Math.floor(i / size), col = i % size, sub = gameFormat === 'ultimate' ? Math.floor(row / 3) * 3 + Math.floor(col / 3) : -1;
+    const closedWin = sub >= 0 && boardWins[sub] === 'x' || sub >= 0 && boardWins[sub] === 'o';
+    const isForced = sub >= 0 && forcedBoard === sub && !closedWin;
+    const isHint = i === hintIndex && Board.hints() && levelOverride == null && can;
+    d.className = 'cl' + (p ? ' ' + p : '') + (can ? ' free' : '') + (isHint ? ' hint' : '') + (wl && wl.includes(i) ? ' win' : '') + (sub >= 0 && row % 3 === 0 ? ' sub-top' : '') + (sub >= 0 && col % 3 === 0 ? ' sub-left' : '') + (closedWin ? ' sub-win' : '') + (isForced ? ' forced-target' : '');
+    d.innerHTML = (gameFormat === 'classic' ? `<span class="n">${NUMPAD[i]}</span>` : '') + (p
+      ? (window.BoardArt ? BoardArt.markHTML(p) : `<span class="m"${i === dropped ? '' : ' style="animation:none"'}>${p.toUpperCase()}</span>`)
+      : '');
+    d.setAttribute('aria-label', p ? `${p.toUpperCase()} mark, square ${i + 1}` : `Empty square ${i + 1}${isForced ? ', required board' : ''}${isHint ? ', suggested move' : ''}`);
+    d.title = isHint ? 'Suggested move' : '';
+  });
+  const you = mode !== 'two';
+  const strength = activeLevel();
+  let turnInfo = `${turn.toUpperCase()} to move${you && human() ? ' — your turn' : ''}`;
+  if (gameFormat === 'ultimate' && forcedBoard != null) turnInfo += ` · play in board ${forcedBoard + 1}`;
+  if (gameFormat === 'ultimate' && forcedBoard == null) turnInfo += ' · choose any open board';
+  $('#st').innerHTML = over || (busy ? `Computer is thinking… <small>(strength ${strength})</small>` : `${turnInfo} <small>(AI strength ${strength}${levelOverride == null ? ', contract' : ', manual'})</small>`);
+  const who = (s) => (!you ? 'Player ' + (s === 'x' ? 'X' : 'O') : (s === mode ? 'You' : 'Computer') + ' (' + s.toUpperCase() + ')');
+  $('#sb').innerHTML = `<div class="xx">${who('x')}<b>${score.x}</b></div><div>Draws<b>${score.d}</b></div><div class="oo">${who('o')}<b>${score.o}</b></div>`;
+  $('#hint').disabled = !Board.hints() || levelOverride != null || !human() || busy || !!over;
+}
+function applyMove(i) {
+  if (!Number.isInteger(i) || !B || i < 0 || i >= B.length || B[i] || over) return false;
+  if (gameFormat === 'ultimate') { const r = Math.floor(i / 9), c = i % 9, sub = Math.floor(r / 3) * 3 + Math.floor(c / 3); if (boardWins[sub] || forcedBoard != null && forcedBoard !== sub) return false; }
+  const mover = turn; B[i] = turn;
+  let w = null;
+  if (gameFormat === 'ultimate') {
+    const r = Math.floor(i / 9), c = i % 9, sub = Math.floor(r / 3) * 3 + Math.floor(c / 3);
+    const subCells = Array.from({ length: 9 }, (_, q) => (Math.floor(sub / 3) * 3 + Math.floor(q / 3)) * 9 + (sub % 3) * 3 + q % 3);
+    const localWin = winner(subCells.map((idx) => B[idx]), ultimateLines);
+    if (localWin) boardWins[sub] = mover;
+    else if (subCells.every((idx) => B[idx])) boardWins[sub] = 'draw';
+    const overall = winner(boardWins, ultimateLines);
+    if (overall) { w = { p: overall.p, line: overall.line.flatMap((boardIdx) => { const br = Math.floor(boardIdx / 3) * 3, bc = (boardIdx % 3) * 3; return Array.from({ length: 9 }, (_, q) => (br + Math.floor(q / 3)) * 9 + bc + q % 3); }) }; }
+    const targetBoard = (r % 3) * 3 + c % 3; forcedBoard = boardWins[targetBoard] ? null : targetBoard;
+    if (!w && boardWins.every(Boolean)) over = 'Draw — all small boards are closed';
+  } else w = winner(B, gameFormat === 'four' ? fourLines : classicLines);
+  if (w) { wl = w.line; over = `${mover.toUpperCase()} wins!`; }
+  else if (!over && B.every(Boolean)) over = 'Draw — the board is full';
+  if (over && !w) forcedBoard = null;
+  turn = other(mover);
+  return { w, mover };
+}
+function play(i, fromCpu = false) {
+  if (paused || over || !fromCpu && !human()) return;
+  const mover = turn, opponent = other(turn), lines = gameFormat === 'four' ? fourLines : classicLines;
+  const opponentThreat = gameFormat !== 'ultimate' && lines.some((line) => line.filter((cell) => B[cell] === opponent).length === target - 1 && line.includes(i) && !B[i] && line.filter((cell) => !B[cell]).length === 1);
+  if (opponentThreat || gameFormat === 'ultimate' && boardWins.filter((v) => v === opponent).length >= 2) threatenedThisGame = true;
+  if (!applyMove(i)) return; hintIndex = null; hist.push(i); Board.sfx(opponentThreat ? 'block' : 'place');
+  const w = winnerFromState();
+  if (w) { if (window.Music) Music.setIntensity(1); }
+  else if (over) { Board.sfx('draw'); if (window.Music) Music.setIntensity(0.35); }
+  else { const threat = gameFormat !== 'ultimate' && lines.some((line) => line.filter((cell) => B[cell] === mover).length === target - 1 && line.filter((cell) => !B[cell]).length === 1); if (threat) { Board.sfx('threat'); if (window.Music) Music.setIntensity(0.72); } else if (window.Music) Music.setIntensity(0.38); }
+  if (over) {
+    if (w) score[w.p]++; else score.d++;
+    recordMatch(w);
+  }
+  render(i);
+  if (over) {
+    if (w && window.BoardArt) BoardArt.celebrate(bd, { color: w.p === 'x' ? '#32d5ef' : '#ffbd4a' });
+    const t = !w ? 'Draw' : mode === 'two' ? over : w.p === mode ? 'You won!' : 'Computer wins';
+    if (w) Board.sfx(mode === 'two' || w.p === mode ? 'win' : 'lose');
+    Board.after(650, () => Board.modal(t, over, [['New game', newGame], ['Close']]));
+  } else cpu();
+}
+function announceAchievement(id, label) {
+  const saved = readSave(), current = saved.achievements || [];
+  if (current.includes(id)) return;
+  if (window.Save && Save.update) Save.update(GAME_ID, { achievements: [id] });
+  if (window.Apex && Apex.report) Apex.report({ gameId: GAME_ID, type: 'achievement', achievementId: id });
+  let toast = document.getElementById('tt-achievement');
+  if (!toast) { toast = document.createElement('div'); toast.id = 'tt-achievement'; toast.className = 'achievement-toast'; document.body.appendChild(toast); }
+  toast.innerHTML = `Achievement unlocked: ${label}<small>${id.replace(/-/g, ' ')}</small>`;
+  if (toast._timer) Board.cancel(toast._timer); toast._timer = Board.after(3000, () => toast.remove());
+}
+function recordMatch(w) {
+  const saved = readSave(), old = saved.stats.ticTacToe || { x: 0, o: 0, draws: 0, wins: 0, losses: 0, streak: 0, bestStreak: 0 };
+  const humanSide = mode === 'o' ? 'o' : 'x', humanWon = !!w && w.p === humanSide, loss = !!w && !humanWon;
+  const wins = (old.wins || 0) + (humanWon ? 1 : 0), losses = (old.losses || 0) + (loss ? 1 : 0), draws = (old.draws || 0) + (!w ? 1 : 0);
+  const streak = humanWon ? (old.streak || 0) + 1 : 0, bestStreak = Math.max(old.bestStreak || 0, streak);
+  const rounds = (old.rounds || 0) + 1;
+  if (window.Save && Save.update) Save.update(GAME_ID, { stats: { plays: (saved.stats.plays || 0) + 1, bestScore: Math.max(saved.stats.bestScore || 0, wins), ticTacToe: { x: score.x, o: score.o, draws, wins, losses, streak, bestStreak, rounds, lastResult: w ? w.p === humanSide ? 'win' : 'loss' : 'draw', lastMode: gameFormat } } });
+  if (window.Apex && Apex.report) Apex.report({ gameId: GAME_ID, type: 'score', score: wins });
+  if (humanWon) {
+    announceAchievement('first-line', 'First Line');
+    if (!threatenedThisGame) announceAchievement('clean-sweep', 'Clean Sweep');
+    if (threatenedThisGame) announceAchievement('comeback', 'Comeback');
+    if (gameFormat === 'four') announceAchievement('four-across', 'Four Across');
+    if (gameFormat === 'ultimate') announceAchievement('ultimate-strategist', 'Ultimate Strategist');
+    if (streak >= 3) announceAchievement('win-streak', 'Win Streak');
+  }
+  if (!w && draws >= 3) announceAchievement('draw-specialist', 'Draw Specialist');
+  if (!w && mode !== 'two' && activeLevel() === 5) announceAchievement('perfect-defense', 'Perfect Defense');
+}
+function cpu() {
+  if (paused || over || human()) return; busy = true; render();
+  const g = gen;
+  const state = { board: B.slice(), boardWins: boardWins.slice(), forcedBoard, format: gameFormat, size, need: target };
+  Board.think(() => cpuMove(state, turn, activeLevel()), 850).then(async (m) => {
+    if (g !== gen) return;
+    if (paused) { busy = false; render(); return; }
+    if (m < 0 || !cells[m]) { busy = false; render(); return; }
+    cells[m].classList.add('pick'); await Board.sleep(Board.pace(450));   /* highlight the square it chose before marking it */
+    if (g !== gen) return;
+    if (paused) { busy = false; render(); return; }
+    busy = false; play(m, true);
+  });
+}
+function showHint() {
+  if (!Board.hints() || levelOverride != null || !human() || busy || over) { Board.sfx('error'); return; }
+  const state = { board: B.slice(), boardWins: boardWins.slice(), forcedBoard, format: gameFormat, size, need: target };
+  hintIndex = cpuMove(state, turn, 5);
+  if (hintIndex >= 0) { render(); Board.sfx('hint'); }
+}
+function winnerFromState() {
+  if (!over) return null;
+  const p = over[0].toLowerCase();
+  return p === 'x' || p === 'o' ? { p, line: wl || [] } : null;
+}
+function undo() {
+  if (busy || !hist.length) return; hintIndex = null;
+  if (over) { const winnerState = winnerFromState(); if (winnerState) score[winnerState.p]--; else score.d--; }
+  Board.sfx('undo'); hist.pop(); if (mode !== 'two' && hist.length && turn === mode) hist.pop();
+  const kept = hist.slice(); B = Array(B.length).fill(''); boardWins = Array(9).fill(''); forcedBoard = null; turn = 'x'; over = ''; wl = null;
+  for (const i of kept) applyMove(i);
+  gen++; render(); cpu();
+}
+function resumeMatch() { const dialog = document.getElementById('bk-dlg'); if (dialog?.open) dialog.close(); paused = false; Board.setPaused(false); $('#pause').textContent = 'Pause'; render(); if (!over && !human()) cpu(); }
+function togglePause() {
+  if (paused) { const dialog = document.getElementById('bk-dlg'); if (dialog?.open) dialog.close(); resumeMatch(); return; }
+  if (over) return;
+  // Invalidate a pending CPU timer/search; resumeMatch starts it again if needed.
+  if (busy) { gen++; busy = false; render(); }
+  paused = true; Board.setPaused(true); $('#pause').textContent = 'Resume';
+  if (!window.__apexTheaterEmbedded) Board.modal('Paused', 'Your match is safe. Resume when you are ready.', [['Resume', resumeMatch], ['New game', newGame]]);
+  const dialog = document.getElementById('bk-dlg');
+  if (dialog) dialog.addEventListener('cancel', (event) => { event.preventDefault(); resumeMatch(); }, { once: true });
+}
+function go(i) { if (paused || over || busy || !human()) return; if (B[i] || gameFormat === 'ultimate' && forcedBoard != null && Math.floor(Math.floor(i / 9) / 3) * 3 + Math.floor((i % 9) / 3) !== forcedBoard) { Board.sfx('error'); return; } play(i); }
+bd.addEventListener('click', (e) => { const d = e.target.closest('.cl'); if (d) go(+d.dataset.i); });
+$('#new').onclick = newGame; $('#pause').onclick = togglePause; $('#undo').onclick = undo; $('#hint').onclick = showHint; $('#mode').onchange = () => { Board.sfx('click'); newGame(); }; $('#format').onchange = () => { Board.sfx('click'); newGame(); };
+$('#stats').onclick = () => { const s = readSave().stats.ticTacToe || {}; Board.modal('Match statistics', `Matches: ${s.rounds || 0}<br>Wins: ${s.wins || 0} · Losses: ${s.losses || 0} · Draws: ${s.draws || 0}<br>Current streak: ${s.streak || 0} · Best streak: ${s.bestStreak || 0}<br>Achievements: ${(readSave().achievements || []).length}`, [['Close']]); };
+$('#lvl').onchange = () => { levelOverride = $('#lvl').value === 'auto' ? null : +$('#lvl').value; syncContractLevel(); render(); };
+window.addEventListener('apex:board-difficulty', () => { if (levelOverride == null) { syncContractLevel(); render(); } });
+$('#rs').onclick = () => {
+  score.x = score.o = score.d = 0;
+  if (window.Save && Save.update) Save.update(GAME_ID, { stats: { ticTacToe: { x: 0, o: 0, draws: 0 } } });
+  render();
+};
+document.addEventListener('keydown', (e) => {
+  if (window.ApexMenuActive || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key.toLowerCase(); if (k === 'escape') { e.preventDefault(); togglePause(); return; } if (paused) return;
+  if (k === 'n') newGame(); else if (k === 'u') undo();
+  else if (k >= '1' && k <= '9') go(KEY2IDX[+k]);
+});
+syncContractLevel();
+newGame();
+window.ApexMenuActive = true;
+Board.setSfxVolume((Save.load(GAME_ID).settings || {}).sfxVol);
+Board.setDifficulty((Save.load(GAME_ID).settings || {}).difficulty || Board.difficulty());
+
+function ticTacToeMenuScene(c, frame) {
+  const w = frame.width, h = frame.height, t = frame.time;
+  const bg = c.createLinearGradient(0, 0, w, h);
+  bg.addColorStop(0, '#111923'); bg.addColorStop(0.55, '#172630'); bg.addColorStop(1, '#0d1721');
+  c.fillStyle = bg; c.fillRect(0, 0, w, h);
+  const glow = c.createRadialGradient(w * 0.76, h * 0.48, 0, w * 0.76, h * 0.48, Math.max(w, h) * 0.55);
+  glow.addColorStop(0, 'rgba(103,232,249,.13)'); glow.addColorStop(1, 'rgba(17,25,35,0)'); c.fillStyle = glow; c.fillRect(0, 0, w, h);
+  const paperW = Math.min(w * 0.42, h * 0.54), paperH = paperW, px = w * 0.72 - paperW / 2, py = h * 0.48 - paperH / 2;
+  c.save(); c.translate(px + paperW / 2, py + paperH / 2); c.rotate(-0.035); c.translate(-paperW / 2, -paperH / 2);
+  c.shadowColor = 'rgba(0,0,0,.4)'; c.shadowBlur = 25; c.shadowOffsetY = 12;
+  c.fillStyle = '#e8dfc9'; c.fillRect(0, 0, paperW, paperH); c.shadowColor = 'transparent';
+  c.strokeStyle = 'rgba(29,52,62,.19)'; c.lineWidth = 1;
+  for (let y = 18; y < paperH; y += 22) { c.beginPath(); c.moveTo(0, y); c.lineTo(paperW, y); c.stroke(); }
+  c.strokeStyle = 'rgba(29,52,62,.62)'; c.lineWidth = Math.max(2, paperW * 0.012);
+  const pad = paperW * 0.15, cell = paperW * 0.23;
+  for (let i = 1; i <= 2; i++) { const p = pad + cell * i; c.beginPath(); c.moveTo(p, pad); c.lineTo(p, paperW - pad); c.moveTo(pad, p); c.lineTo(paperW - pad, p); c.stroke(); }
+  c.strokeStyle = '#13b8cf'; c.lineWidth = Math.max(3, paperW * 0.023); c.lineCap = 'round';
+  c.beginPath(); c.moveTo(pad + 10, pad + 10); c.lineTo(pad + cell - 10, pad + cell - 10); c.moveTo(pad + cell - 10, pad + 10); c.lineTo(pad + 10, pad + cell - 10); c.stroke();
+  c.strokeStyle = '#d99218'; c.beginPath(); c.arc(pad + cell * 1.5, pad + cell * 1.5, cell * 0.32 + Math.sin(t * 0.001) * 1.2, 0, Math.PI * 2); c.stroke();
+  c.restore();
+  // A small pencil rests outside the score sheet, away from menu labels.
+  c.save(); c.translate(w * 0.93, h * 0.78); c.rotate(-0.58); c.fillStyle = '#e0b86d'; c.fillRect(-4, -h * 0.12, 8, h * 0.24); c.fillStyle = '#263844'; c.fillRect(-4, -h * 0.12, 8, 8); c.fillStyle = '#f3dfb5'; c.beginPath(); c.moveTo(-4, h * 0.12); c.lineTo(4, h * 0.12); c.lineTo(0, h * 0.145); c.closePath(); c.fill(); c.restore();
+}
+
+function menuSelect(id, value) {
+  const control = document.getElementById(id);
+  if (!control || control.value === value) return;
+  control.value = value;
+  control.dispatchEvent(new Event('change', { bubbles: true }));
+}
+function menuChoice(doc, label, controlId, value) {
+  const button = doc.createElement('button'), control = document.getElementById(controlId);
+  button.type = 'button'; button.className = 'apex-menu-control-button'; button.textContent = label;
+  button.dataset.menuControl = controlId; button.dataset.menuValue = value;
+  button.setAttribute('aria-pressed', String(!!control && control.value === value));
+  button.addEventListener('click', function () {
+    menuSelect(controlId, value);
+    Array.from(button.parentNode.querySelectorAll('[data-menu-control="' + controlId + '"]')).forEach(function (choice) { choice.setAttribute('aria-pressed', String(choice === button)); });
+  });
+  return button;
+}
+const ticTacToeMenu = Menu.mount({
+  gameId: GAME_ID, title: 'Tic-Tac-Toe', tagline: 'A pencil-drawn challenge for the cafe table.',
+  archetype: 'paper', items: ['play', 'modes', 'options', 'about', 'stats', 'exit'],
+  theme: {
+    frame: 'notebook-rule', button: 'paper-banner',
+    palette: { bg: '#111923', panel: '#172630', accent: '#67e8f9', button: '#f3dfb5', buttonText: '#18242b', text: '#f5f7fa' },
+    type: { title: 'system-ui, sans-serif', body: 'system-ui, sans-serif' },
+    scene: ticTacToeMenuScene, sceneFallback: ticTacToeMenuScene,
+    music: { tempo: 72, root: 48, scale: 'pentatonic', layers: ['pad', 'lead'] },
+    sfx: { hover: 'click', select: 'place', back: 'click' }
+  },
+  options: { difficulty: Board.difficulty() },
+  onSettingChange: function (key, value) { if (key === 'difficulty') Board.setDifficulty(value); },
+  onPlay: function () {
+    window.ApexMenuActive = false;
+    const help = document.getElementById('bk-help'); if (help) help.open = false;
+    Music.play(MUSIC);
+  },
+  onPause: function (shouldPause) {
+    if (shouldPause && !paused) togglePause();
+    if (shouldPause) { const dialog = document.getElementById('bk-dlg'); if (dialog?.open) dialog.close(); }
+    if (!shouldPause && paused) resumeMatch();
+  },
+  onRestart: function () { newGame(); },
+  screens: {
+    modes: function (view) {
+      const doc = view.panel.ownerDocument, heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Choose a format'; view.panel.appendChild(heading);
+      const note = doc.createElement('p'); note.className = 'apex-menu-tagline'; note.textContent = 'Pick the board and who you play. Your choice is ready when you press Play.'; view.panel.appendChild(note);
+      const formatLabel = doc.createElement('p'); formatLabel.className = 'apex-menu-caption'; formatLabel.textContent = 'BOARD FORMAT'; view.panel.appendChild(formatLabel);
+      const formats = doc.createElement('div'); formats.className = 'apex-menu-choice-list'; view.panel.appendChild(formats);
+      [['Classic 3×3', 'classic'], ['Four in a row · 4×4', 'four'], ['Ultimate', 'ultimate']].forEach(function (item) { formats.appendChild(menuChoice(doc, item[0], 'format', item[1])); });
+      const playLabel = doc.createElement('p'); playLabel.className = 'apex-menu-caption'; playLabel.textContent = 'PLAY STYLE'; view.panel.appendChild(playLabel);
+      const playStyles = doc.createElement('div'); playStyles.className = 'apex-menu-choice-list'; view.panel.appendChild(playStyles);
+      [['Play as X', 'x'], ['Play as O', 'o'], ['Two players', 'two']].forEach(function (item) { playStyles.appendChild(menuChoice(doc, item[0], 'mode', item[1])); });
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    },
+    about: function (view) {
+      const doc = view.panel.ownerDocument, heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'How to play'; view.panel.appendChild(heading);
+      const rules = doc.createElement('p'); rules.className = 'apex-menu-tagline'; rules.textContent = 'Line up three marks on Classic, four on the 4×4 board, or win linked boards in Ultimate. Play against the computer or choose Two Players.'; view.panel.appendChild(rules);
+      const controls = doc.createElement('p'); controls.className = 'apex-menu-tagline'; controls.textContent = 'Click or tap a square, or press 1–9 using the displayed numpad layout. U undo · N new match · H help · M mute.'; view.panel.appendChild(controls);
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    },
+    stats: function (view) {
+      const doc = view.panel.ownerDocument, record = (readSave().stats.ticTacToe || {}), heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Match records'; view.panel.appendChild(heading);
+      const summary = doc.createElement('p'); summary.className = 'apex-menu-tagline'; summary.textContent = 'Matches: ' + (record.rounds || 0) + ' · Wins: ' + (record.wins || 0) + ' · Losses: ' + (record.losses || 0) + ' · Draws: ' + (record.draws || 0); view.panel.appendChild(summary);
+      const streak = doc.createElement('p'); streak.className = 'apex-menu-tagline'; streak.textContent = 'Current streak: ' + (record.streak || 0) + ' · Best streak: ' + (record.bestStreak || 0); view.panel.appendChild(streak);
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    }
+  }
+});
+</script>
+</body>
+</html>

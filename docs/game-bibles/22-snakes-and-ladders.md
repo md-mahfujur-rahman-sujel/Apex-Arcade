@@ -50,7 +50,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `22-snakes-ladders.html`. Current family: Board Kit (No). Catalog description: “Race across 100 squares with dice rolls, automatic ladder climbs, slippery snakes, and extra turns on rolling a 6.” Controls: Space, Enter, R or Roll button to roll dice. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `22-snakes-ladders/index.html`. Current family: Board Kit (No). Catalog description: “Race across 100 squares with dice rolls, automatic ladder climbs, slippery snakes, and extra turns on rolling a 6.” Controls: Space, Enter, R or Roll button to roll dice. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

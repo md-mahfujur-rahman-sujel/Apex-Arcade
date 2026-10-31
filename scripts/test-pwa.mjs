@@ -12,7 +12,8 @@ const browserOptions = { headless: true };
 if (await access(chromePath).then(() => true, () => false)) browserOptions.executablePath = chromePath;
 
 const server = await preview({ preview: { host: '127.0.0.1', port: 0 } });
-const baseUrl = `http://127.0.0.1:${server.httpServer.address().port}`;
+const basePath = server.config.base || '/';
+const baseUrl = `http://127.0.0.1:${server.httpServer.address().port}${basePath.replace(/\/$/, '')}`;
 console.log('Testing PWA origin:', baseUrl);
 const browser = await chromium.launch(browserOptions);
 let swSource = await readFile(path.join(distRoot, 'sw.js'), 'utf8');
@@ -33,14 +34,16 @@ try {
   });
   await context.route(`${baseUrl}/**`, async (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === '/manifest.webmanifest' || url.pathname.endsWith('/21-chess.html') || url.pathname.endsWith('/board-kit.js')) {
-      console.log('PWA fetch', url.pathname, route.request().serviceWorker() ? 'from service worker' : 'from page');
+    const pathname = decodeURIComponent(url.pathname);
+    if (pathname === `${basePath}manifest.webmanifest` || pathname.endsWith('/21-chess/index.html') || pathname.endsWith('/board-kit.js')) {
+      console.log('PWA fetch', pathname, route.request().serviceWorker() ? 'from service worker' : 'from page');
     }
-    if (url.pathname === '/sw.js') {
-      await route.fulfill({ status: 200, contentType: 'text/javascript; charset=utf-8', headers: { 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/' }, body: swSource });
+    if (pathname === `${basePath}sw.js`) {
+      await route.fulfill({ status: 200, contentType: 'text/javascript; charset=utf-8', headers: { 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': basePath }, body: swSource });
       return;
     }
-    const filePath = path.resolve(distRoot, `.${decodeURIComponent(url.pathname)}`);
+    const relativePath = pathname.startsWith(basePath) ? pathname.slice(basePath.length - 1) : pathname;
+    const filePath = path.resolve(distRoot, `.${relativePath}`);
     if (filePath !== distRoot && !filePath.startsWith(`${distRoot}${path.sep}`)) {
       await route.fulfill({ status: 403, body: 'Forbidden' });
       return;
@@ -64,41 +67,41 @@ try {
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
+  page.on('console', (message) => { if (message.type() === 'error') errors.push(`${message.text()} (${message.location().url})`); });
   await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
   let readyState;
   for (let attempt = 0; attempt < 120; attempt++) {
-    readyState = await page.evaluate(async () => {
-      const registration = await navigator.serviceWorker.getRegistration('/');
+    readyState = await page.evaluate(async (scope) => {
+      const registration = await navigator.serviceWorker.getRegistration(scope);
       return { active: registration?.active?.state || null, installing: registration?.installing?.state || null, controller: Boolean(navigator.serviceWorker.controller) };
-    });
+    }, basePath);
     if (readyState.active === 'activated' && !readyState.installing && readyState.controller) break;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   assert.ok(readyState.active === 'activated' && !readyState.installing && readyState.controller, `service worker did not settle: ${JSON.stringify(readyState)}`);
 
-  const initialCache = await page.evaluate(async (cacheName) => {
+  const initialCache = await page.evaluate(async ({ cacheName, scope }) => {
     const names = await caches.keys();
     const name = names.find((item) => item === cacheName);
-    const registration = await navigator.serviceWorker.getRegistration('/');
+    const registration = await navigator.serviceWorker.getRegistration(scope);
     if (!name) return { names, keys: [] };
     const cache = await caches.open(name);
     return { names, keys: (await cache.keys()).map((request) => new URL(request.url).pathname), active: registration?.active?.state, installing: registration?.installing?.state, controller: navigator.serviceWorker.controller?.scriptURL };
-  }, initialCacheName);
+  }, { cacheName: initialCacheName, scope: basePath });
   console.log('PWA initial worker state:', JSON.stringify(initialCache));
   assert.ok(initialCache.names.includes(initialCacheName), `${initialCacheName} cache was not installed`);
-  for (const required of ['/','/manifest.webmanifest','/apex-icon.svg','/assets/aistudio/21-chess.html','/assets/aistudio/board-kit.js','/assets/aistudio/score-bridge.js','/assets/aistudio/menu-kit.css']) {
+  for (const required of [basePath, `${basePath}manifest.webmanifest`, `${basePath}apex-icon.svg`, `${basePath}assets/games/21-chess/index.html`, `${basePath}assets/kits/board-kit.js`, `${basePath}assets/kits/score-bridge.js`, `${basePath}assets/kits/menu-kit.css`]) {
     assert.ok(initialCache.keys.includes(required), `precache is missing ${required}; cached paths: ${initialCache.keys.join(', ')}`);
   }
-  assert.ok(initialCache.keys.some((key) => key.startsWith('/assets/index-') && key.endsWith('.js')), 'built app entry is not precached');
+  assert.ok(initialCache.keys.some((key) => key.startsWith(`${basePath}assets/index-`) && key.endsWith('.js')), 'built app entry is not precached');
 
   await context.setOffline(true);
   await page.goto(`${baseUrl}/#/home`, { waitUntil: 'domcontentloaded', timeout: 10000 });
   await page.locator('[data-app-page="home"]').waitFor({ state: 'visible', timeout: 10000 });
   await page.goto(`${baseUrl}/#/play/chess`, { waitUntil: 'domcontentloaded', timeout: 10000 });
   await page.getByRole('button', { name: 'Play Chess' }).click();
-  await page.waitForFunction(() => [...document.querySelectorAll('iframe')].some((frame) => frame.contentWindow?.location?.href?.includes('/assets/aistudio/21-chess.html')), null, { timeout: 10000 });
-  const chessFrame = page.frames().find((frame) => frame.url().includes('/assets/aistudio/21-chess.html'));
+  await page.waitForFunction(() => [...document.querySelectorAll('iframe')].some((frame) => frame.contentWindow?.location?.href?.includes('/assets/games/21-chess/index.html')), null, { timeout: 10000 });
+  const chessFrame = page.frames().find((frame) => frame.url().includes('/assets/games/21-chess/index.html'));
   assert.ok(chessFrame, `chess iframe did not load offline: ${JSON.stringify(await page.evaluate(() => [...document.querySelectorAll('iframe')].map((frame) => frame.src)))}`);
   await chessFrame.locator('.sq').first().waitFor({ state: 'visible', timeout: 10000 });
   const chessMenu = chessFrame.locator('.apex-menu-root');
@@ -115,7 +118,7 @@ try {
   await chessFrame.locator(`.sq[data-k="${offlineMove.to}"]`).click();
   assert.ok(await chessFrame.locator('#moves').innerText(), 'offline chess move was not recorded');
 
-  await page.goto(`${baseUrl}/assets/aistudio/01-flappy-bird.html`, { waitUntil: 'domcontentloaded', timeout: 10000 });
+  await page.goto(`${baseUrl}/assets/games/01-flappy-bird/index.html`, { waitUntil: 'domcontentloaded', timeout: 10000 });
   await page.waitForFunction(() => {
     const link = document.getElementById('apex-menu-kit-styles');
     return !!(link && link.sheet && document.querySelector('.apex-menu-root'));
@@ -129,22 +132,22 @@ try {
   await page.goto(`${baseUrl}/#/home`, { waitUntil: 'domcontentloaded', timeout: 10000 });
   swSource = swSource.replace(initialCacheName, nextCacheName);
   await writeFile(path.join(distRoot, 'sw.js'), swSource);
-  const updatedWorkerSource = await page.evaluate(async () => await (await fetch('/sw.js', { cache: 'no-store' })).text());
+  const updatedWorkerSource = await page.evaluate(async (swPath) => await (await fetch(swPath, { cache: 'no-store' })).text(), `${basePath}sw.js`);
   assert.ok(updatedWorkerSource.includes(nextCacheName), `${nextCacheName} was not served`);
-  await page.evaluate(async () => { await navigator.serviceWorker.register('/sw.js?revision=update', { scope: '/' }); });
+  await page.evaluate(async ({ swPath, scope }) => { await navigator.serviceWorker.register(`${swPath}?revision=update`, { scope }); }, { swPath: `${basePath}sw.js`, scope: basePath });
   await page.getByRole('status').getByText('An Apex Arcade update is ready.').waitFor({ state: 'visible', timeout: 15000 });
   await page.getByRole('button', { name: 'Refresh' }).click();
-  await page.waitForFunction(async ({ next, previous }) => {
-    const registration = await navigator.serviceWorker.getRegistration('/');
+  await page.waitForFunction(async ({ next, previous, scope }) => {
+    const registration = await navigator.serviceWorker.getRegistration(scope);
     return registration?.active?.state === 'activated' && registration.active.scriptURL.includes('/sw.js')
       && (await caches.keys()).includes(next) && !(await caches.keys()).includes(previous);
-  }, { next: nextCacheName, previous: initialCacheName }, { timeout: 15000 });
+  }, { next: nextCacheName, previous: initialCacheName, scope: basePath }, { timeout: 15000 });
 
   await context.setOffline(true);
   await page.goto(`${baseUrl}/#/play/chess`, { waitUntil: 'domcontentloaded', timeout: 10000 });
   await page.getByRole('button', { name: 'Play Chess' }).click();
-  await page.waitForFunction(() => [...document.querySelectorAll('iframe')].some((frame) => frame.contentWindow?.location?.href?.includes('/assets/aistudio/21-chess.html')), null, { timeout: 10000 });
-  assert.ok(page.frames().some((frame) => frame.url().includes('/assets/aistudio/21-chess.html')), 'updated app could not reopen a game offline');
+  await page.waitForFunction(() => [...document.querySelectorAll('iframe')].some((frame) => frame.contentWindow?.location?.href?.includes('/assets/games/21-chess/index.html')), null, { timeout: 10000 });
+  assert.ok(page.frames().some((frame) => frame.url().includes('/assets/games/21-chess/index.html')), 'updated app could not reopen a game offline');
   assert.deepEqual(errors, [], `browser errors: ${errors.join('; ')}`);
   console.log(`PASS PWA install, 50-game precache, offline Home/chess/menu pilot, and prompted ${initialCacheName}→${nextCacheName} worker update/activation.`);
 } finally {

@@ -50,7 +50,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `38-bowling.html`. Current family: Arcade Core (Yes). Catalog description: “Ten frames of authentic bowling with strikes, spares, 10th-frame bonus balls, and 3-click meter timing (position, angle, power).” Controls: Left/Right positioning, Space/click 3 times to lock position, angle, and power. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `38-bowling/index.html`. Current family: Arcade Core (Yes). Catalog description: “Ten frames of authentic bowling with strikes, spares, 10th-frame bonus balls, and 3-click meter timing (position, angle, power).” Controls: Left/Right positioning, Space/click 3 times to lock position, angle, and power. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

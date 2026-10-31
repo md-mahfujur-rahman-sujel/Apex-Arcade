@@ -50,7 +50,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `45-sliding-puzzle.html`. Current family: Board Kit (No). Catalog description: “Classic 15-puzzle sliding block grid: slide numbered tiles into the empty space to arrange them from 1 to 15.” Controls: Click tile to slide it, or use arrow keys. N to shuffle new solvable board. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `45-sliding-puzzle/index.html`. Current family: Board Kit (No). Catalog description: “Classic 15-puzzle sliding block grid: slide numbered tiles into the empty space to arrange them from 1 to 15.” Controls: Click tile to slide it, or use arrow keys. N to shuffle new solvable board. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

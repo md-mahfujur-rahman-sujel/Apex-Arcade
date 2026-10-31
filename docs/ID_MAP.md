@@ -1,61 +1,61 @@
 # Game ID map (S0-0)
 
-Verified from `src/data/gamesData.ts` and the 50 canonical game pages in `public/assets/aistudio/` on 2026-10-22.
+Verified from `src/data/gamesData.ts` and the 50 canonical game pages in `public/assets/games/` on 2026-10-22.
 
 `GameInfo.id` is the host-facing id. `Page config` is the id supplied to the page's `Arcade.game`, `P.game`, `K.game`, or `Board.shell` configuration. `Save id` is the literal id passed to the `Save` API; `—` means the page does not call that API. `Family` follows the task's kit-family grouping. S0-7 removed the unreferenced hashed copies; this table lists only canonical game pages.
 
 | # | GameInfo.id | `htmlPath` | Page config | Save id | Family | Host/config differ? |
 |---:|---|---|---|---|---|---|---|
-| 01 | `flappy-bird` | `/assets/aistudio/01-flappy-bird.html` | `Arcade.game`: `glowmoth` | `glowmoth` | `arcade-core` | Yes |
-| 02 | `pong` | `/assets/aistudio/02-pong.html` | `Arcade.game`: `ion-rally` | — | `arcade-core` | Yes |
-| 03 | `snake` | `/assets/aistudio/03-snake.html` | `Arcade.game`: `ember-serpent` | — | `arcade-core` | Yes |
-| 04 | `space-invaders` | `/assets/aistudio/04-space-invaders.html` | `Arcade.game`: `hivefall` | — | `arcade-core` | Yes |
-| 05 | `tetris` | `/assets/aistudio/05-tetris.html` | `Arcade.game`: `prism-stack` | — | `arcade-core` | Yes |
-| 06 | `pac-man` | `/assets/aistudio/06-pac-man.html` | `Arcade.game`: `glow-beetle` | — | `arcade-core` | Yes |
-| 07 | `asteroids` | `/assets/aistudio/07-asteroids.html` | `Arcade.game`: `starfall-rift` | — | `arcade-core` | Yes |
-| 08 | `super-mario-bros` | `/assets/aistudio/08-mario.html` | `P.game`: `fox-courier` | — | `platform` | Yes |
-| 09 | `super-mario-world` | `/assets/aistudio/09-mario-world.html` | `P.game`: `cloudhop-pip` | — | `platform` | Yes |
-| 10 | `sonic-the-hedgehog` | `/assets/aistudio/10-sonic.html` | `P.game`: `rollo-rush` | — | `platform` | Yes |
-| 11 | `street-fighter-ii` | `/assets/aistudio/11-street-fighter.html` | `Arcade.game`: `iron-circuit` | — | `arcade-core` | Yes |
-| 12 | `chrono-trigger` | `/assets/aistudio/12-chrono-adventure.html` | `Arcade.game`: `clockwork-dawn` | — | `arcade-core` | Yes |
-| 13 | `castlevania-sotn` | `/assets/aistudio/13-castlevania.html` | `K.game`: `lanternbound` | — | `act` | Yes |
-| 14 | `super-metroid` | `/assets/aistudio/14-metroid.html` | `K.game`: `deepcore-drifter` | — | `act` | Yes |
-| 15 | `hollow-knight` | `/assets/aistudio/15-hollow-knight.html` | `K.game`: `hollowbell` | — | `act` | Yes |
-| 16 | `celeste` | `/assets/aistudio/16-celeste.html` | `Arcade.game`: `skyfall-ridge` | — | `arcade-core` | Yes |
-| 17 | `cuphead` | `/assets/aistudio/17-cuphead.html` | `Arcade.game`: `stormcap-showdown` | — | `arcade-core` | Yes |
-| 18 | `dead-cells` | `/assets/aistudio/18-dead-cells.html` | `K.game`: `ashen-descent` | — | `act` | Yes |
-| 19 | `ori-and-the-blind-forest` | `/assets/aistudio/19-ori.html` | `K.game`: `lumen-sprite` | — | `act` | Yes |
-| 20 | `rayman-legends` | `/assets/aistudio/20-rayman.html` | `K.game`: `glimmer-gadabout` | — | `act` | Yes |
-| 21 | `chess` | `/assets/aistudio/21-chess.html` | `Board.shell`: `chess` | — | `board` | No |
-| 22 | `snakes-ladders` | `/assets/aistudio/22-snakes-ladders.html` | `Board.shell`: `snakes-ladders` | — | `board` | No |
-| 23 | `ludo` | `/assets/aistudio/23-ludo.html` | `Board.shell`: `ludo` | — | `board` | No |
-| 24 | `carrom` | `/assets/aistudio/24-carrom.html` | `Board.shell`: `carrom` | — | `board` | No |
-| 25 | `tycoon-town` | `/assets/aistudio/25-tycoon-town.html` | `Board.shell`: `tycoon-town` | — | `board` | No |
-| 26 | `checkers` | `/assets/aistudio/26-checkers.html` | `Board.shell`: `checkers` | — | `board` | No |
-| 27 | `connect-four` | `/assets/aistudio/27-connect-four.html` | `Board.shell`: `connect-four` | — | `board` | No |
-| 28 | `mancala` | `/assets/aistudio/28-mancala.html` | `Board.shell`: `mancala` | — | `board` | No |
-| 29 | `reversi` | `/assets/aistudio/29-reversi.html` | `Board.shell`: `reversi` | — | `board` | No |
-| 30 | `tic-tac-toe` | `/assets/aistudio/30-tic-tac-toe.html` | `Board.shell`: `tic-tac-toe` | `tic-tac-toe` | `board` | No |
-| 31 | `backgammon` | `/assets/aistudio/31-backgammon.html` | `Board.shell`: `backgammon` | — | `board` | No |
-| 32 | `dots-boxes` | `/assets/aistudio/32-dots-boxes.html` | `Board.shell`: `dots-boxes` | — | `board` | No |
-| 33 | `go` | `/assets/aistudio/33-go.html` | `Board.shell`: `go` | — | `board` | No |
-| 34 | `solitaire` | `/assets/aistudio/34-solitaire.html` | `Board.shell`: `solitaire` | — | `board` | No |
-| 35 | `memory-match` | `/assets/aistudio/35-memory-match.html` | `Board.shell`: `memory-match` | — | `board` | No |
-| 36 | `maths-dash` | `/assets/aistudio/36-maths-dash.html` | `Board.shell`: `maths-dash` | — | `board` | No |
-| 37 | `pool` | `/assets/aistudio/37-pool.html` | `Arcade.game`: `pool` | — | `arcade-core` | No |
-| 38 | `bowling` | `/assets/aistudio/38-bowling.html` | `Arcade.game`: `bowling` | — | `arcade-core` | No |
-| 39 | `basketball` | `/assets/aistudio/39-basketball.html` | `Arcade.game`: `basketball` | — | `arcade-core` | No |
-| 40 | `mini-golf` | `/assets/aistudio/40-mini-golf.html` | `Arcade.game`: `minigolf` | — | `arcade-core` | Yes |
-| 41 | `soccer-pool` | `/assets/aistudio/41-soccer-pool.html` | `Arcade.game`: `soccer-pool` | — | `arcade-core` | No |
-| 42 | `2048` | `/assets/aistudio/42-2048.html` | `Board.shell`: `2048` | `2048` | `board` | No |
-| 43 | `sudoku` | `/assets/aistudio/43-sudoku.html` | `Board.shell`: `sudoku` | — | `board` | No |
-| 44 | `minesweeper` | `/assets/aistudio/44-minesweeper.html` | `Board.shell`: `minesweeper` | — | `board` | No |
-| 45 | `sliding-puzzle` | `/assets/aistudio/45-sliding-puzzle.html` | `Board.shell`: `sliding-puzzle` | — | `board` | No |
-| 46 | `nuts-bolts` | `/assets/aistudio/46-nuts-bolts.html` | `Board.shell`: `nuts-bolts` | — | `board` | No |
-| 47 | `colour-sort` | `/assets/aistudio/47-colour-sort.html` | `Board.shell`: `bubble-sort` | — | `board` | Yes |
-| 48 | `fruit-merge` | `/assets/aistudio/48-fruit-merge.html` | `Board.shell`: `fruit-merge` | — | `board` | No |
-| 49 | `table-tennis` | `/assets/aistudio/49-table-tennis.html` | `Board.shell`: `table-tennis` | — | `board` | No |
-| 50 | `mahjong` | `/assets/aistudio/50-mahjong.html` | No shared game config | — | `standalone` | N/A |
+| 01 | `flappy-bird` | `/assets/games/01-flappy-bird/index.html` | `Arcade.game`: `glowmoth` | `glowmoth` | `arcade-core` | Yes |
+| 02 | `pong` | `/assets/games/02-pong/index.html` | `Arcade.game`: `ion-rally` | — | `arcade-core` | Yes |
+| 03 | `snake` | `/assets/games/03-snake/index.html` | `Arcade.game`: `ember-serpent` | — | `arcade-core` | Yes |
+| 04 | `space-invaders` | `/assets/games/04-space-invaders/index.html` | `Arcade.game`: `hivefall` | — | `arcade-core` | Yes |
+| 05 | `tetris` | `/assets/games/05-tetris/index.html` | `Arcade.game`: `prism-stack` | — | `arcade-core` | Yes |
+| 06 | `pac-man` | `/assets/games/06-pac-man/index.html` | `Arcade.game`: `glow-beetle` | — | `arcade-core` | Yes |
+| 07 | `asteroids` | `/assets/games/07-asteroids/index.html` | `Arcade.game`: `starfall-rift` | — | `arcade-core` | Yes |
+| 08 | `super-mario-bros` | `/assets/games/08-mario/index.html` | `P.game`: `fox-courier` | — | `platform` | Yes |
+| 09 | `super-mario-world` | `/assets/games/09-mario-world/index.html` | `P.game`: `cloudhop-pip` | — | `platform` | Yes |
+| 10 | `sonic-the-hedgehog` | `/assets/games/10-sonic/index.html` | `P.game`: `rollo-rush` | — | `platform` | Yes |
+| 11 | `street-fighter-ii` | `/assets/games/11-street-fighter/index.html` | `Arcade.game`: `iron-circuit` | — | `arcade-core` | Yes |
+| 12 | `chrono-trigger` | `/assets/games/12-chrono-adventure/index.html` | `Arcade.game`: `clockwork-dawn` | — | `arcade-core` | Yes |
+| 13 | `castlevania-sotn` | `/assets/games/13-castlevania/index.html` | `K.game`: `lanternbound` | — | `act` | Yes |
+| 14 | `super-metroid` | `/assets/games/14-metroid/index.html` | `K.game`: `deepcore-drifter` | — | `act` | Yes |
+| 15 | `hollow-knight` | `/assets/games/15-hollow-knight/index.html` | `K.game`: `hollowbell` | — | `act` | Yes |
+| 16 | `celeste` | `/assets/games/16-celeste/index.html` | `Arcade.game`: `skyfall-ridge` | — | `arcade-core` | Yes |
+| 17 | `cuphead` | `/assets/games/17-cuphead/index.html` | `Arcade.game`: `stormcap-showdown` | — | `arcade-core` | Yes |
+| 18 | `dead-cells` | `/assets/games/18-dead-cells/index.html` | `K.game`: `ashen-descent` | — | `act` | Yes |
+| 19 | `ori-and-the-blind-forest` | `/assets/games/19-ori/index.html` | `K.game`: `lumen-sprite` | — | `act` | Yes |
+| 20 | `rayman-legends` | `/assets/games/20-rayman/index.html` | `K.game`: `glimmer-gadabout` | — | `act` | Yes |
+| 21 | `chess` | `/assets/games/21-chess/index.html` | `Board.shell`: `chess` | — | `board` | No |
+| 22 | `snakes-ladders` | `/assets/games/22-snakes-ladders/index.html` | `Board.shell`: `snakes-ladders` | — | `board` | No |
+| 23 | `ludo` | `/assets/games/23-ludo/index.html` | `Board.shell`: `ludo` | — | `board` | No |
+| 24 | `carrom` | `/assets/games/24-carrom/index.html` | `Board.shell`: `carrom` | — | `board` | No |
+| 25 | `tycoon-town` | `/assets/games/25-tycoon-town/index.html` | `Board.shell`: `tycoon-town` | — | `board` | No |
+| 26 | `checkers` | `/assets/games/26-checkers/index.html` | `Board.shell`: `checkers` | — | `board` | No |
+| 27 | `connect-four` | `/assets/games/27-connect-four/index.html` | `Board.shell`: `connect-four` | — | `board` | No |
+| 28 | `mancala` | `/assets/games/28-mancala/index.html` | `Board.shell`: `mancala` | — | `board` | No |
+| 29 | `reversi` | `/assets/games/29-reversi/index.html` | `Board.shell`: `reversi` | — | `board` | No |
+| 30 | `tic-tac-toe` | `/assets/games/30-tic-tac-toe/index.html` | `Board.shell`: `tic-tac-toe` | `tic-tac-toe` | `board` | No |
+| 31 | `backgammon` | `/assets/games/31-backgammon/index.html` | `Board.shell`: `backgammon` | — | `board` | No |
+| 32 | `dots-boxes` | `/assets/games/32-dots-boxes/index.html` | `Board.shell`: `dots-boxes` | — | `board` | No |
+| 33 | `go` | `/assets/games/33-go/index.html` | `Board.shell`: `go` | — | `board` | No |
+| 34 | `solitaire` | `/assets/games/34-solitaire/index.html` | `Board.shell`: `solitaire` | — | `board` | No |
+| 35 | `memory-match` | `/assets/games/35-memory-match/index.html` | `Board.shell`: `memory-match` | — | `board` | No |
+| 36 | `maths-dash` | `/assets/games/36-maths-dash/index.html` | `Board.shell`: `maths-dash` | — | `board` | No |
+| 37 | `pool` | `/assets/games/37-pool/index.html` | `Arcade.game`: `pool` | — | `arcade-core` | No |
+| 38 | `bowling` | `/assets/games/38-bowling/index.html` | `Arcade.game`: `bowling` | — | `arcade-core` | No |
+| 39 | `basketball` | `/assets/games/39-basketball/index.html` | `Arcade.game`: `basketball` | — | `arcade-core` | No |
+| 40 | `mini-golf` | `/assets/games/40-mini-golf/index.html` | `Arcade.game`: `minigolf` | — | `arcade-core` | Yes |
+| 41 | `soccer-pool` | `/assets/games/41-soccer-pool/index.html` | `Arcade.game`: `soccer-pool` | — | `arcade-core` | No |
+| 42 | `2048` | `/assets/games/42-2048/index.html` | `Board.shell`: `2048` | `2048` | `board` | No |
+| 43 | `sudoku` | `/assets/games/43-sudoku/index.html` | `Board.shell`: `sudoku` | — | `board` | No |
+| 44 | `minesweeper` | `/assets/games/44-minesweeper/index.html` | `Board.shell`: `minesweeper` | — | `board` | No |
+| 45 | `sliding-puzzle` | `/assets/games/45-sliding-puzzle/index.html` | `Board.shell`: `sliding-puzzle` | — | `board` | No |
+| 46 | `nuts-bolts` | `/assets/games/46-nuts-bolts/index.html` | `Board.shell`: `nuts-bolts` | — | `board` | No |
+| 47 | `colour-sort` | `/assets/games/47-colour-sort/index.html` | `Board.shell`: `bubble-sort` | — | `board` | Yes |
+| 48 | `fruit-merge` | `/assets/games/48-fruit-merge/index.html` | `Board.shell`: `fruit-merge` | — | `board` | No |
+| 49 | `table-tennis` | `/assets/games/49-table-tennis/index.html` | `Board.shell`: `table-tennis` | — | `board` | No |
+| 50 | `mahjong` | `/assets/games/50-mahjong/index.html` | No shared game config | — | `standalone` | N/A |
 
 ## Config ID mismatches remaining after S0-1
 

@@ -54,7 +54,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `15-hollow-knight.html`. Current family: Action Kit (Arcade) (Yes). Catalog description: “Nail strikes generate focus to heal, needle-pogo off enemies and spikes, dash through shadows, and rest at benches.” Controls: A/D walk, Space jump, X/J needle strike, Down+X pogo, Shift dash, hold V to heal. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `15-hollow-knight/index.html`. Current family: Action Kit (Arcade) (Yes). Catalog description: “Nail strikes generate focus to heal, needle-pogo off enemies and spikes, dash through shadows, and rest at benches.” Controls: A/D walk, Space jump, X/J needle strike, Down+X pogo, Shift dash, hold V to heal. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

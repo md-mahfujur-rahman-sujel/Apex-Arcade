@@ -50,7 +50,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `24-carrom.html`. Current family: Board Kit (No). Catalog description: “Smooth wooden carrom simulation: slide the striker along the baseline, aim with drag trajectory, and pocket coins and the Queen.” Controls: Slide striker with slider, drag back to set flick power and release. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `24-carrom/index.html`. Current family: Board Kit (No). Catalog description: “Smooth wooden carrom simulation: slide the striker along the baseline, aim with drag trajectory, and pocket coins and the Queen.” Controls: Slide striker with slider, drag back to set flick power and release. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

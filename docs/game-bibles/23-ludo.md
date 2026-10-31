@@ -50,7 +50,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `23-ludo.html`. Current family: Board Kit (No). Catalog description: “Classic 2 to 4 player race around the cross board. Roll a 6 to deploy tokens, capture rivals, and bring all 4 pieces home.” Controls: Space or R to roll, then press 1-4 or click token to move. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `23-ludo/index.html`. Current family: Board Kit (No). Catalog description: “Classic 2 to 4 player race around the cross board. Roll a 6 to deploy tokens, capture rivals, and bring all 4 pieces home.” Controls: Space or R to roll, then press 1-4 or click token to move. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

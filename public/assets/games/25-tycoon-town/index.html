@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tycoon Town</title>
+<style>
+  .tt { display: grid; grid-template-columns: auto minmax(270px, 1fr); gap: 20px; align-items: start; }
+  @media (max-width: 1000px) { .tt { grid-template-columns: 1fr; } }
+  #bd { --s: max(320px, min(100vw - 36px, 720px)); width: var(--s); height: var(--s); display: grid; grid-template-columns: repeat(11, 1fr); grid-template-rows: repeat(11, 1fr); background: #0d3b2e; border: 3px solid #0a2a21; border-radius: 10px; overflow: hidden; font-size: calc(var(--s) / 11 * .15); box-shadow: 0 20px 50px -20px #000; user-select: none; }
+  .sq { position: relative; background: #e8f1e4; color: #0b1b14; border: 1px solid #0a2a21; display: flex; flex-direction: column; align-items: center; justify-content: space-between; text-align: center; padding: 0 1px 2px; overflow: hidden; line-height: 1.1; min-width: 0; min-height: 0; }
+  .sq .band { align-self: stretch; height: 22%; position: relative; display: flex; align-items: center; justify-content: center; gap: 1px; }
+  .sq .nm { font-weight: 700; }
+  .sq .pr { font-style: normal; opacity: .75; }
+  .sq .ic { font-size: 2.1em; line-height: 1; }
+  .hs i { display: inline-block; width: .8em; height: .8em; background: #16a34a; border: 1px solid #052e16; margin: 0 .5px; }
+  .hs i.h { background: #dc2626; width: 1.6em; }
+  .tks { display: flex; flex-wrap: wrap; gap: 1px; justify-content: center; min-height: 1.9em; }
+  .tk { width: 1.9em; height: 1.9em; border-radius: 50%; border: 2px solid #fff; display: inline-flex; align-items: center; justify-content: center; font-style: normal; font-size: 1.05em; box-shadow: 0 1px 3px rgba(0,0,0,.55); }
+  .sq.cur { outline: 3px solid #fde047; outline-offset: -3px; z-index: 2; }
+  .mid { grid-column: 2 / 11; grid-row: 2 / 11; background: radial-gradient(circle at 50% 40%, #146b4f, #0d3b2e); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #e6fff3; text-align: center; padding: 8px; }
+  .mid h2 { margin: 0; font-size: calc(var(--s) / 11 * .62); letter-spacing: .06em; }
+  .mid p { margin: 0; opacity: .8; font-size: calc(var(--s) / 11 * .26); }
+  .dice { font-size: calc(var(--s) / 11 * 1.7); letter-spacing: .08em; line-height: 1; }
+  .dice.roll { animation: sh .12s linear infinite; }
+  @keyframes sh { 50% { transform: rotate(8deg); } }
+  .side { display: grid; gap: 10px; }
+  #acts { display: flex; flex-wrap: wrap; gap: 8px; min-height: 42px; }
+  .pl { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; display: flex; align-items: center; gap: 10px; }
+  .pl.on { border-color: #fde047; box-shadow: 0 0 0 1px #fde047; }
+  .pl.out { opacity: .4; text-decoration: line-through; }
+  .pl small { color: var(--muted); display: block; font-size: 12px; }
+  .pl b { margin-left: auto; font: 700 16px ui-monospace, Consolas, monospace; color: #86efac; }
+  .tkb { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; border: 2px solid #fff; flex: none; }
+  .log { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; height: 170px; overflow: auto; font-size: 13px; line-height: 1.6; color: #b6bdd8; }
+</style>
+<script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
+</head>
+<body>
+
+<script src="../../kits/perf-kit.js"></script>
+<script src="../../kits/save-kit.js"></script>
+<script src="../../kits/meta-config.js"></script>
+<script src="../../kits/meta-kit.js"></script>
+<script src="../../kits/board-kit.js"></script>
+<script src="../../kits/score-bridge.js"></script>
+<script src="../../kits/ui-kit.js"></script>
+<script>
+const ui = Board.shell({
+  id: 'tycoon-town', cpu: true, title: 'Tycoon Town', subtitle: 'Buy streets, build houses, bankrupt your rivals',
+  rules: 'Everyone starts with $1,500. Roll two dice and move around the town. Land on an unowned street, station or utility to buy it; land on someone else\'s and you pay rent. Own every street of one colour to double its rent, then build houses (up to four, then a hotel) to charge far more. Doubles give you another roll, but three doubles in a row sends you to jail. Passing START pays $200. Pay tax, draw luck cards, and stay out of jail. If you cannot pay, your houses and properties are sold off and you may go bankrupt. Last player standing wins.',
+  controls: [['Space / Enter / R', 'Press the main button (roll, buy, end turn)'], ['Buttons', 'Roll · Buy · Skip · Build · End turn'], ['B', 'Open the build menu'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
+});
+ui.main.innerHTML = `
+<div class="tt">
+  <div id="bd"></div>
+  <div class="side">
+    <div class="bk-status" id="st"></div>
+    <div id="acts"></div>
+    <div class="bk-row"><label>Players <select class="bk-select" id="mode">
+      <option value="2c">You vs 1 computer</option><option value="3c">You vs 2 computers</option><option value="4c">You vs 3 computers</option>
+      <option value="2">2 players</option><option value="3">3 players</option><option value="4">4 players</option></select></label>
+      <button class="bk-btn" id="new">New game</button></div>
+    <div id="pls" style="display:grid;gap:8px"></div>
+    <div class="log" id="log"></div>
+  </div>
+</div>`;
+const $ = (s) => ui.main.querySelector(s);
+
+/* ---------------- board data ---------------- */
+const GRP = { brown: ['#8b5a2b', 50], lb: ['#7dd3fc', 50], pk: ['#f472b6', 100], or: ['#fb923c', 100], rd: ['#ef4444', 150], yl: ['#facc15', 150], gr: ['#22c55e', 200], bl: ['#3b82f6', 200] };
+const pr = (g, name, price, rent) => ({ t: 'P', g, name, price, rent });
+const SQ = [
+  { t: 'S', name: 'START', ic: '➡️' }, pr('brown', 'Mill Lane', 60, 2), { t: 'C', name: 'Community', ic: '📦' }, pr('brown', 'Baker Row', 60, 4), { t: 'X', name: 'City Tax', amt: 200, ic: '💰' },
+  { t: 'R', name: 'North Metro', price: 200, ic: '🚇' }, pr('lb', 'Harbor Walk', 100, 6), { t: 'H', name: 'Chance', ic: '❓' }, pr('lb', 'Pier Street', 100, 6), pr('lb', 'Lighthouse Rd', 120, 8),
+  { t: 'J', name: 'Jail / Visiting', ic: '🔒' }, pr('pk', 'Maple Court', 140, 10), { t: 'U', name: 'Power Plant', price: 150, ic: '⚡' }, pr('pk', 'Elm Court', 140, 10), pr('pk', 'Cedar Court', 160, 12),
+  { t: 'R', name: 'East Metro', price: 200, ic: '🚇' }, pr('or', 'Market Square', 180, 14), { t: 'C', name: 'Community', ic: '📦' }, pr('or', 'Guild Hall', 180, 14), pr('or', 'Clock Tower', 200, 16),
+  { t: 'F', name: 'Free Parking', ic: '🅿️' }, pr('rd', 'Rose Avenue', 220, 18), { t: 'H', name: 'Chance', ic: '❓' }, pr('rd', 'Tulip Avenue', 220, 18), pr('rd', 'Orchid Avenue', 240, 20),
+  { t: 'R', name: 'South Metro', price: 200, ic: '🚇' }, pr('yl', 'Sunrise Blvd', 260, 22), pr('yl', 'Golden Blvd', 260, 22), { t: 'U', name: 'Waterworks', price: 150, ic: '💧' }, pr('yl', 'Amber Blvd', 280, 24),
+  { t: 'G', name: 'Go to Jail', ic: '👮' }, pr('gr', 'Park Terrace', 300, 26), pr('gr', 'Garden Terrace', 300, 26), { t: 'C', name: 'Community', ic: '📦' }, pr('gr', 'Forest Terrace', 320, 28),
+  { t: 'R', name: 'West Metro', price: 200, ic: '🚇' }, { t: 'H', name: 'Chance', ic: '❓' }, pr('bl', 'Skyline Plaza', 350, 35), { t: 'X', name: 'Luxury Tax', amt: 100, ic: '💎' }, pr('bl', 'Grand Tower', 400, 50),
+];
+const gpos = (i) => (i <= 10 ? [11, 11 - i] : i <= 20 ? [11 - (i - 10), 1] : i <= 30 ? [1, 1 + (i - 20)] : [1 + (i - 30), 11]);
+const MULT = [1, 5, 15, 45, 80, 125];
+const ICO = ['🚗', '🎩', '🐶', '🚀'], COL = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b'], FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+const groupOf = (g) => SQ.map((s, i) => (s.g === g ? i : -1)).filter((i) => i >= 0);
+
+/* ---------------- state ---------------- */
+let players, owners, houses, turn, gen = 0, logs, dice, rolling, round;
+const CANCEL = 'cancel';
+const nap = async (ms, g) => { await Board.sleep(ms); if (g !== gen) throw CANCEL; };
+const alive = () => players.filter((p) => p.alive);
+const owned = (p) => SQ.map((_, i) => i).filter((i) => owners[i] === p.id);
+const fullSet = (o, g) => groupOf(g).every((i) => owners[i] === o);
+
+function log(m) { logs.push(m); if (logs.length > 60) logs.shift(); const el = $('#log'); el.innerHTML = logs.map((x) => '<div>' + x + '</div>').join(''); el.scrollTop = 1e6; $('#st').textContent = m; }
+
+function rent(i, dsum) {
+  const s = SQ[i], o = owners[i];
+  if (s.t === 'R') return 25 * Math.pow(2, SQ.filter((q, k) => q.t === 'R' && owners[k] === o).length - 1);
+  if (s.t === 'U') return dsum * (SQ.filter((q, k) => q.t === 'U' && owners[k] === o).length === 2 ? 10 : 4);
+  return houses[i] ? s.rent * MULT[houses[i]] : s.rent * (fullSet(o, s.g) ? 2 : 1);
+}
+function liquidate(p, need) {
+  while (p.cash < need) {
+    const hs = owned(p).filter((i) => houses[i] > 0).sort((a, b) => houses[b] - houses[a])[0];
+    if (hs !== undefined) { houses[hs]--; p.cash += GRP[SQ[hs].g][1] / 2; continue; }
+    const pr2 = owned(p).sort((a, b) => SQ[a].price - SQ[b].price)[0];
+    if (pr2 === undefined) break;
+    owners[pr2] = -1; p.cash += SQ[pr2].price / 2; log(`${p.name} sells ${SQ[pr2].name} to the bank for $${SQ[pr2].price / 2}`);
+  }
+}
+async function pay(p, amt, to) {
+  if (p.cash < amt) liquidate(p, amt);
+  if (p.cash >= amt) { p.cash -= amt; if (to) to.cash += amt; Board.sfx('capture'); render(); return true; }
+  if (to) { to.cash += p.cash; owned(p).forEach((i) => { owners[i] = to.id; houses[i] = 0; }); } else owned(p).forEach((i) => { owners[i] = -1; houses[i] = 0; });
+  p.cash = 0; p.alive = false; log(`💥 ${p.name} is bankrupt!`); Board.sfx('lose'); render(); return false;
+}
+function buildable(p) {
+  const out = [];
+  for (const g in GRP) {
+    const idx = groupOf(g); if (!idx.every((i) => owners[i] === p.id)) continue;
+    const min = Math.min(...idx.map((i) => houses[i]));
+    for (const i of idx) if (houses[i] < 5 && houses[i] <= min && p.cash >= GRP[g][1]) out.push(i);
+  }
+  return out;
+}
+
+/* ---------------- rendering ---------------- */
+const bd = $('#bd');
+function render() {
+  let h = '';
+  SQ.forEach((s, i) => {
+    const [r, c] = gpos(i), o = owners ? owners[i] : -1, cur = players && alive()[0] && players[turn] && players[turn].pos === i;
+    const tks = players ? players.filter((p) => p.alive && p.pos === i).map((p) => `<i class="tk" style="background:${p.col}">${p.ico}</i>`).join('') : '';
+    const band = s.t === 'P' ? `<div class="band" style="background:${GRP[s.g][0]}"><span class="hs">${houses && houses[i] === 5 ? '<i class="h"></i>' : '<i></i>'.repeat(houses ? houses[i] : 0)}</span></div>` : '';
+    const ownSh = o >= 0 ? `box-shadow: inset 0 -6px 0 ${players[o].col};` : '';
+    h += `<div class="sq${cur ? ' cur' : ''}" style="grid-row:${r};grid-column:${c};${ownSh}">${band}<span class="nm">${s.name}</span>${s.ic ? `<span class="ic">${s.ic}</span>` : ''}${s.price ? `<i class="pr">$${s.price}</i>` : s.amt ? `<i class="pr">pay $${s.amt}</i>` : s.t === 'S' ? '<i class="pr">collect $200</i>' : ''}<span class="tks">${tks}</span></div>`;
+  });
+  h += `<div class="mid"><h2>TYCOON TOWN</h2><div class="dice${rolling ? ' roll' : ''}">${dice ? FACES[dice[0] - 1] + FACES[dice[1] - 1] : '🎲'}</div><p>${players ? 'Round ' + round : ''}</p></div>`;
+  bd.innerHTML = h;
+  if (players) $('#pls').innerHTML = players.map((p, i) => `<div class="pl${i === turn && p.alive ? ' on' : ''}${p.alive ? '' : ' out'}"><span class="tkb" style="background:${p.col}">${p.ico}</span><div>${p.name}<small>${owned(p).length} properties${p.jail ? ' · in jail' : ''}${p.jcards ? ' · 🎟 jail card' : ''}</small></div><b>$${p.cash}</b></div>`).join('');
+}
+
+/* ---------------- human input & dialogs ---------------- */
+const ask = (title, body, btns) => new Promise((res) => {
+  Board.modal(title, body, btns.map(([l, v]) => [l, () => res(v)]));
+  const d = document.getElementById('bk-dlg'); d.oncancel = (e) => e.preventDefault();
+});
+const pick = (opts) => new Promise((res) => {
+  const bar = $('#acts'); bar.innerHTML = '';
+  opts.forEach(([id, label, dis], k) => {
+    const b = document.createElement('button'); b.className = 'bk-btn' + (k === 0 ? ' bk-primary' : ''); b.textContent = label; b.disabled = !!dis; b.dataset.id = id;
+    b.onclick = () => { bar.innerHTML = ''; Board.sfx('click'); res(id); }; bar.appendChild(b);
+  });
+});
+async function choose(p, opts, allowBuild = true) {
+  for (;;) {
+    const o = opts.slice(); if (allowBuild && buildable(p).length) o.push(['build', '🏠 Build']);
+    const id = await pick(o);
+    if (id !== 'build') return id;
+    await buildUI(p);
+  }
+}
+async function buildUI(p) {
+  for (;;) {
+    const c = buildable(p); if (!c.length) return;
+    const v = await ask('Build', `Cash: $${p.cash}. Houses must be built evenly across a colour set.`, c.map((i) => [`${SQ[i].name} → ${houses[i] === 4 ? 'hotel' : 'house ' + (houses[i] + 1)} ($${GRP[SQ[i].g][1]})`, i]).concat([['Done', -1]]));
+    if (v < 0) return;
+    houses[v]++; p.cash -= GRP[SQ[v].g][1]; Board.sfx('move'); render();
+  }
+}
+
+/* ---------------- game flow ---------------- */
+async function moveTo(p, target, g) {
+  while (p.pos !== target) {
+    p.pos = (p.pos + 1) % 40; if (p.pos === 0) { p.cash += 200; log(`${p.name} passes START: +$200`); Board.sfx('win'); }
+    Board.sfx('step'); render(); await nap(p.cpu ? Board.pace(190) : 130, g);
+  }
+}
+async function goJail(p, g) { p.pos = 10; p.jail = 1; log(`🚔 ${p.name} goes to jail`); Board.sfx('lose'); render(); await nap(p.cpu ? Board.pace(900) : 500, g); }
+const cpuBuy = (p, i) => { const s = SQ[i], left = p.cash - s.price, g = s.g; return left >= 150 || (g && groupOf(g).filter((k) => owners[k] === p.id).length === groupOf(g).length - 1); };
+function cpuBuild(p) { const limit = Board.level() === 1 ? 1 : Board.level() === 3 ? 5 : 3; for (let n = 0; n < limit; n++) { const c = buildable(p).filter((i) => p.cash - GRP[SQ[i].g][1] >= 200).sort((a, b) => houses[a] - houses[b])[0]; if (c === undefined) break; houses[c]++; p.cash -= GRP[SQ[c].g][1]; log(`${p.name} builds on ${SQ[c].name}`); Board.sfx('move'); } }
+
+const CHANCE = [
+  ['Advance to START and collect $200', async (p, d, g) => { await moveTo(p, 0, g); }],
+  ['Take a trip to Skyline Plaza', async (p, d, g) => { await moveTo(p, 37, g); await landOn(p, d, g); }],
+  ['Advance to Rose Avenue', async (p, d, g) => { await moveTo(p, 21, g); await landOn(p, d, g); }],
+  ['The bank pays you a $50 dividend', async (p) => { p.cash += 50; }],
+  ['Go back 3 spaces', async (p, d, g) => { p.pos = (p.pos + 37) % 40; render(); await nap(300, g); await landOn(p, d, g); }],
+  ['Go directly to jail', async (p, d, g) => { await goJail(p, g); }],
+  ['Speeding fine: pay $50', async (p) => { await pay(p, 50, null); }],
+  ['Your building loan matures: collect $150', async (p) => { p.cash += 150; }],
+  ['Get out of jail free (keep this card)', async (p) => { p.jcards++; }],
+  ['Advance to the nearest Metro station', async (p, d, g) => { await moveTo(p, [5, 15, 25, 35].find((x) => x > p.pos) || 5, g); await landOn(p, d, g); }],
+];
+const COMM = [
+  ['Bank error in your favour: collect $200', async (p) => { p.cash += 200; }],
+  ['Doctor\'s fee: pay $50', async (p) => { await pay(p, 50, null); }],
+  ['Consultancy fee: collect $25', async (p) => { p.cash += 25; }],
+  ['Go directly to jail', async (p, d, g) => { await goJail(p, g); }],
+  ['Get out of jail free (keep this card)', async (p) => { p.jcards++; }],
+  ['Hospital bill: pay $100', async (p) => { await pay(p, 100, null); }],
+  ['It\'s your birthday! Collect $10 from every player', async (p) => { for (const q of alive()) if (q !== p) await pay(q, 10, p); }],
+  ['Tax refund: collect $20', async (p) => { p.cash += 20; }],
+  ['Street repairs: pay $25 per house', async (p) => { await pay(p, 25 * owned(p).reduce((t, i) => t + houses[i], 0), null); }],
+  ['You inherit $100', async (p) => { p.cash += 100; }],
+];
+let decks;
+
+async function landOn(p, dsum, g) {
+  const i = p.pos, s = SQ[i];
+  log(`${p.name} lands on ${s.name}`); render();
+  if (s.t === 'P' || s.t === 'R' || s.t === 'U') {
+    const o = owners[i];
+    if (o < 0) {
+      const can = p.cash >= s.price;
+      const buy = p.cpu ? can && cpuBuy(p, i) : (await choose(p, [['buy', `Buy ${s.name} for $${s.price}`, !can], ['skip', 'Skip']], false)) === 'buy';
+      if (g !== gen) throw CANCEL;
+      if (buy) { p.cash -= s.price; owners[i] = p.id; log(`${p.name} buys ${s.name} for $${s.price}`); Board.sfx('win'); }
+      else if (p.cpu) await nap(Board.pace(700), g);
+    } else if (o !== p.id) { const r = rent(i, dsum); log(`${p.name} pays $${r} rent to ${players[o].name}`); await pay(p, r, players[o]); await nap(p.cpu ? Board.pace(700) : 450, g); }
+  } else if (s.t === 'X') { log(`${p.name} pays $${s.amt} tax`); await pay(p, s.amt, null); await nap(p.cpu ? Board.pace(600) : 300, g); }
+  else if (s.t === 'G') await goJail(p, g);
+  else if (s.t === 'C' || s.t === 'H') {
+    const d = s.t === 'C' ? decks.comm : decks.chance, card = d.cards[d.i++ % d.cards.length], name = s.t === 'C' ? 'Community card' : 'Chance card';
+    log(`🃏 ${name}: ${card[0]}`);
+    if (p.cpu) await nap(Board.pace(1900), g); else { await ask(name, card[0], [['OK', 1]]); if (g !== gen) throw CANCEL; }
+    await card[1](p, dsum, g);
+  }
+  render();
+}
+
+async function rollDice(g, cpu) {
+  rolling = true; Board.sfx('dice');
+  for (let k = 0; k < 8; k++) { dice = [1 + Board.rand(6), 1 + Board.rand(6)]; render(); await nap(cpu ? Board.pace(100) : 65, g); }
+  dice = [1 + Board.rand(6), 1 + Board.rand(6)]; rolling = false; render(); await nap(cpu ? Board.pace(550) : 250, g); return dice;
+}
+
+async function takeTurn(p, g) {
+  let dbl = 0;
+  while (p.alive) {
+    log(`${p.name}'s turn`); render();
+    if (p.cpu) { cpuBuild(p); render(); await nap(Board.pace(1100), g); }
+    let wasJail = p.jail > 0;
+    if (wasJail) {
+      const c = p.cpu ? (p.jcards ? 'card' : p.cash > 300 ? 'pay' : 'roll') : await choose(p, [['roll', 'Roll for doubles'], ['pay', 'Pay $50 to leave'], ...(p.jcards ? [['card', 'Use jail card']] : [])]);
+      if (g !== gen) throw CANCEL;
+      if (c === 'pay') { if (await pay(p, 50, null)) { p.jail = 0; wasJail = false; log(`${p.name} pays $50 and leaves jail`); } else return; }
+      else if (c === 'card') { p.jcards--; p.jail = 0; wasJail = false; log(`${p.name} uses a get-out card`); }
+    } else if (!p.cpu) { await choose(p, [['roll', '🎲 Roll the dice']]); if (g !== gen) throw CANCEL; }
+    const [a, b] = await rollDice(g, p.cpu), isD = a === b, sum = a + b;
+    log(`${p.name} rolls ${a} + ${b} = ${sum}${isD ? ' (doubles!)' : ''}`);
+    if (wasJail) {
+      if (isD) { p.jail = 0; log(`${p.name} rolled doubles and is free`); }
+      else if (++p.jail > 3) { log(`${p.name} pays $50 after three turns`); if (!(await pay(p, 50, null))) return; p.jail = 0; }
+      else { log(`${p.name} stays in jail`); return; }
+      await moveTo(p, (p.pos + sum) % 40, g); await landOn(p, sum, g);
+      return;
+    }
+    if (isD && ++dbl === 3) { log(`${p.name} rolled three doubles in a row`); await goJail(p, g); return; }
+    await moveTo(p, (p.pos + sum) % 40, g);
+    await landOn(p, sum, g);
+    if (!p.alive || p.jail) return;
+    if (!p.cpu) { await choose(p, [['end', isD ? 'Roll again' : 'End turn']]); if (g !== gen) throw CANCEL; } else { cpuBuild(p); render(); await nap(Board.pace(700), g); }
+    if (!isD) return;
+  }
+}
+
+async function run(g) {
+  try {
+    for (;;) {
+      const p = players[turn];
+      if (p.alive) {
+        await takeTurn(p, g);
+        const humans = players.filter((q) => !q.cpu), over = alive().length < 2 || humans.every((q) => !q.alive);
+        if (over) {
+          const w = alive().length === 1 ? alive()[0] : null, lose = humans.every((q) => !q.alive) && players.some((q) => q.cpu);
+          Board.sfx(lose ? 'lose' : 'win');
+          await ask(lose ? 'You went bankrupt' : 'We have a winner!', lose ? 'The computers take over the town.' : `${w ? w.name : 'Nobody'} owns Tycoon Town.`, [['Play again', 1]]);
+          newGame(); return;
+        }
+      }
+      turn = (turn + 1) % players.length; if (turn === 0) round++;
+    }
+  } catch (e) { if (e !== CANCEL) throw e; }
+}
+
+function newGame() {
+  gen++; const m = $('#mode').value, n = +m[0], cpu = m.length > 1;
+  players = Array.from({ length: n }, (_, i) => ({ id: i, name: cpu ? (i ? 'Computer ' + i : 'You') : 'Player ' + (i + 1), cpu: cpu && i > 0, cash: 1500, pos: 0, jail: 0, jcards: 0, alive: true, col: COL[i], ico: ICO[i] }));
+  owners = Array(40).fill(-1); houses = Array(40).fill(0); turn = 0; round = 1; logs = []; dice = null; rolling = false;
+  decks = { chance: { cards: Board.shuffle(CHANCE.slice()), i: 0 }, comm: { cards: Board.shuffle(COMM.slice()), i: 0 } };
+  $('#acts').innerHTML = ''; log('New game — good luck!'); render(); run(gen);
+}
+$('#new').onclick = newGame; $('#mode').onchange = newGame;
+document.addEventListener('keydown', (e) => {
+  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || document.getElementById('bk-dlg')?.open) return;
+  const k = e.key.toLowerCase();
+  if (k === ' ' || k === 'enter' || k === 'r') { const b = $('#acts button:not(:disabled)'); if (b) { e.preventDefault(); b.click(); } }
+  else if (k === 'b') { const b = $('#acts button[data-id="build"]'); if (b) b.click(); } else if (k === 'n') newGame();
+});
+render(); newGame();
+</script>
+<script src="../../kits/menu-bootstrap.js"></script>
+</body>
+</html>

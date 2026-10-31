@@ -64,7 +64,7 @@ try {
   await page.locator('#playable-theater-modal [data-ui-open]').click();
   await page.waitForFunction(() => {
     const frame = document.querySelector('#playable-theater-modal iframe');
-    return frame?.contentWindow?.location.pathname.includes('01-flappy-bird.html') && frame.contentDocument?.readyState === 'complete';
+    return frame?.contentWindow?.location.pathname.includes('01-flappy-bird/index.html') && frame.contentDocument?.readyState === 'complete';
   });
   await page.evaluate(() => { document.querySelector('#playable-theater-modal iframe').contentWindow.location.hash = '#history-probe'; });
   await page.locator('#playable-theater-modal [data-ui-close]').click();

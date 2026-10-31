@@ -54,7 +54,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `40-mini-golf.html`. Current family: Arcade Core (Yes). Catalog description: “9 challenging holes featuring bumpers, sand traps, water hazards, spinning windmills, and moving obstacles.” Controls: Drag back and release to putt, or Left/Right to aim + hold Space to charge. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `40-mini-golf/index.html`. Current family: Arcade Core (Yes). Catalog description: “9 challenging holes featuring bumpers, sand traps, water hazards, spinning windmills, and moving obstacles.” Controls: Drag back and release to putt, or Left/Right to aim + hold Space to charge. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

@@ -54,7 +54,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `43-sudoku.html`. Current family: Board Kit (No). Catalog description: “Authentic Sudoku with unique solutions, pencil notes mode, conflict checking, hint tool, and undo history.” Controls: Click cell, press 1-9 to place digit, Space/P for notes, Backspace to clear. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `43-sudoku/index.html`. Current family: Board Kit (No). Catalog description: “Authentic Sudoku with unique solutions, pencil notes mode, conflict checking, hint tool, and undo history.” Controls: Click cell, press 1-9 to place digit, Space/P for notes, Backspace to clear. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

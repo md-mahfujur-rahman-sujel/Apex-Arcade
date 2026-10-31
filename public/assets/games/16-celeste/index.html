@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skyfall Ridge</title>
+<script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
+</head>
+<body>
+
+<script src="../../kits/perf-kit.js"></script>
+<script src="../../kits/save-kit.js"></script>
+<script src="../../kits/meta-config.js"></script>
+<script src="../../kits/meta-kit.js"></script>
+<script src="../../kits/arcade-core.js"></script>
+<script src="../../kits/score-bridge.js"></script>
+<script src="../../kits/ui-kit.js"></script>
+<script>
+/* Skyfall Ridge — a precision dash-climbing platformer.
+   10 handcrafted rooms. Legend: # rock  ^ spikes  C crumbling block  S spring  D dash crystal
+   G gem  P start  F summit flag.  Rooms exit to the right (R) or through the ceiling (U). */
+(function () {
+  'use strict';
+  const A = Arcade, T = 40, COLS = 20, ROWS = 12, W = 800, H = 480;
+  const GRAV = 0.46, MAXFALL = 8.6, RUN = 3.4, JUMP = -9.6;
+
+  const MAPS = [
+    { n: 'First Steps', exit: 'R', hint: 'Run with ← →, jump with Space — hold it for more height', m: [
+      '....................', '....................', '....................', '....................',
+      '....................', '....................', '....................', '............G.......',
+      '...........###......', '.P......##..........', '############..######', '############..######'] },
+    { n: 'Thorns', exit: 'R', hint: 'Spikes are deadly. Jump over them', m: [
+      '....................', '....................', '....................', '....................',
+      '....................', '..........G.........', '.........###........', '....................',
+      '....................', '.P....^^.....^^.....', '####################', '####################'] },
+    { n: 'The Leap', exit: 'R', hint: 'Jump, then press Shift to dash — aim with the arrow keys', m: [
+      '....................', '....................', '....................', '....................',
+      '....................', '....................', '....................', '.........G..........',
+      '....................', '.P..................', '#######....#########', '#######....#########'] },
+    { n: 'The Chimney', exit: 'U', hint: 'Slide down walls, and jump off them to climb', m: [
+      '########...#########', '########...#########', '########.G.#########', '########...#########',
+      '########...#########', '########.D.#########', '########...#########', '########...#########',
+      '########...#########', '########.P.#########', '####################', '####################'] },
+    { n: 'Springboard', exit: 'R', hint: 'Springs launch you high and refill your dash', m: [
+      '....................', '....................', '....................', '........G...........',
+      '....................', '........##..........', '........##..........', '........##..........',
+      '........##..........', '.P...S..##....^^....', '#################..#', '#################..#'] },
+    { n: 'Brittle Bridge', exit: 'R', hint: 'Crumbling blocks give way when you stand on them — keep moving', m: [
+      '....................', '....................', '....................', '....................',
+      '....................', '....................', '....................', '..........G.........',
+      '....................', '.P..................', '#####.CC.CCC.CC.####', '#####...........####'] },
+    { n: 'Crystal Chain', exit: 'R', hint: 'Crystals refill your dash in mid-air', m: [
+      '....................', '....................', '....................', '....................',
+      '....................', '...........G........', '.........D..........', '....................',
+      '......D.....D.......', '.P..................', '####............####', '####............####'] },
+    { n: 'Thorn Climb', exit: 'U', hint: 'Do not touch the floor. Zig-zag up and out through the ceiling', m: [
+      '#########..#########', '#..................#', '#.......####.......#', '#..............G...#',
+      '#.............####.#', '#.........G........#', '#........####......#', '#..................#',
+      '#..####............#', '#P....^^^^^^^^^^^^^#', '####################', '####################'] },
+    { n: 'Windy Gap', exit: 'R', hint: 'Chain a crystal into a dash — stay clear of the spikes', m: [
+      '....................', '....................', '....................', '....................',
+      '....................', '....................', '..............D.....', '.........D..........',
+      '..........^^........', '.P....CC......CC....', '####............####', '####............####'] },
+    { n: 'The Summit', exit: 'N', hint: 'The summit flag is just above', m: [
+      '....................', '..................F.', '................####', '....................',
+      '............###.....', '.....####...........', '....................', '....................',
+      '....................', '.P.S.....^^^^^^^^^^^', '####################', '####################'] },
+  ];
+  let TOTAL_GEMS = 0;
+  MAPS.forEach((R) => R.m.forEach((row) => { for (const ch of row) if (ch === 'G') TOTAL_GEMS++; }));
+
+  const flakes = Array.from({ length: 70 }, () => ({ x: Math.random() * W, y: Math.random() * H, z: Math.random() * 0.8 + 0.3 }));
+  const stars = A.makeStars(60, W, H * 0.6);
+  let S, activeMode = 'story', shakeScale = 1, theme = 'alpine', parkaColor = '#f2b134', scarfColor = '#38d6ff', shardColor = '#fde047';
+
+  function dailySeed() {
+    if (window.Meta && Meta.getDailySeed) return Meta.getDailySeed('skyfall-ridge');
+    const d = new Date(), key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate() + ':skyfall-ridge';
+    let hash = 2166136261;
+    for (let i = 0; i < key.length; i++) { hash ^= key.charCodeAt(i); hash = Math.imul(hash, 16777619); }
+    return hash >>> 0;
+  }
+  function unlock(id) {
+    const saved = window.Save && Save.load ? Save.load('skyfall-ridge') : {};
+    if ((Array.isArray(saved.achievements) ? saved.achievements : []).includes(id)) return;
+    if (window.Save && Save.update) Save.update('skyfall-ridge', { achievements: [id] });
+    if (window.Apex && Apex.unlockAchievement) Apex.unlockAchievement(id, 'skyfall-ridge');
+    if (window.UI && UI.toast) UI.toast('Achievement unlocked', { color: '#fde047' });
+  }
+
+  /* ---------- state ---------- */
+  function newPlayer(c, r) {
+    return { x: c * T + 10, y: r * T + 12, w: 20, h: 28, vx: 0, vy: 0, face: 1, ground: true, coy: 0, jb: 0, wall: 0, wallC: 0, wallDir: 0,
+      lock: 0, dashes: 1, dashT: 0, dcd: 0, ddx: 0, ddy: 0, cut: false, dead: 0, tr: [], sq: 0 };
+  }
+  function findStart(R) {
+    for (let r = 0; r < ROWS; r++) { const c = R.m[r].indexOf('P'); if (c >= 0) return [c, r]; }
+    return [1, 9];
+  }
+  function loadRoom(i) {
+    S.room = i; S.roomT = 0; S.crumbs = {}; S.crys = {}; S.fx = {};
+    const [c, r] = findStart(MAPS[i]);
+    S.p = newPlayer(c, r);
+  }
+  function respawn() {
+    S.crumbs = {}; S.crys = {};
+    const [c, r] = findStart(MAPS[S.room]);
+    S.p = newPlayer(c, r);
+  }
+  function newState() { return { room: 0, frames: 0, deaths: 0, got: [], crumbs: {}, crys: {}, fx: {}, p: null, trans: null, roomT: 0, done: false }; }
+
+  /* ---------- tiles ---------- */
+  function chAt(c, r) {
+    const R = MAPS[S.room];
+    if (c < 0) return '#';
+    if (c >= COLS) return R.exit === 'R' ? '.' : '#';
+    if (r < 0) return R.exit === 'U' ? '.' : '#';
+    if (r >= ROWS) return '.';
+    return R.m[r][c];
+  }
+  function solid(c, r) {
+    const ch = chAt(c, r);
+    if (ch === '#') return true;
+    if (ch === 'C') { const k = S.crumbs[r * COLS + c]; return !(k && k.g); }
+    return false;
+  }
+  function boxHit(x, y, w, h) {
+    const c0 = Math.floor(x / T), c1 = Math.floor((x + w - 0.001) / T), r0 = Math.floor(y / T), r1 = Math.floor((y + h - 0.001) / T);
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) if (solid(c, r)) return true;
+    return false;
+  }
+  function moveX(p, dx) {
+    if (!dx) return;
+    p.x += dx;
+    if (boxHit(p.x, p.y, p.w, p.h)) {
+      if (dx > 0) p.x = Math.floor((p.x + p.w) / T) * T - p.w - 0.01; else p.x = (Math.floor(p.x / T) + 1) * T + 0.01;
+      p.vx = 0;
+    }
+  }
+  function moveY(p, dy) {
+    p.y += dy;
+    if (boxHit(p.x, p.y, p.w, p.h)) {
+      if (dy > 0) p.y = Math.floor((p.y + p.h) / T) * T - p.h - 0.01; else p.y = (Math.floor(p.y / T) + 1) * T + 0.01;
+      p.vy = 0;
+    }
+  }
+
+  /* ---------- gameplay ---------- */
+  function die(G) {
+    const p = S.p; if (p.dead) return;
+    p.dead = 24; S.deaths++; unlock('first-fall');
+    G.burst(p.x + p.w / 2, p.y + p.h / 2, 26, { speed: 5, life: 34, size: 3.5, color: ['#f2b134', '#38d6ff', '#fff'], glow: true, grav: 0.08 });
+    G.ring(p.x + p.w / 2, p.y + p.h / 2, '#f2b134', 50, 20);
+    G.shake(7); G.freeze(5); A.sfx('hurt');
+    if (activeMode === 'daily') G.over('Daily attempt ended', 'Daily Ridge allows one fall per run.');
+  }
+  function startTrans(to) { S.trans = { t: 0, to }; A.sfx('door'); }
+
+  function update(G) {
+    const R = MAPS[S.room];
+    S.roomT++;
+    if (S.trans) {
+      S.trans.t++;
+      if (S.trans.t === 16) loadRoom(S.trans.to);
+      if (S.trans.t >= 32) S.trans = null;
+      return;
+    }
+    if (!S.done) S.frames++;
+    const p = S.p;
+    if (p.dead > 0) { p.dead--; if (!p.dead) respawn(); return; }
+    const ax = A.axisX(), ay = A.axisY();
+    const jp = A.hit('Space'), jh = A.held('Space'), dp = A.hit('ShiftLeft', 'ShiftRight');
+    if (ax) p.face = ax;
+    p.jb = jp ? 7 : Math.max(0, p.jb - 1);
+    p.coy = p.ground ? 7 : Math.max(0, p.coy - 1);
+    p.wallC = p.wall ? 7 : Math.max(0, p.wallC - 1);
+    if (p.wall) p.wallDir = p.wall;
+    p.lock = Math.max(0, p.lock - 1);
+    p.dcd = Math.max(0, p.dcd - 1);
+
+    if (dp && p.dashes > 0 && p.dashT <= 0 && p.dcd <= 0) {
+      let dx = ax, dy = ay; if (!dx && !dy) dx = p.face;
+      const l = Math.hypot(dx, dy); p.ddx = dx / l; p.ddy = dy / l;
+      p.dashT = 9; p.dashes = 0; p.dcd = 14; p.vx = 0; p.vy = 0; unlock('first-dash');
+      A.sfx('dash'); G.shake(3); G.freeze(2); G.ring(p.x + p.w / 2, p.y + p.h / 2, '#38d6ff', 36, 14);
+    }
+    if (p.dashT > 0) {
+      p.dashT--; p.vx = p.ddx * 8.8; p.vy = p.ddy * 8.8;
+      G.burst(p.x + p.w / 2, p.y + p.h / 2, 2, { speed: 1, life: 18, size: 4, color: '#38d6ff', glow: true });
+      if (p.dashT === 0) { p.vx = p.ddx * 3.6; p.vy = p.ddy < 0 ? p.ddy * 3.2 : p.ddy * 2.2; }
+    } else {
+      const tgt = ax * RUN, acc = p.lock > 0 ? 0.12 : (p.ground ? 0.7 : 0.42);
+      p.vx = A.approach(p.vx, tgt, acc);
+      let g = GRAV; if (Math.abs(p.vy) < 1.2 && jh && !p.ground) g *= 0.5;
+      p.vy = Math.min(MAXFALL, p.vy + g);
+      if (p.jb > 0 && p.coy > 0) {
+        p.vy = JUMP; p.jb = 0; p.coy = 0; p.cut = false; p.sq = -0.3; A.sfx('jump');
+        G.burst(p.x + p.w / 2, p.y + p.h, 6, { angle: -Math.PI / 2, spread: 1.2, speed: 1.6, life: 16, size: 3, color: '#dff3ff' });
+      } else if (p.jb > 0 && p.wallC > 0 && !p.ground) {
+        const d = -p.wallDir; p.vx = d * 4.6; p.vy = -8.9; p.lock = 9; p.face = d; p.jb = 0; p.wallC = 0; p.cut = false; A.sfx('jump2');
+        G.burst(p.x + (d > 0 ? 0 : p.w), p.y + p.h * 0.6, 6, { angle: d > 0 ? 0 : Math.PI, spread: 0.8, speed: 2, life: 16, size: 3, color: '#dff3ff' });
+      }
+      if (p.vy < -3.4 && !jh && !p.cut && p.lock === 0) { p.vy *= 0.55; p.cut = true; }
+      if (!p.ground && p.wall && p.vy > 0 && ax === p.wall) {
+        p.vy = Math.min(p.vy, 1.6);
+        if (G.t % 4 === 0) G.burst(p.x + (p.wall > 0 ? p.w : 0), p.y + p.h * 0.5, 1, { speed: 0.6, life: 14, size: 2, color: '#dff3ff', grav: 0.05 });
+      }
+    }
+
+    const prevVy = p.vy;
+    moveX(p, p.vx);
+    moveY(p, p.vy);
+    const was = p.ground;
+    p.ground = p.vy >= 0 && boxHit(p.x, p.y + 1, p.w, p.h);
+    if (p.ground && !was && prevVy > 3.5) {
+      A.sfx('land'); p.sq = 0.3;
+      G.burst(p.x + p.w / 2, p.y + p.h, 6, { angle: -Math.PI / 2, spread: 1.4, speed: 1.8, life: 16, size: 3, color: '#dff3ff' });
+    }
+    p.wall = 0;
+    if (!p.ground) {
+      if (boxHit(p.x - 2, p.y + 3, 2, p.h - 6)) p.wall = -1;
+      else if (boxHit(p.x + p.w, p.y + 3, 2, p.h - 6)) p.wall = 1;
+    }
+    if (p.ground && p.dashT <= 0 && p.dcd <= 8) p.dashes = 1;
+    p.sq *= 0.85;
+    p.tr.push({ x: p.x + p.w / 2, y: p.y + 8 }); if (p.tr.length > 11) p.tr.shift();
+
+    /* crumbling blocks */
+    if (p.ground) {
+      const row = Math.floor((p.y + p.h + 1) / T);
+      for (let c = Math.floor(p.x / T); c <= Math.floor((p.x + p.w - 0.01) / T); c++) {
+        if (chAt(c, row) === 'C' && !S.crumbs[row * COLS + c]) S.crumbs[row * COLS + c] = { t: 32, g: false, r: 0 };
+      }
+    }
+    for (const k in S.crumbs) {
+      const o = S.crumbs[k], c = k % COLS, r = Math.floor(k / COLS);
+      if (!o.g) {
+        if (--o.t <= 0) { o.g = true; o.r = 170; A.sfx('thud'); G.burst(c * T + T / 2, r * T + T / 2, 10, { speed: 2.4, life: 26, size: 3.5, color: ['#8d7bb3', '#5d4d85'], grav: 0.2 }); }
+      } else if (--o.r <= 0) {
+        if (!A.overlap({ x: c * T, y: r * T, w: T, h: T }, p)) delete S.crumbs[k]; else o.r = 5;
+      }
+    }
+    for (const k in S.crys) if (S.crys[k] > 0) S.crys[k]--;
+    for (const k in S.fx) if (S.fx[k] > 0) S.fx[k]--;
+
+    /* tile interactions */
+    const hb = { x: p.x + 3, y: p.y + 4, w: p.w - 6, h: p.h - 6 };
+    const c0 = Math.floor(p.x / T), c1 = Math.floor((p.x + p.w) / T), r0 = Math.floor(p.y / T), r1 = Math.floor((p.y + p.h) / T);
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+      const ch = chAt(c, r), cx = c * T + T / 2, cy = r * T + T / 2, key = r * COLS + c;
+      if (ch === '^') { if (A.overlap(hb, { x: c * T + 8, y: r * T + 18, w: T - 16, h: T - 18 })) { die(G); return; } }
+      else if (ch === 'G') {
+        const gk = S.room + ':' + c + ',' + r;
+        if (!S.got.includes(gk) && A.dist(p.x + p.w / 2, p.y + p.h / 2, cx, cy) < 24) {
+          S.got.push(gk); G.addScore(100); A.sfx('gem'); G.popup(cx, cy - 12, '+100', shardColor);
+          unlock('first-shard');
+          G.burst(cx, cy, 14, { speed: 3, life: 28, size: 3, color: [shardColor, '#fff'], glow: true });
+        }
+      } else if (ch === 'D') {
+        if (!(S.crys[key] > 0) && p.dashes < 1 && A.dist(p.x + p.w / 2, p.y + p.h / 2, cx, cy) < 26) {
+          p.dashes = 1; S.crys[key] = 200; A.sfx('power'); G.ring(cx, cy, '#67e8f9', 44, 18);
+          if (S.got.length > 0) unlock('crystal-chain');
+          G.burst(cx, cy, 14, { speed: 3, life: 24, size: 3, color: ['#67e8f9', '#fff'], glow: true });
+        }
+      } else if (ch === 'S') {
+        if (p.vy >= 0 && A.overlap(hb, { x: c * T + 4, y: r * T + 22, w: T - 8, h: T - 22 })) {
+          p.vy = -15; p.dashes = 1; p.cut = true; p.dashT = 0; p.sq = -0.4; S.fx[key] = 12; A.sfx('bounce'); unlock('spring-flight');
+          G.ring(cx, r * T + 30, '#f472b6', 40, 16); G.shake(2);
+        }
+      } else if (ch === 'F') {
+        if (!S.done && A.dist(p.x + p.w / 2, p.y + p.h / 2, cx, cy) < 32) {
+          S.done = true;
+          const secs = Math.floor(S.frames / 60);
+          const bonus = activeMode === 'time-trial' ? Math.max(0, 12000 - secs * 35)
+            : activeMode === 'daily' ? Math.max(0, S.dailyTarget - secs) * 25
+              : Math.max(0, 6000 - secs * 20 - S.deaths * 100);
+          const complete = activeMode !== 'shard-hunt' || S.got.length === TOTAL_GEMS;
+          G.addScore(bonus);
+          if (activeMode === 'daily') unlock('daily-ridge');
+          if (secs < 120) unlock('speed-ascent');
+          if (S.deaths === 0) unlock('no-falls');
+          if (S.got.length === TOTAL_GEMS) unlock('all-shards');
+          if (activeMode === 'story') unlock('summit-story');
+          if (activeMode === 'shard-hunt' && complete) unlock('shard-hunt');
+          G.burst(cx, cy, 50, { speed: 6, life: 60, size: 4, color: ['#fde047', '#f472b6', '#67e8f9', '#fff'], glow: true, grav: 0.05 });
+          if (complete) G.win('Summit reached!', timeStr() + '  ·  ' + S.deaths + ' falls  ·  ' + S.got.length + '/' + TOTAL_GEMS + ' shards');
+          else G.over('Summit reached', 'Shard Hunt needs every shard · ' + S.got.length + '/' + TOTAL_GEMS);
+          return;
+        }
+      }
+    }
+    if (p.y > H + 60) { die(G); return; }
+    if (R.exit === 'R' && p.x > W - 4) startTrans(S.room + 1);
+    else if (R.exit === 'U' && p.y < -24) startTrans(S.room + 1);
+  }
+
+  function timeStr() {
+    const s = S.frames / 60, m = Math.floor(s / 60);
+    return String(m).padStart(2, '0') + ':' + (s % 60).toFixed(1).padStart(4, '0');
+  }
+
+  /* ---------- drawing ---------- */
+  function ridge(c, base, amp, seed, off, color) {
+    c.fillStyle = color; c.beginPath(); c.moveTo(0, H);
+    for (let x = 0; x <= W; x += 16) {
+      const X = x + off;
+      c.lineTo(x, base + Math.sin(X * 0.011 + seed) * amp + Math.sin(X * 0.029 + seed * 2.3) * amp * 0.5 - Math.abs(Math.sin(X * 0.004 + seed)) * amp);
+    }
+    c.lineTo(W, H); c.closePath(); c.fill();
+  }
+
+  function drawPlayer(c, G, p) {
+    if (p.dead) return;
+    const cx = p.x + p.w / 2, top = p.y, sq = p.sq;
+    const col = p.dashes > 0 ? scarfColor : '#8a7fd0';
+    A.shadow(c, cx, p.y + p.h + 1, 11, 3, 0.2);
+    // scarf
+    c.save(); c.lineCap = 'round'; c.lineJoin = 'round';
+    for (let i = 1; i < p.tr.length; i++) {
+      const a = p.tr[i - 1], b = p.tr[i], k = i / p.tr.length;
+      const wob = Math.sin(G.clock * 0.3 + i) * 1.5;
+      c.strokeStyle = col; c.lineWidth = 2 + 5 * k; c.beginPath(); c.moveTo(a.x, a.y + wob * (1 - k)); c.lineTo(b.x, b.y); c.stroke();
+    }
+    c.restore();
+    const sx = 1 - sq * 0.4, sy = 1 + sq * 0.5;
+    c.save(); c.translate(cx, p.y + p.h); c.scale(sx, sy); c.translate(-cx, -(p.y + p.h));
+    // legs
+    c.fillStyle = '#2a2147'; c.fillRect(p.x + 3, p.y + 20, 5, 8); c.fillRect(p.x + 12, p.y + 20, 5, 8);
+    // parka
+    c.fillStyle = parkaColor; A.roundRect(c, p.x, p.y + 9, p.w, 15, 6); c.fill();
+    c.fillStyle = A.shade(parkaColor, -0.22); c.fillRect(p.x, p.y + 19, p.w, 3);
+    // hood + face
+    c.fillStyle = '#f7c451'; c.beginPath(); c.arc(cx, top + 8, 9, 0, A.TAU); c.fill();
+    c.fillStyle = '#1b1630'; c.beginPath(); c.ellipse(cx + p.face * 2, top + 8, 5.5, 5, 0, 0, A.TAU); c.fill();
+    c.fillStyle = '#fff'; c.fillRect(cx + p.face * 3.5 - 1, top + 6, 2, 3); c.fillRect(cx + p.face * 0.5 - 1, top + 6, 2, 3);
+    c.restore();
+  }
+
+  function draw(G, c) {
+    const R = MAPS[S.room], p = S.p, k = S.room / (MAPS.length - 1);
+    const night = theme === 'night', violet = theme === 'violet';
+    c.fillStyle = A.vgrad(c, 0, H, night ? ['#050818', '#101a3d', '#202854'] : violet ? ['#120b29', '#3b1d61', '#65408a'] : [A.mix('#0a0f2e', '#3b2a6b', k), A.mix('#22407a', '#e8798f', k), A.mix('#4a76b8', '#ffd6a0', k)]);
+    c.fillRect(0, 0, W, H);
+    c.globalAlpha = 1 - k * 0.8; A.drawStars(c, stars, G.clock, W, H * 0.6, 0.02, '#fff'); c.globalAlpha = 1;
+    const sun = c.createRadialGradient(620, 110, 4, 620, 110, 90 + k * 60);
+    sun.addColorStop(0, A.alpha(A.mix('#dfe8ff', '#fff3c4', k), 0.95)); sun.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = sun; c.fillRect(0, 0, W, H);
+    const off = p ? p.x * 0.05 : 0;
+    ridge(c, 300, 70, 1.3, off * 0.3, A.mix('#1a2552', '#7f5f9e', k));
+    ridge(c, 360, 60, 4.1, off * 0.6, A.mix('#222f66', '#9a6fa5', k));
+    ridge(c, 420, 40, 7.7, off, A.mix('#2b3a78', '#b17f9f', k));
+    for (const f of flakes) {
+      f.y += f.z * 0.8; f.x += Math.sin(G.clock * 0.01 + f.z * 9) * 0.3 + 0.3;
+      if (f.y > H) { f.y = -4; f.x = Math.random() * W; } if (f.x > W) f.x = 0;
+      c.fillStyle = 'rgba(255,255,255,' + (0.25 + f.z * 0.4) + ')'; c.fillRect(f.x, f.y, f.z * 2.2, f.z * 2.2);
+    }
+
+    // tiles, drawn bottom-to-top / right-to-left so extruded edges tuck under neighbours
+    for (let r = ROWS - 1; r >= 0; r--) for (let cc = COLS - 1; cc >= 0; cc--) {
+      const ch = R.m[r][cc], x = cc * T, y = r * T, key = r * COLS + cc;
+      if (ch === '#') {
+        const h = A.hash(cc, r);
+        A.block3d(c, x, y, T, T, 5, A.shade('#3f5688', (h - 0.5) * 0.18));
+        if (chAt(cc, r - 1) !== '#') {
+          c.fillStyle = '#eef8ff'; c.fillRect(x, y, T, 6); c.beginPath(); c.arc(x + 8 + h * 20, y + 6, 5, 0, Math.PI); c.fill();
+        }
+        if (h > 0.7) { c.fillStyle = 'rgba(0,0,0,.18)'; c.fillRect(x + 6 + h * 10, y + 14, 12, 2); }
+      } else if (ch === 'C') {
+        const o = S.crumbs[key]; if (o && o.g) continue;
+        const sh = o && o.t < 32 ? (A.rand(-1, 1) * 1.6) : 0;
+        A.block3d(c, x + sh, y, T, T, 4, '#9a84c8');
+        c.strokeStyle = 'rgba(40,20,80,.55)'; c.lineWidth = 2; c.beginPath();
+        c.moveTo(x + 8 + sh, y + 4); c.lineTo(x + 18 + sh, y + 20); c.lineTo(x + 12 + sh, y + 34); c.moveTo(x + 30 + sh, y + 6); c.lineTo(x + 24 + sh, y + 22); c.stroke();
+      } else if (ch === '^') {
+        c.fillStyle = '#d7e4f5';
+        for (let i = 0; i < 3; i++) { const bx = x + 2 + i * 12.5; c.beginPath(); c.moveTo(bx, y + T); c.lineTo(bx + 6.5, y + 15); c.lineTo(bx + 13, y + T); c.fill(); }
+        c.fillStyle = 'rgba(0,0,0,.25)'; for (let i = 0; i < 3; i++) { const bx = x + 2 + i * 12.5; c.beginPath(); c.moveTo(bx + 6.5, y + 15); c.lineTo(bx + 13, y + T); c.lineTo(bx + 6.5, y + T); c.fill(); }
+      } else if (ch === 'S') {
+        const t = S.fx[key] || 0, sq = t > 0 ? 0.4 + 0.6 * (1 - t / 12) : 1, hh = 20 * sq;
+        c.fillStyle = '#6b3b6b'; c.fillRect(x + 6, y + T - 6, T - 12, 6);
+        c.strokeStyle = '#d7e4f5'; c.lineWidth = 3; c.beginPath();
+        for (let i = 0; i <= 4; i++) { const yy = y + T - 6 - (hh * i) / 4; c.lineTo(x + (i % 2 ? 26 : 14), yy); } c.stroke();
+        c.fillStyle = '#f472b6'; A.roundRect(c, x + 4, y + T - 8 - hh, T - 8, 6, 3); c.fill();
+      } else if (ch === 'D') {
+        const on = !(S.crys[key] > 0), cx = x + T / 2, cy = y + T / 2 + Math.sin(G.clock * 0.07 + cc) * 3;
+        c.save(); if (on) { c.shadowColor = '#67e8f9'; c.shadowBlur = 18; }
+        c.fillStyle = on ? '#67e8f9' : 'rgba(103,232,249,.18)'; c.strokeStyle = '#e0fbff'; c.lineWidth = 2;
+        c.beginPath(); c.moveTo(cx, cy - 15); c.lineTo(cx + 11, cy); c.lineTo(cx, cy + 15); c.lineTo(cx - 11, cy); c.closePath(); c.fill(); c.stroke();
+        if (on) { c.fillStyle = 'rgba(255,255,255,.7)'; c.beginPath(); c.moveTo(cx - 2, cy - 10); c.lineTo(cx + 4, cy - 2); c.lineTo(cx - 2, cy + 2); c.fill(); }
+        c.restore();
+      } else if (ch === 'G') {
+        if (S.got.includes(S.room + ':' + cc + ',' + r)) continue;
+        const cx = x + T / 2, cy = y + T / 2 + Math.sin(G.clock * 0.08 + cc * 2) * 3;
+        c.save(); c.shadowColor = shardColor; c.shadowBlur = 14; c.fillStyle = shardColor; c.beginPath();
+        for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? 6 : 13; c.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
+        c.closePath(); c.fill(); c.restore();
+      } else if (ch === 'F') {
+        c.fillStyle = '#e8e2f5'; c.fillRect(x + 12, y - 4, 4, T + 4);
+        c.fillStyle = '#f43f5e'; c.beginPath(); c.moveTo(x + 16, y);
+        for (let i = 0; i <= 10; i++) c.lineTo(x + 16 + i * 3, y + 4 + Math.sin(G.clock * 0.15 + i * 0.6) * 3 + i * 0.4);
+        for (let i = 10; i >= 0; i--) c.lineTo(x + 16 + i * 3, y + 20 + Math.sin(G.clock * 0.15 + i * 0.6) * 3 + i * 0.4);
+        c.closePath(); c.fill();
+      }
+    }
+    if (p) drawPlayer(c, G, p);
+    G.drawFX(c);
+    A.vignette(c, W, H, 0.4);
+
+    // room banner + hint
+    if (S.roomT < 150 && !S.trans) {
+      const a = Math.min(1, (150 - S.roomT) / 40, S.roomT / 20);
+      c.globalAlpha = Math.max(0, a);
+      A.glowText(c, 'ROOM ' + (S.room + 1) + ' · ' + R.n.toUpperCase(), W / 2, 62, 20, '#e0f2fe', 'center', 10);
+      A.text(c, R.hint, W / 2, 86, 13, '#c7d2fe', 'center', '600');
+      c.globalAlpha = 1;
+    }
+    if (S.trans) {
+      const t = S.trans.t, a = t < 16 ? t / 16 : (32 - t) / 16;
+      c.fillStyle = 'rgba(8,10,30,' + Math.min(1, a * 1.2) + ')'; c.fillRect(0, 0, W, H);
+    }
+    G.hudL = (S.room + 1) + '/' + MAPS.length + '  ✦' + S.got.length + '/' + TOTAL_GEMS + '  ☠' + S.deaths;
+    G.hudR = (activeMode === 'daily' ? 'DAILY TARGET ' + S.dailyTarget + 's · ' : activeMode === 'time-trial' ? 'TRIAL ' : activeMode === 'shard-hunt' ? 'SHARD HUNT ' : '') + 'TIME ' + timeStr();
+  }
+
+  const skyfallGame = Arcade.game({
+    id: 'skyfall-ridge', title: 'Skyfall Ridge', subtitle: 'Precision dash-climbing — reach the summit', color: '#38bdf8', w: W, h: H,
+    help: '← → move · Space jump (hold for height) · Shift dash (aim with the arrow keys, one air dash that refills on landing, springs and crystals) · slide down walls and jump off them · P pause · M mute',
+    touchL: [['◀', 'ArrowLeft'], ['▶', 'ArrowRight'], ['▲', 'ArrowUp']],
+    touchR: [['Dash', 'ShiftLeft'], ['Jump', 'Space']],
+    init(G) { S = newState(); S.seed = activeMode === 'daily' ? dailySeed() : 0; S.dailyTarget = 150 + (S.seed % 121); loadRoom(0); },
+    update, draw,
+  });
+  const originalShake = skyfallGame.shake.bind(skyfallGame);
+  skyfallGame.shake = (amount) => originalShake(amount * shakeScale);
+  skyfallGame.ui = UI.mountGame(skyfallGame, {
+    id: 'skyfall-ridge', title: 'Skyfall Ridge', subtitle: 'Dash, climb, and reach the summit', accent: '#38bdf8',
+    modes: [
+      { id: 'story', name: 'Summit Story', blurb: 'Climb all ten authored rooms.' },
+      { id: 'time-trial', name: 'Time Trial', blurb: 'Race the same route; falls do not affect the time bonus.' },
+      { id: 'daily', name: 'Daily Ridge', blurb: 'A same-day seeded summit run; one fall ends the attempt.', seeded: true },
+      { id: 'shard-hunt', name: 'Shard Hunt', blurb: 'Collect every shard before reaching the summit.' },
+    ],
+    settings: [
+      { key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 },
+      { key: 'particles', label: 'Particles', type: 'select', options: ['lite', 'standard', 'ultra'], default: 'standard' },
+    ],
+    achievements: [
+      { id: 'first-dash', name: 'First Dash', desc: 'Use your air dash.', rarity: 'common' },
+      { id: 'first-shard', name: 'First Shard', desc: 'Collect a summit shard.', rarity: 'common' },
+      { id: 'crystal-chain', name: 'Crystal Chain', desc: 'Collect a shard and recharge mid-air.', rarity: 'rare' },
+      { id: 'spring-flight', name: 'Spring Flight', desc: 'Launch from a spring.', rarity: 'common' },
+      { id: 'first-fall', name: 'A Soft Landing', desc: 'Fall and return to the room.', rarity: 'common' },
+      { id: 'no-falls', name: 'Steady Ascent', desc: 'Reach the summit without falling.', rarity: 'rare' },
+      { id: 'daily-ridge', name: 'Daily Climber', desc: 'Complete a daily run.', rarity: 'rare' },
+      { id: 'speed-ascent', name: 'Quick Ascent', desc: 'Reach the summit in under two minutes.', rarity: 'epic' },
+      { id: 'all-shards', name: 'Shard Keeper', desc: 'Collect every shard.', rarity: 'epic' },
+      { id: 'summit-story', name: 'Summit Story', desc: 'Finish the story route.', rarity: 'rare' },
+      { id: 'shard-hunt', name: 'Shard Hunt', desc: 'Finish Shard Hunt with every shard.', rarity: 'legendary' },
+    ],
+    tutorial: { type: 'interactive', steps: [
+      { text: 'Move with A/D or the arrow keys, and hold Space for a higher jump.', hold: 'ArrowRight' },
+      { text: 'Press Shift to dash; aim with the arrow keys. Crystals restore your dash.', hold: 'ShiftLeft' },
+      { text: 'Wall-jump and bounce from springs to climb toward the summit.', hold: 'Space' },
+    ] },
+    hooks: {
+      applyMode: (mode) => { activeMode = mode; },
+      applySetting: (key, value) => {
+        if (key === 'shake') shakeScale = Number(value);
+        if (key === 'particles' && window.Perf && Perf.setTier) Perf.setTier(value);
+      },
+      applyCosmetic: (slot, id) => {
+        if (slot === 'skin') parkaColor = id.includes('rose') ? '#e879a8' : id.includes('jade') ? '#39b982' : id.includes('ice') ? '#73c9e8' : '#f2b134';
+        else if (slot === 'palette') scarfColor = id.includes('ember') ? '#fb7185' : id.includes('gold') ? '#facc15' : id.includes('violet') ? '#c084fc' : '#38d6ff';
+        else if (slot === 'trail') shardColor = id.includes('rose') ? '#fb7185' : id.includes('mint') ? '#6ee7b7' : '#fde047';
+        else if (slot === 'theme') theme = id.includes('night') ? 'night' : id.includes('violet') ? 'violet' : 'alpine';
+      },
+    },
+  });
+})();
+</script>
+<script src="../../kits/menu-bootstrap.js"></script>
+</body>
+</html>

@@ -12,7 +12,7 @@ This PRD comes from a read of the source code and one screenshot of the home pag
 2. Open and read a file before editing it. Do not edit from memory.
 3. The dark theme must look the same after every task. Treat any visible dark-theme change as a bug unless the task says otherwise.
 4. Every task ends with `npm run lint` and `npm run build` passing. Report the output.
-5. Do not touch: `public/assets/aistudio/**` (the games), `src/components/engines/**`, `.aistudio/`, `.env*`, `tsconfig.json`, the `server` block of `vite.config.ts`.
+5. Do not touch: `public/assets/games/**` (the games), `src/components/engines/**`, `.aistudio/`, `.env*`, `tsconfig.json`, the `server` block of `vite.config.ts`.
 6. No new runtime dependency. A dev-only dependency (for example Playwright for screenshots) needs the owner's approval, so list it in your plan first.
 7. Keep every existing `data-*` attribute, `id`, `aria-*` and prop. Other code and tests rely on them.
 8. If blocked, ask at most 3 short questions. Otherwise state one assumption and continue.

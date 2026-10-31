@@ -31,7 +31,7 @@ The reference is a fantasy-game title screen. Take its structure and craft, not 
 
 ## 3.1 Constraints
 
-- Frontend only. Each game stays a single page loaded in the iframe from `public/assets/aistudio/`.
+- Frontend only. Each game stays a single page loaded in the iframe from `public/assets/games/`.
 - Existing kit APIs stay backward compatible. New code adds, it does not rename.
 - Per-game menu cost: theme object and scene code at most about 15 KB. Shared `menu-kit.js` at most about 45 KB before gzip; its shared archetype styles live in adjacent `menu-kit.css` and are precached for offline play.
 - Both site themes work; the menu is always its own game-themed look and ignores the site's light or dark theme.
@@ -227,7 +227,7 @@ A sprint ends with a demo build and the owner's checklist. Dates depend on how m
 | M0-1 | [Prototype gallery](menu-prototype-gallery.html): 10 archetypes, real menu stacks, hover, focus and press states | Complete — owner approved the archetypes and enhanced gallery on 2026-10-23 |
 | M0-2 | [Font shortlist](FONT_SHORTLIST.md) with licenses and Latin WOFF2 size budgets | Shortlist prepared; owner approval pending before font files are added |
 | M0-3 | Identity cards for the three pilot games in their game bibles | Complete — Glowmoth Gauntlet, Tic-Tac-Toe, and Merge 2048 cards added; font use remains provisional pending M0-2 approval |
-| M1-1 | [`menu-kit.js`](../public/assets/aistudio/menu-kit.js) skeleton: schema, validation, screen router, focus manager | Implemented as a standalone script with exported validation/router/focus APIs; browser verification pending |
+| M1-1 | [`menu-kit.js`](../public/assets/kits/menu-kit.js) skeleton: schema, validation, screen router, focus manager | Implemented as a standalone script with exported validation/router/focus APIs; browser verification pending |
 | M1-2 | Shared widgets: sliders, toggles, key rebinding, tab bar, modal | Implemented in the shared Options screen via `Menu.widgets`; game-menu rollout must use this same screen, while legacy `UI.mountGame` migration remains pending |
 | M1-3 | Banner Frame archetype with end-cap button skins | Implemented in `menu-kit.js` with a translucent ornamented frame and faceted banner controls; browser visual verification pending |
 | M1-4 | Scene helper on `fx-kit` with perf tiers and static Lite fallback | Implemented as `Fx.menuScene`; Lite/reduced motion uses one cached canvas frame, with tier-aware quality budgets and pause/resume; runtime verification pending |

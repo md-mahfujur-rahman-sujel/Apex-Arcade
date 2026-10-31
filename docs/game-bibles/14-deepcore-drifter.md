@@ -54,7 +54,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `14-metroid.html`. Current family: Action Kit (Arcade) (Yes). Catalog description: “Deep cave exploration: blast cyan energy doors, discover Charge Cells, fire missiles at red doors, and destroy the Brood Warden.” Controls: A/D move, Space jump, X/J fire (hold to charge), C/K missile. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `14-metroid/index.html`. Current family: Action Kit (Arcade) (Yes). Catalog description: “Deep cave exploration: blast cyan energy doors, discover Charge Cells, fire missiles at red doors, and destroy the Brood Warden.” Controls: A/D move, Space jump, X/J fire (hold to charge), C/K missile. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

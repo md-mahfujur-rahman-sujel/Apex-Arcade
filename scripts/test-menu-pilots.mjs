@@ -50,7 +50,7 @@ async function openGame(gameId, title) {
   await page.getByRole('button', { name: `Play ${title}`, exact: true }).click();
   await page.locator('#playable-theater-modal iframe').waitFor({ state: 'attached' });
   await page.waitForFunction(() => !!document.querySelector('#playable-theater-modal iframe')?.contentDocument?.querySelector('.apex-menu-root'));
-  const frame = page.frames().find((candidate) => candidate.url().includes('/assets/aistudio/'));
+  const frame = page.frames().find((candidate) => candidate.url().includes('/assets/games/'));
   assert.ok(frame, `${title} game iframe is loaded: ${JSON.stringify(await page.locator('#playable-theater-modal iframe').evaluateAll((frames) => frames.map((item) => item.src)))}`);
   await frame.locator('.apex-menu-root').waitFor({ state: 'visible' });
   await frame.waitForFunction(() => {
@@ -142,7 +142,7 @@ try {
   const mergeMenu = merge.locator('.apex-menu-root');
   assert.equal(await mergeMenu.getAttribute('data-menu-archetype'), 'glass');
   await mergeMenu.getByRole('button', { name: 'Play', exact: true }).click();
-  const mergePage = page.frames().find((frame) => frame.url().includes('/42-2048.html'));
+  const mergePage = page.frames().find((frame) => frame.url().includes('/42-2048/index.html'));
   assert.ok(mergePage, 'Merge 2048 game frame is loaded');
   const intro = mergePage.locator('#bk-dlg');
   if (await intro.count() && await intro.evaluate((dialog) => dialog.open)) await intro.locator('button').first().click();
@@ -156,7 +156,7 @@ try {
   const resumed = await openGame('2048', 'Merge 2048');
   const resumedMenu = resumed.locator('.apex-menu-root');
   await resumedMenu.getByRole('button', { name: 'Continue Run', exact: true }).click();
-  const resumedFrame = page.frames().find((frame) => frame.url().includes('/42-2048.html'));
+  const resumedFrame = page.frames().find((frame) => frame.url().includes('/42-2048/index.html'));
   await resumedFrame.locator('#bd .tl').first().waitFor({ state: 'visible' });
   const resumedBoard = await resumedFrame.locator('#bd .tl').evaluateAll((tiles) => tiles.map((tile) => `${tile.textContent}:${tile.style.left}:${tile.style.top}`).sort().join('|'));
   assert.equal(resumedBoard, savedBoard, 'Continue Run restores the saved tile positions and values');

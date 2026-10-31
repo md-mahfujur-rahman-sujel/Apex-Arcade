@@ -50,7 +50,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `47-colour-sort.html`. Current family: Board Kit (No). Catalog description: “Challenging fluid sort puzzle: pour matching colored liquid/bubbles between test tubes until each tube is neatly unified.” Controls: Tap tube to pick up, tap another tube to pour. Keys 1-9 & 0 select tubes. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `47-colour-sort/index.html`. Current family: Board Kit (No). Catalog description: “Challenging fluid sort puzzle: pour matching colored liquid/bubbles between test tubes until each tube is neatly unified.” Controls: Tap tube to pick up, tap another tube to pour. Keys 1-9 & 0 select tubes. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

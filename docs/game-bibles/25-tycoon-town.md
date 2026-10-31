@@ -54,7 +54,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `25-tycoon-town.html`. Current family: Board Kit (No). Catalog description: “Monopoly-style property trading game: roll dice, buy neighborhoods, construct houses, charge rent, and manage cash flow.” Controls: Space/Enter/R to roll or confirm action, B to build houses. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `25-tycoon-town/index.html`. Current family: Board Kit (No). Catalog description: “Monopoly-style property trading game: roll dice, buy neighborhoods, construct houses, charge rent, and manage cash flow.” Controls: Space/Enter/R to roll or confirm action, B to build houses. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

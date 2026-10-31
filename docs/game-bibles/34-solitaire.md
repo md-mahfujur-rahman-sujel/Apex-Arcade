@@ -50,7 +50,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `34-solitaire.html`. Current family: Board Kit (No). Catalog description: “Klondike Solitaire: build foundations Ace to King by suit, stack descending alternating colors in columns, draw 1 or 3 from stock.” Controls: Click stock to flip, click card then destination to move, double-click to foundation. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `34-solitaire/index.html`. Current family: Board Kit (No). Catalog description: “Klondike Solitaire: build foundations Ace to King by suit, stack descending alternating colors in columns, draw 1 or 3 from stock.” Controls: Click stock to flip, click card then destination to move, double-click to foundation. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

@@ -1,7 +1,7 @@
 # Apex Arcade Menu Style Guide
 
 **Status:** v1 schema frozen for the three menu pilots. M3 coding is underway at the owner's direction while the pilot visual review and physical-controller gaps remain open; those checks are not marked as passed.  
-**Applies to:** `Menu.mount` in `public/assets/aistudio/menu-kit.js`, with scenes rendered by `Fx.menuScene`.
+**Applies to:** `Menu.mount` in `public/assets/kits/menu-kit.js`, with scenes rendered by `Fx.menuScene`.
 
 This guide is the implementation contract for new game menus. Keep a game's menu identity in its game bible; keep menu behavior in the shared kit. Do not fork menu routing, options, focus handling, or canvas lifecycle into a game page.
 

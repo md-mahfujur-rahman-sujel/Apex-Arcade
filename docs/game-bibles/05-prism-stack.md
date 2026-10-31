@@ -57,7 +57,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `05-tetris.html`; `Arcade.game` save id is `prism-stack`. The page implements a 10×20 board, seven-bag randomizer, SRS kicks, hold, ghost, DAS movement, soft/hard drop, lock resets, combos, back-to-back scoring, escalating gravity, and a 150-line win. The Game Frame config now adds Marathon, Sprint, deterministic Daily Prism, and a five-stage Circuit with saved checkpoints, plus the achievements and cosmetics above. Controls are Left/Right, Up/X/W rotate, Z reverse rotate, Down/S soft drop, Space hard drop, and C/Shift hold. Source-level implementation is present; runtime acceptance is pending.
+Canonical page: `05-tetris/index.html`; `Arcade.game` save id is `prism-stack`. The page implements a 10×20 board, seven-bag randomizer, SRS kicks, hold, ghost, DAS movement, soft/hard drop, lock resets, combos, back-to-back scoring, escalating gravity, and a 150-line win. The Game Frame config now adds Marathon, Sprint, deterministic Daily Prism, and a five-stage Circuit with saved checkpoints, plus the achievements and cosmetics above. Controls are Left/Right, Up/X/W rotate, Z reverse rotate, Down/S soft drop, Space hard drop, and C/Shift hold. Source-level implementation is present; runtime acceptance is pending.
 
 ## Menu Identity Card
 

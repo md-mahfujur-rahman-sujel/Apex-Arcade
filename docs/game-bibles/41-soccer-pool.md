@@ -50,7 +50,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `41-soccer-pool.html`. Current family: Arcade Core (Yes). Catalog description: “Turn-based table soccer duel: pull back and flick cyan discs to knock the ball into the amber goal; first to 5 goals wins.” Controls: Drag back from one of your cyan discs and release to flick. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `41-soccer-pool/index.html`. Current family: Arcade Core (Yes). Catalog description: “Turn-based table soccer duel: pull back and flick cyan discs to knock the ball into the amber goal; first to 5 goals wins.” Controls: Drag back from one of your cyan discs and release to flick. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

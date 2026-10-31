@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glimmer Gadabout</title>
+<script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
+</head>
+<body>
+
+
+<script src="../../kits/perf-kit.js"></script>
+<script src="../../kits/save-kit.js"></script>
+<script src="../../kits/meta-config.js"></script>
+<script src="../../kits/meta-kit.js"></script>
+<script src="../../kits/arcade-core.js"></script>
+<script src="../../kits/act-kit.js"></script>
+<script src="../../kits/score-bridge.js"></script>
+<script src="../../kits/ui-kit.js"></script>
+<script>
+/* Glimmer Gadabout — a bouncy rhythm platformer: hair-glide across gaps, punch with floating fists,
+   hop beat-synced spike pads, collect all the sparks to open the gate. Built on act-kit.js. */
+const A = Arcade, K = Act, TAU = Math.PI * 2, BPM = 100, HALF = 3600 / BPM;
+
+const C1 = K.make('1 · Drumline Meadow', 120, 15, (g) => {
+  g.ground(0, 25); g.set(2, 12, 'P'); g.coins(5, 11, 3); g.set(8, 9, 'g'); g.set(12, 9, 'g'); g.set(18, 12, 'k');
+  g.ground(28, 60); g.set(34, 12, 'r'); g.set(36, 12, 'R'); g.set(38, 12, 'r'); g.set(40, 8, 'g'); g.set(45, 12, 'k'); g.set(52, 9, 'g'); g.plat(50, 10, 4); g.set(56, 12, 'C');
+  g.set(63, 8, 'g'); g.coins(61, 8, 5);
+  g.ground(66, 95); g.set(70, 12, 'C'); g.set(72, 12, 'R'); g.set(74, 12, 'r'); g.set(76, 12, 'R'); g.set(82, 8, 'v'); g.set(80, 7, 'g'); g.set(88, 12, 'k');
+  g.ground(98, 120); g.set(104, 9, 'g'); g.plat(103, 10, 3); g.set(108, 12, 'k'); g.set(110, 8, 'g'); g.set(112, 12, 'r'); g.set(113, 12, 'R'); g.set(118, 12, 'F');
+});
+C1.need = 8; C1.hint = 'Hold jump in the air to glide · collect 8 sparks';
+const C2 = K.make('2 · Neon Reef', 130, 15, (g) => {
+  g.ground(0, 20); g.set(2, 12, 'P'); g.set(10, 9, 'g'); g.set(14, 12, 'k'); g.coins(6, 11, 3);
+  g.ground(23, 50); g.set(28, 12, 'r'); g.set(29, 12, 'R'); g.set(30, 12, 'r'); g.set(36, 8, 'g'); g.set(34, 12, 'C'); g.set(40, 12, 'k'); g.set(45, 9, 'g'); g.set(43, 12, 'R'); g.set(44, 12, 'r');
+  g.plat(53, 10, 2); g.plat(57, 8, 2); g.plat(61, 10, 2); g.set(58, 6, 'g');
+  g.ground(64, 100); g.set(66, 12, 'C'); g.set(70, 9, 'g'); g.set(72, 12, 'k'); g.set(76, 12, 'R'); g.set(77, 12, 'r'); g.set(78, 12, 'R'); g.set(84, 8, 'g'); g.set(82, 7, 'v'); g.set(88, 12, 'r'); g.set(89, 12, 'R'); g.set(92, 9, 'g'); g.set(95, 12, 'k');
+  g.set(104, 7, 'g');
+  g.ground(108, 130); g.set(111, 12, 'C'); g.set(115, 9, 'g'); g.set(117, 12, 'k'); g.set(121, 8, 'g'); g.set(119, 12, 'r'); g.set(120, 12, 'R'); g.set(126, 12, 'F');
+});
+C2.need = 10; C2.hint = 'Spikes pulse with the beat — move on the off-beat';
+C1.theme = { solid: '#7c3aed', top: '#4ade80', plat: '#f59e0b', accent: '#fde047' };
+C2.theme = { solid: '#0e7490', top: '#22d3ee', plat: '#e879f9', accent: '#f0abfc' };
+
+function bg(c, cam, t, lvl) {
+  const ph = (t % HALF) / HALF, pulse = Math.max(0, 1 - ph * 3);
+  A.sky(c, 800, 480, lvl ? ['#1e1b4b', '#6d28d9', '#f0abfc'] : ['#38bdf8', '#a5f3fc', '#fef9c3']);
+  for (let i = 0; i < 8; i++) { const x = ((i * 190 - cam.x * 0.2) % 1520 + 1520) % 1520 - 120, r = 50 + (i % 3) * 14 + pulse * 6; c.fillStyle = lvl ? 'rgba(244,114,182,.18)' : 'rgba(255,255,255,.35)'; c.beginPath(); c.arc(x, 150 + (i % 4) * 36, r, 0, TAU); c.fill(); }
+  K.ridge(c, 370, 34, 1 + lvl, cam.x * 0.25, lvl ? '#4c1d95' : '#86efac'); K.ridge(c, 420, 26, 4 + lvl, cam.x * 0.45, lvl ? '#2e1065' : '#22c55e');
+  c.fillStyle = 'rgba(255,255,255,' + (0.06 + pulse * 0.12) + ')'; c.fillRect(0, 0, 800, 480);
+}
+function hud(c, G) { for (let i = 0; i < 2; i++) { c.fillStyle = Math.floor(G.clock / HALF) % 2 === i ? '#f43f5e' : 'rgba(255,255,255,.25)'; c.beginPath(); c.arc(760 + i * 18, 76, 6, 0, TAU); c.fill(); } }
+function drawGad(c, p, G, wp) {
+  const cx = p.x + p.w / 2, f = p.face, b = p.y + p.h, t = G.clock, run = p.ground ? Math.sin(p.walk) : 0, glide = p.ab.glide && !p.ground && p.vy >= 1.4 && A.held('Space', 'ArrowUp', 'KeyW', 'KeyZ');
+  A.shadow(c, cx, b + 1, 11, 3, 0.25); c.save(); c.translate(cx, b); c.scale(f * (1 + p.sq * 0.4), 1 - p.sq * 0.4);
+  c.fillStyle = '#0d9488'; c.beginPath(); c.ellipse(-4 + run * 3, -3, 5, 3, 0, 0, TAU); c.ellipse(5 - run * 3, -3, 5, 3, 0, 0, TAU); c.fill();
+  c.fillStyle = '#f97316'; A.roundRect(c, -8, -22, 16, 17, 6); c.fill();
+  c.fillStyle = '#fde68a'; c.beginPath(); c.arc(0, -29, 9, 0, TAU); c.fill();
+  c.fillStyle = '#facc15'; if (glide) { for (let i = 0; i < 7; i++) { const a = -Math.PI / 2 + (i - 3) * 0.5; c.save(); c.translate(0, -36); c.rotate(a + Math.sin(t * 0.4 + i) * 0.15); c.fillRect(-2, -22, 4, 22); c.restore(); } }
+  else { c.beginPath(); c.moveTo(-5, -37); c.lineTo(0, -46 + Math.sin(t * 0.2) * 2); c.lineTo(5, -37); c.moveTo(-8, -34); c.lineTo(-13 - Math.abs(p.vx), -40); c.lineTo(-5, -36); c.fill(); }
+  c.fillStyle = '#111'; c.fillRect(2, -31, 3, 4); c.fillRect(-4, -31, 3, 4);
+  const L = p.atk > 0 ? wp.range * Math.min(1, (1 - p.atk / wp.dur) * 2.2) : 0;
+  c.fillStyle = '#fb923c'; c.beginPath(); c.arc(8 + L, -14, p.atk > 0 ? 7 : 5, 0, TAU); c.fill(); c.beginPath(); c.arc(-10, -14 + Math.sin(t * 0.15) * 2, 5, 0, TAU); c.fill();
+  if (L) { c.strokeStyle = '#fed7aa'; c.lineWidth = 3; c.beginPath(); c.moveTo(6, -14); c.lineTo(8 + L, -14); c.stroke(); }
+  c.restore();
+}
+function drawEnemy(c, e, G) {
+  const cx = e.x + e.w / 2, cy = e.y + e.h / 2, t = G.clock, f = e.face, hit = e.hurt > 0;
+  if (e.k === 'k') { A.shadow(c, cx, e.y + e.h + 1, 12, 3, 0.25); c.fillStyle = hit ? '#fff' : '#ec4899'; A.roundRect(c, e.x, e.y + Math.abs(Math.sin(t * 0.2)) * -2, e.w, e.h, 10); c.fill(); c.fillStyle = '#fff'; c.beginPath(); c.arc(cx - 5, cy - 2, 4, 0, TAU); c.arc(cx + 5, cy - 2, 4, 0, TAU); c.fill(); c.fillStyle = '#111'; c.beginPath(); c.arc(cx - 5 + f * 1.5, cy - 2, 2, 0, TAU); c.arc(cx + 5 + f * 1.5, cy - 2, 2, 0, TAU); c.fill(); return true; }
+  const fl = Math.sin(t * 0.4 + e.x) * 8; c.fillStyle = 'rgba(255,255,255,.8)'; c.beginPath(); c.ellipse(cx - 9, cy - 4 - fl * 0.3, 9, 4, -0.4, 0, TAU); c.ellipse(cx + 9, cy - 4 + fl * 0.3, 9, 4, 0.4, 0, TAU); c.fill(); c.fillStyle = hit ? '#fff' : '#a855f7'; c.beginPath(); c.arc(cx, cy, 9, 0, TAU); c.fill(); c.fillStyle = '#fff'; c.fillRect(cx - 4, cy - 3, 3, 4); c.fillRect(cx + 1, cy - 3, 3, 4); return true;
+}
+
+K.game({
+  id: 'glimmer-gadabout', title: 'Glimmer Gadabout', subtitle: 'Hop to the beat, punch, glide, collect', color: '#f97316', bpm: BPM,
+  controls: [['← →  /  A D', 'Run'], ['Space  /  ↑  /  W  /  Z', 'Jump — hold in the air to glide'], ['X  /  J', 'Punch (long reach)'], ['Land on enemies', 'Bounce on them'], ['Red pulsing spikes', 'Safe when faded — watch the beat dots'], ['P / M', 'Pause / mute']],
+  help: '← → run · Space jump, hold in the air to glide · X punch · land on enemies to bounce · spikes pulse with the beat (dots, top right) · collect every spark to open the gate',
+  levels: [C1, C2], bg, hud, hero: { hp: 4, run: 3.5, jump: 10.6, stomp: true, ab: { glide: true }, weapon: { type: 'melee', dmg: 1, range: 66, h: 26, cd: 22, dur: 10 } },
+  enemies: {
+    k: { w: 28, h: 26, hp: 1, ai: 'walk', sp: 0.8, sight: 120, score: 80, color: '#ec4899' },
+    v: { w: 26, h: 20, hp: 1, ai: 'fly', sp: 1.4, sight: 190, range: 60, bob: 22, score: 80, color: '#a855f7' },
+  },
+  drawEnemy, drawHero: drawGad, clear: 'GATE OPEN!', winTitle: 'Encore!', winSub: (G, coins) => 'Every spark collected · ' + coins + ' coins · Score ' + G.score,
+});
+</script>
+<script src="../../kits/menu-bootstrap.js"></script>
+</body>
+</html>

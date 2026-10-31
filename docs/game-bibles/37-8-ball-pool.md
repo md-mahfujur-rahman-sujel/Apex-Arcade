@@ -54,7 +54,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `37-pool.html`. Current family: Arcade Core (Yes). Catalog description: “Full 8-ball pool with real physics: solids vs stripes group assignment, scratch ball-in-hand placement, and pocketing the 8-ball.” Controls: Drag back from ball and release to shoot. Click to place cue ball on scratch. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `37-pool/index.html`. Current family: Arcade Core (Yes). Catalog description: “Full 8-ball pool with real physics: solids vs stripes group assignment, scratch ball-in-hand placement, and pocketing the 8-ball.” Controls: Drag back from ball and release to shoot. Click to place cue ball on scratch. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

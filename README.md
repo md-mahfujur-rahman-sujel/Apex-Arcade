@@ -28,14 +28,15 @@ The production site is installable from browsers that support web apps. Service 
 - Choose a game from the home page or catalog. The theater starts with a launch screen so game audio can be enabled by a user gesture.
 - Controls differ by game; use the in-game controls panel or the “How to play” section in `public/assets/aistudio/Instructions.txt`.
 - Favorites, profile details, and play history are stored locally in this browser. Clearing browser storage removes them.
-- Use the theater’s share button to share a PNG score card where supported, or download it. Game links use `#game=<game-id>`, for example `#game=flappy-bird`.
+- Use the theater’s share button to share a PNG score card where supported, or download it. Game links use `#/game/<game-id>`, for example `#/game/flappy-bird`.
 
 ## Project map
 
 - `src/` — React launcher, theater, telemetry, profile, and canvas engines.
 - `src/data/gamesData.ts` — catalog metadata for the 50 games.
-- `public/assets/aistudio/` — canonical standalone game pages and shared game kits. The suffixed hash twins are retained project assets; app code uses the canonical filenames.
+- `public/assets/games/<NN-slug>/index.html` — canonical standalone game pages.
+- `public/assets/kits/` — shared kits loaded by every game page.
 - `docs/GAME_INVENTORY.md` — inventory and integration audit.
 - `PRD.md` — product requirements and delivery order.
 
-The production host must serve the built `dist/` directory from the site root and support HTTPS for install/offline features. Keep `service-worker.js` at the root so its scope covers the launcher and game pages.
+The production host must serve the built `dist/` directory from the site root and support HTTPS for install/offline features. Keep `sw.js` at the root so its scope covers the launcher and game pages.

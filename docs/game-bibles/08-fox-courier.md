@@ -54,7 +54,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `08-mario.html`. Current family: Platform Kit (Arcade) (Yes). Catalog description: “Three courses of enemy stomping, crate busting, spring launches, checkpoints, and flagpole leaps.” Controls: A/D run, Space/W jump (hold for height), Down+Jump drops through thin floors. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `08-mario/index.html`. Current family: Platform Kit (Arcade) (Yes). Catalog description: “Three courses of enemy stomping, crate busting, spring launches, checkpoints, and flagpole leaps.” Controls: A/D run, Space/W jump (hold for height), Down+Jump drops through thin floors. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

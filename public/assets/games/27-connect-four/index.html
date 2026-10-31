@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect Four</title>
+<style>
+  .c4 { display: grid; grid-template-columns: auto minmax(240px, 1fr); gap: 22px; align-items: start; }
+  @media (max-width: 860px) { .c4 { grid-template-columns: 1fr; } }
+  #bd { --s: max(280px, min(100vw - 40px, 640px)); width: var(--s); aspect-ratio: 7 / 6.4; background: #1d4ed8; border-radius: 16px; padding: 10px; box-shadow: 0 20px 50px -20px #000, 0 0 0 6px #1e3a8a; display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: auto repeat(6, 1fr); gap: 6px; user-select: none; touch-action: manipulation; }
+  .hd { display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 10px; min-height: 0; }
+  .hd.on:hover, .hd.hov { background: rgba(255,255,255,.14); }
+  .hd i { width: 56%; aspect-ratio: 1; border-radius: 50%; opacity: 0; }
+  .hd.hov i { opacity: .8; }
+  .cell { background: #0b1b52; border-radius: 50%; position: relative; box-shadow: inset 0 4px 8px rgba(0,0,0,.6); aspect-ratio: 1; overflow: visible; cursor: pointer; }
+  .disc { position: absolute; inset: 7%; border-radius: 50%; box-shadow: inset 0 -5px 0 rgba(0,0,0,.25), inset 0 4px 0 rgba(255,255,255,.3); }
+  .disc.y, .hd i.y { background: radial-gradient(circle at 35% 30%, #fde68a, #f59e0b); }
+  .disc.r, .hd i.r { background: radial-gradient(circle at 35% 30%, #fb7185, #be123c); }
+  .disc.drop { animation: fall calc(.3s + var(--r) * .07s) cubic-bezier(.5, 0, 1, .6); }
+  @keyframes fall { from { transform: translateY(calc(var(--r) * -112% - 130%)); } }
+  .disc.win { animation: pulse .7s ease-in-out infinite alternate; outline: 4px solid #fff; }
+  @keyframes pulse { to { transform: scale(1.12); } }
+  .disc.last::after { content: ""; position: absolute; inset: 36%; border-radius: 50%; background: rgba(0,0,0,.35); }
+  .side { display: grid; gap: 12px; }
+  .capt { color: var(--muted); line-height: 1.7; }
+  .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+</style>
+<script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
+</head>
+<body>
+
+<script src="../../kits/perf-kit.js"></script>
+<script src="../../kits/save-kit.js"></script>
+<script src="../../kits/meta-config.js"></script>
+<script src="../../kits/meta-kit.js"></script>
+<script src="../../kits/board-kit.js"></script>
+<script src="../../kits/score-bridge.js"></script>
+<script src="../../kits/ui-kit.js"></script>
+<script>
+const ui = Board.shell({
+  id: 'connect-four', cpu: true, title: 'Connect Four', subtitle: 'Drop discs and line up four before your rival does',
+  rules: 'Players take turns dropping a disc into one of the seven columns; it falls to the lowest free slot. Make a straight line of four of your own discs — across, up and down, or diagonally — to win. If all 42 slots fill with no line, the game is a draw. Gold moves first.',
+  controls: [['Click column', 'Drop a disc'], ['1 – 7', 'Drop in that column'], ['← → + Enter', 'Move the pointer, then drop'], ['U', 'Undo'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
+});
+ui.main.innerHTML = `
+<div class="c4">
+  <div id="bd"></div>
+  <div class="side">
+    <div class="bk-status" id="st"></div>
+    <div class="bk-row">
+      <label>Play <select class="bk-select" id="mode"><option value="y">Gold (first) vs computer</option><option value="r">Crimson vs computer</option><option value="two">Two players</option></select></label>
+      <label>Level <select class="bk-select" id="lvl"><option value="0">Easy</option><option value="1" selected>Medium</option><option value="2">Hard</option></select></label>
+    </div>
+    <div class="bk-row"><button class="bk-btn bk-primary" id="new">New game</button><button class="bk-btn" id="undo">Undo</button></div>
+    <div class="capt" id="cp"></div>
+  </div>
+</div>`;
+const $ = (s) => ui.main.querySelector(s);
+const W = 7, H = 6, opp = (s) => (s === 'y' ? 'r' : 'y'), NAME = { y: 'Gold', r: 'Crimson' };
+const ORDER = [3, 2, 4, 1, 5, 0, 6];
+
+/* ---- rules ---- */
+const LINES = []; /* every 4-in-a-row as index quadruples */
+for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) for (const [dr, dc] of [[0, 1], [1, 0], [1, 1], [1, -1]]) {
+  const r2 = r + 3 * dr, c2 = c + 3 * dc; if (r2 < H && c2 >= 0 && c2 < W) LINES.push([0, 1, 2, 3].map((k) => (r + k * dr) * W + c + k * dc));
+}
+const drop = (b, c) => { for (let r = H - 1; r >= 0; r--) if (!b[r * W + c]) return r; return -1; };
+const winLine = (b) => { for (const L of LINES) { const p = b[L[0]]; if (p && p === b[L[1]] && p === b[L[2]] && p === b[L[3]]) return L; } return null; };
+function ev(b, s) {
+  let v = 0; for (let r = 0; r < H; r++) if (b[r * W + 3] === s) v += 3; else if (b[r * W + 3]) v -= 3;
+  for (const L of LINES) {
+    let a = 0, o = 0; for (const i of L) { if (b[i] === s) a++; else if (b[i]) o++; }
+    if (a && o) continue; if (a) v += [0, 1, 4, 24][a] || 0; else if (o) v -= [0, 1, 4, 24][o] || 0;
+  }
+  return v;
+}
+/* negamax from the point of view of s (who is to move); the previous mover may already have won */
+function nm(b, s, d, a, be, last) {
+  if (last >= 0) { const L = winLine(b); if (L) return -1e5 - d; }
+  if (!d) return ev(b, s);
+  let best = -1e9, any = 0;
+  for (const c of ORDER) {
+    const r = drop(b, c); if (r < 0) continue; any = 1; b[r * W + c] = s;
+    const v = -nm(b, opp(s), d - 1, -be, -a, c); b[r * W + c] = 0;
+    if (v > best) best = v; if (best > a) a = best; if (a >= be) break;
+  }
+  return any ? best : 0;
+}
+
+/* ---- state & UI ---- */
+let B, turn, over, mode, busy, hist, last, wl, hov = 3, gen = 0;
+const bd = $('#bd'), heads = [], cells = [];
+for (let c = 0; c < W; c++) { const d = document.createElement('div'); d.className = 'hd'; d.dataset.c = c; d.innerHTML = '<i></i>'; bd.appendChild(d); heads.push(d); }
+for (let k = 0; k < W * H; k++) { const d = document.createElement('div'); d.className = 'cell'; d.dataset.c = k % W; bd.appendChild(d); cells.push(d); }
+const human = () => mode === 'two' || turn === mode;
+function newGame() { gen++; mode = $('#mode').value; B = Array(W * H).fill(0); turn = 'y'; over = null; busy = false; hist = []; last = -1; wl = null; render(); cpu(); }
+function render(dropped) {
+  cells.forEach((d, i) => {
+    const p = B[i]; const keep = d.firstChild && d.firstChild.className.includes(' ' + p) && i !== dropped;
+    if (!p) { d.innerHTML = ''; return; }
+    if (!keep) d.innerHTML = `<div class="disc ${p}${i === dropped ? ' drop' : ''}" style="--r:${i === dropped ? (i / W | 0) : 0}"></div>`;
+    const e = d.firstChild; e.classList.toggle('win', !!wl && wl.includes(i)); e.classList.toggle('last', i === last && !over);
+  });
+  heads.forEach((h, c) => { const on = !over && !busy && human() && drop(B, c) >= 0; h.classList.toggle('on', on); h.classList.toggle('hov', on && c === hov); h.firstChild.className = turn; });
+  $('#st').innerHTML = over || (busy ? 'Computer is thinking…' : `<span class="dot" style="background:${turn === 'y' ? '#f59e0b' : '#be123c'}"></span>${NAME[turn]} to move${mode !== 'two' && human() ? ' — your turn' : ''}`);
+  const n = (s) => B.filter((p) => p === s).length;
+  $('#cp').innerHTML = `Gold discs: <b>${n('y')}</b><br>Crimson discs: <b>${n('r')}</b><br>Moves played: <b>${hist.length}</b>`;
+}
+function play(c) {
+  const r = drop(B, c); if (r < 0) return; hist.push({ c, last });
+  const i = r * W + c; B[i] = turn; last = i; Board.sfx('move');
+  wl = winLine(B);
+  if (wl) over = NAME[turn] + ' wins!'; else if (B.every(Boolean)) over = 'Draw — the board is full';
+  else turn = opp(turn);
+  render(i);
+  if (over) {
+    const w = mode !== 'two' && wl && B[wl[0]] === mode; Board.sfx(!wl ? 'move' : mode === 'two' || w ? 'win' : 'lose');
+    Board.after(700, () => Board.modal(!wl ? 'Draw' : mode === 'two' ? over : w ? 'You won!' : 'Computer wins', over, [['New game', newGame], ['Close']]));
+  } else cpu();
+}
+function cpu() {
+  if (over || human()) return; busy = true; render();
+  const g = gen;
+  Board.think(() => {
+    const s = turn, L = +$('#lvl').value, d = [2, 5, 7][L], b = B.slice(); let bm = -1, bs = -1e9;
+    const cols = ORDER.filter((c) => drop(b, c) >= 0);
+    for (const c of cols) {
+      const r = drop(b, c); b[r * W + c] = s; let v = -nm(b, opp(s), d - 1, -1e9, 1e9, c); b[r * W + c] = 0;
+      if (L === 0) v += Math.random() * 30;
+      if (v > bs) { bs = v; bm = c; }
+    }
+    return bm;
+  }, 950).then(async (bm) => {
+    if (g !== gen) return;
+    heads[bm].classList.add('hov'); await Board.sleep(Board.pace(450));   /* hover over the chosen column first */
+    if (g !== gen) return;
+    busy = false; play(bm);
+  });
+}
+function go(c) { if (over || busy || !human() || c < 0 || c >= W) return; if (drop(B, c) < 0) { Board.sfx('error'); return; } play(c); }
+bd.addEventListener('click', (e) => { const d = e.target.closest('[data-c]'); if (d) go(+d.dataset.c); });
+bd.addEventListener('mouseover', (e) => { const d = e.target.closest('[data-c]'); if (d && +d.dataset.c !== hov) { hov = +d.dataset.c; render(); } });
+function undo() {
+  if (busy || !hist.length) return;
+  const pop = () => { const h = hist.pop(), r = (() => { for (let q = 0; q < H; q++) if (B[q * W + h.c]) return q; })(); B[r * W + h.c] = 0; last = h.last; };
+  pop(); if (mode !== 'two' && hist.length && !(B.filter(Boolean).length % 2 ? 'r' : 'y').startsWith(mode)) pop();
+  turn = B.filter(Boolean).length % 2 ? 'r' : 'y';
+  over = null; wl = null; render(); cpu();
+}
+$('#new').onclick = newGame; $('#undo').onclick = undo; $('#mode').onchange = newGame;
+document.addEventListener('keydown', (e) => {
+  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'n') newGame(); else if (k === 'u') undo();
+  else if (k >= '1' && k <= '7') go(+k - 1);
+  else if (k === 'arrowleft') { hov = (hov + W - 1) % W; render(); e.preventDefault(); }
+  else if (k === 'arrowright') { hov = (hov + 1) % W; render(); e.preventDefault(); }
+  else if (k === 'enter' || k === 'arrowdown') { go(hov); e.preventDefault(); }
+});
+newGame();
+</script>
+<script src="../../kits/menu-bootstrap.js"></script>
+</body>
+</html>

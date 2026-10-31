@@ -50,7 +50,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `39-basketball.html`. Current family: Arcade Core (Yes). Catalog description: “60-second basketball shootout: drag back trajectory to arc shots, score 3-pointers from downtown, and earn swish streak bonuses.” Controls: Drag back and release to shoot, or Up/Down to aim + hold Space to charge. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `39-basketball/index.html`. Current family: Arcade Core (Yes). Catalog description: “60-second basketball shootout: drag back trajectory to arc shots, score 3-pointers from downtown, and earn swish streak bonuses.” Controls: Drag back and release to shoot, or Up/Down to aim + hold Space to charge. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

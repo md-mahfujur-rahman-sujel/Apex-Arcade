@@ -54,7 +54,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `11-street-fighter.html`. Current family: Arcade Core (Yes). Catalog description: “A 3-rival championship tournament (Brakk, Sable, Warden Orlo) with frame-advantage punches, kicks, blocks, and Rift Rush.” Controls: A/D move, S/back block, W jump, F punch, G kick, H Rift Rush. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `11-street-fighter/index.html`. Current family: Arcade Core (Yes). Catalog description: “A 3-rival championship tournament (Brakk, Sable, Warden Orlo) with frame-advantage punches, kicks, blocks, and Rift Rush.” Controls: A/D move, S/back block, W jump, F punch, G kick, H Rift Rush. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

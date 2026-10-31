@@ -50,7 +50,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `32-dots-boxes.html`. Current family: Board Kit (No). Catalog description: “Click adjacent dots to draw lines. Completing the 4th side of a square claims the box and awards another move immediately.” Controls: Click line between two dots. Choose 3x3, 4x4, or 5x5 board size. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `32-dots-boxes/index.html`. Current family: Board Kit (No). Catalog description: “Click adjacent dots to draw lines. Completing the 4th side of a square claims the box and awards another move immediately.” Controls: Click line between two dots. Choose 3x3, 4x4, or 5x5 board size. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

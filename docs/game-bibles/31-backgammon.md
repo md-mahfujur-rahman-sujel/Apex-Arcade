@@ -50,7 +50,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `31-backgammon.html`. Current family: Board Kit (No). Catalog description: “Full 24-point backgammon: roll dice, move checkers around the board, hit blots to send to the bar, and bear off to victory.” Controls: R or Space rolls dice. Click checker, then click glowing point. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `31-backgammon/index.html`. Current family: Board Kit (No). Catalog description: “Full 24-point backgammon: roll dice, move checkers around the board, hit blots to send to the bar, and bear off to victory.” Controls: R or Space rolls dice. Click checker, then click glowing point. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

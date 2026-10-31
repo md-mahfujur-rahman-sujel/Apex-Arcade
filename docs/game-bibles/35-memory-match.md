@@ -50,7 +50,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `35-memory-match.html`. Current family: Board Kit (No). Catalog description: “Brain-training card match: flip two cards at a time, memorize positions, clear the board, and race the clock.” Controls: Click card or use arrows + Space to flip. N for new game. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `35-memory-match/index.html`. Current family: Board Kit (No). Catalog description: “Brain-training card match: flip two cards at a time, memorize positions, clear the board, and race the clock.” Controls: Click card or use arrows + Space to flip. N for new game. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

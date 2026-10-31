@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stormcap Showdown</title>
+<script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
+</head>
+<body>
+
+<script src="../../kits/perf-kit.js"></script>
+<script src="../../kits/save-kit.js"></script>
+<script src="../../kits/meta-config.js"></script>
+<script src="../../kits/meta-kit.js"></script>
+<script src="../../kits/arcade-core.js"></script>
+<script src="../../kits/score-bridge.js"></script>
+<script src="../../kits/ui-kit.js"></script>
+<script>
+/* Stormcap Showdown — a one-on-one boss duel in an old-time cartoon style: shoot, dash, and parry the pink
+   shots to charge your super against Mama Thundercloud's three phases. Graded S-C at the end. */
+const A = Arcade, W = 800, H = 480, GY = 410, TAU = Math.PI * 2;
+const JUMP = ['Space', 'ArrowUp', 'KeyW', 'KeyZ'], SHOOT = ['KeyX', 'KeyJ'], DASH = ['ShiftLeft', 'ShiftRight', 'KeyL'], SUPER = ['KeyC', 'KeyK'];
+const PLAT = [{ x: 130, y: 318, w: 130 }, { x: 400, y: 300, w: 130 }];
+let P, bul, foe, bolts, B, intro, hits, parries, time, meter, banner, bannerT, hold;
+
+function init(G) {
+  P = { x: 120, y: GY - 44, w: 24, h: 44, vx: 0, vy: 0, face: 1, ground: true, hp: 3, inv: 0, dash: 0, dcd: 0, cd: 0, coy: 0, jb: 0, sq: 0, walk: 0, sup: 0, shotT: 0 };
+  bul = []; foe = []; bolts = []; hits = 0; parries = 0; time = 0; meter = 0; intro = 160; banner = ''; bannerT = 0; hold = 0;
+  B = { x: 630, y: 190, w: 220, h: 170, hp: 360, max: 360, phase: 1, t: 0, hurt: 0, charge: 0, cx: 630, dead: 0 };
+}
+const say = (t) => { banner = t; bannerT = 100; };
+function damage(G, n) {
+  if (P.inv > 0 || P.dash > 0 || P.sup > 0) return;
+  P.hp--; P.inv = 100; hits++; P.vy = -7; P.dash = 0; G.shake(8); G.freeze(5); A.sfx('hurt'); G.burst(P.x + 12, P.y + 22, 14, { color: ['#fff', '#fca5a5'], speed: 4, life: 24 });
+  if (P.hp <= 0) { A.sfx('ko'); G.over('Knocked Out', 'Mama Thundercloud had ' + Math.max(1, Math.ceil(B.hp / B.max * 100)) + '% left'); }
+}
+function update(G) {
+  if (intro > 0) { intro--; if (intro === 150) A.sfx('wave'); if (intro === 40) A.sfx('charge'); return; }
+  if (bannerT > 0) bannerT--;
+  if (B.dead) {
+    B.dead++; P.vx = 0; if (B.dead % 7 === 0) G.burst(B.x + A.rand(-90, 90), B.y + A.rand(-60, 60), 14, { color: ['#fff', '#fde047', '#93c5fd'], speed: 5, life: 30, glow: true });
+    if (B.dead === 2) { A.sfx('boom'); G.shake(16); }
+    if (B.dead > 130) {
+      const sec = time / 60, pts = 100 - hits * 17 - Math.max(0, sec - 75) * 0.5 + parries * 4, grade = pts >= 96 ? 'S' : pts >= 80 ? 'A' : pts >= 60 ? 'B' : 'C';
+      G.addScore(Math.round(Math.max(0, pts) * 20) + P.hp * 300);
+      G.win('KNOCKOUT!', 'Grade ' + grade + '  ·  Time ' + Math.floor(sec / 60) + ':' + String(Math.floor(sec % 60)).padStart(2, '0') + '  ·  Hits ' + hits + '  ·  Parries ' + parries);
+    }
+    return;
+  }
+  time++; B.t++; if (B.hurt > 0) B.hurt--;
+  G.hudL = 'SCORE ' + G.score; G.hudR = 'PHASE ' + B.phase;
+  const ax = A.axisX(), jh = A.held.apply(null, JUMP), jp = A.hit.apply(null, JUMP);
+  /* ---- player ---- */
+  if (P.inv > 0) P.inv--; if (P.dcd > 0) P.dcd--; if (P.cd > 0) P.cd--; if (P.sup > 0) P.sup--; P.sq *= 0.8;
+  if (ax && P.dash <= 0) P.face = ax;
+  if (A.hit.apply(null, DASH) && P.dcd <= 0 && P.dash <= 0) { P.dash = 14; P.dcd = 42; A.sfx('dash'); P.inv = Math.max(P.inv, 0); G.burst(P.x + 12, P.y + 24, 6, { color: '#fff', speed: 2, life: 14, size: 2 }); }
+  if (P.dash > 0) { P.dash--; P.vx = P.face * 9; P.vy = 0; }
+  else {
+    P.vx = A.approach(P.vx, ax * 3.8, ax ? (P.ground ? 0.7 : 0.45) : 0.7);
+    P.coy = P.ground ? 6 : P.coy - 1; P.jb = jp ? 7 : P.jb - 1;
+    if (P.jb > 0 && P.coy > 0) { P.vy = -11.4; P.jb = 0; P.coy = 0; P.sq = -0.3; A.sfx('jump'); }
+    else if (jp && !P.ground) {
+      let best = null, bd = 44;
+      for (const f of foe) if (f.pink) { const d = Math.hypot(f.x - (P.x + 12), f.y - (P.y + 22)); if (d < bd) { bd = d; best = f; } }
+      if (best) { best.dead = true; parries++; P.vy = -9.5; P.jb = 0; meter = Math.min(100, meter + 22); A.sfx('parry'); G.freeze(4); G.ring(best.x, best.y, '#f9a8d4', 60, 20); G.popup(best.x, best.y - 14, 'PARRY!', '#f9a8d4', 18); G.burst(best.x, best.y, 12, { color: ['#f9a8d4', '#fff'], speed: 4, life: 22, glow: true }); }
+    }
+    if (!jh && P.vy < -3) P.vy *= 0.5;
+    P.vy = Math.min(P.vy + 0.58, 13);
+  }
+  const wasG = P.ground; P.x = A.clamp(P.x + P.vx, 10, W - 10 - P.w); const pb = P.y + P.h; P.y += P.vy; P.ground = false;
+  if (P.y + P.h >= GY) { P.y = GY - P.h; P.vy = 0; P.ground = true; }
+  else if (P.vy >= 0) for (const pl of PLAT) if (P.x + P.w > pl.x && P.x < pl.x + pl.w && pb <= pl.y + 2 && P.y + P.h >= pl.y) { P.y = pl.y - P.h; P.vy = 0; P.ground = true; }
+  if (P.ground && !wasG) { A.sfx('land'); P.sq = 0.35; G.burst(P.x + 12, P.y + P.h, 4, { color: '#e7d9b5', speed: 1.6, life: 12, size: 2, angle: -Math.PI / 2, spread: 1.4 }); }
+  if (P.ground) P.walk += Math.abs(P.vx) * 0.14;
+  if (A.held.apply(null, SHOOT) && P.cd <= 0) { P.cd = 6; P.shotT = 8; const sy = P.y + 18 + A.rand(-2, 2); bul.push({ x: P.x + 12 + P.face * 16, y: sy, vx: P.face * 11, vy: A.rand(-0.25, 0.25), life: 70 }); if (G.t % 12 === 0) A.sfx('shoot'); }
+  if (P.shotT > 0) P.shotT--;
+  if (A.hit.apply(null, SUPER) && meter >= 100) { meter = 0; P.sup = 50; B.hp -= 30; B.hurt = 14; G.shake(14); A.sfx('boom'); G.ring(B.x, B.y, '#fde047', 220, 30); G.burst(B.x, B.y, 40, { color: ['#fde047', '#fff'], speed: 7, life: 34, glow: true }); G.popup(P.x, P.y - 20, 'SUPER!', '#fde047', 22); foe = []; bolts = []; }
+  /* ---- bullets ---- */
+  for (const b of bul) {
+    b.x += b.vx; b.y += b.vy; b.life--;
+    if (b.life <= 0 || b.x < -20 || b.x > W + 20) b.dead = true;
+    else if (b.x > B.x - B.w / 2 + 20 && b.x < B.x + B.w / 2 - 10 && b.y > B.y - B.h / 2 + 20 && b.y < B.y + B.h / 2 - 20 && B.charge !== 9) { b.dead = true; B.hp--; B.hurt = 3; meter = Math.min(100, meter + 0.45); G.addScore(10); G.burst(b.x, b.y, 3, { color: ['#fff', '#93c5fd'], speed: 2.5, life: 12, size: 2 }); if (G.t % 3 === 0) A.sfx('hit'); }
+  }
+  bul = bul.filter((b) => !b.dead);
+  /* ---- phases ---- */
+  const k = B.hp / B.max, ph = k > 0.66 ? 1 : k > 0.33 ? 2 : 3;
+  if (ph !== B.phase) { B.phase = ph; foe = []; bolts = []; say('PHASE ' + ph); A.sfx('charge'); G.shake(8); if (ph === 3) B.charge = 0; }
+  if (B.hp <= 0) { B.hp = 0; B.dead = 1; foe = []; bolts = []; return; }
+  /* ---- boss behaviour ---- */
+  const rainEvery = [0, 46, 36, 26][ph], boltEvery = [0, 210, 170, 140][ph];
+  if (B.charge === 0) {
+    B.x = 630 + Math.sin(B.t * 0.02) * 24; B.y = 190 + Math.sin(B.t * 0.045) * 14;
+    if (B.t % rainEvery === 0) for (let i = 0; i < (ph === 3 ? 2 : 1); i++) foe.push({ x: A.rand(30, W - 30), y: -10, vx: 0, vy: 3.8 + ph * 0.7, r: 6, kind: 'rain' });
+    if (B.t % boltEvery === boltEvery - 110) { bolts.push({ x: P.x + 12, t: 0 }); if (ph === 3) bolts.push({ x: A.clamp(P.x + (Math.random() < 0.5 ? -140 : 140), 40, W - 40), t: 0 }); }
+    if (ph >= 2 && B.t % 130 === 70) { const a = Math.atan2(P.y + 10 - (B.y + 20), P.x - (B.x - 80)); foe.push({ x: B.x - 80, y: B.y + 20, vx: Math.cos(a) * 3, vy: Math.sin(a) * 3, r: 12, kind: 'orb', pink: true }); A.sfx('blip'); }
+    if (ph >= 2 && B.t % 160 === 20) { const a = Math.atan2(P.y + 10 - (B.y + 20), P.x - (B.x - 80)); for (let i = -1; i <= 1; i++) foe.push({ x: B.x - 80, y: B.y + 20, vx: Math.cos(a + i * 0.3) * 4, vy: Math.sin(a + i * 0.3) * 4, r: 7, kind: 'spark' }); A.sfx('shoot'); }
+    if (ph === 3 && B.t % 420 === 330) { B.charge = 1; B.ct = 0; A.sfx('charge'); say('LOOK OUT!'); }
+  } else {
+    B.ct++;
+    if (B.charge === 1) { B.y += (GY - 110 - B.y) * 0.1; B.x += (680 - B.x) * 0.1; if (B.ct > 55) { B.charge = 2; A.sfx('dash'); } }
+    else if (B.charge === 2) { B.x -= 15; G.shake(2); if (B.x < -160) { B.charge = 3; B.ct = 0; } }
+    else { B.x += (630 - B.x) * 0.05; B.y += (190 - B.y) * 0.05; if (B.ct > 70) { B.charge = 0; B.x = 630; B.y = 190; } }
+    if (B.charge === 2 && A.overlap({ x: P.x, y: P.y, w: P.w, h: P.h }, { x: B.x - 90, y: B.y - 60, w: 180, h: 120 })) damage(G);
+  }
+  for (const f of foe) {
+    f.x += f.vx; f.y += f.vy;
+    if (f.y > GY + 10 || f.x < -30 || f.x > W + 30 || f.y < -40) { f.dead = true; if (f.kind === 'rain' && f.y > GY) G.burst(f.x, GY, 3, { color: '#bfdbfe', speed: 1.5, life: 10, size: 2, angle: -Math.PI / 2, spread: 1 }); continue; }
+    if (A.overlap({ x: f.x - f.r + 2, y: f.y - f.r + 2, w: f.r * 2 - 4, h: f.r * 2 - 4 }, { x: P.x + 2, y: P.y + 2, w: P.w - 4, h: P.h - 4 })) { if (!f.pink || P.inv <= 0) { damage(G); if (P.inv > 0) f.dead = true; } }
+  }
+  foe = foe.filter((f) => !f.dead);
+  for (const b of bolts) {
+    b.t++;
+    if (b.t === 50) { A.sfx('laser'); G.shake(6); }
+    if (b.t >= 50 && b.t < 66 && A.overlap({ x: b.x - 18, y: 0, w: 36, h: GY }, { x: P.x + 3, y: P.y, w: P.w - 6, h: P.h })) damage(G);
+  }
+  bolts = bolts.filter((b) => b.t < 70);
+}
+
+function cloud(c, x, y, s, col) { c.fillStyle = col; c.beginPath(); for (const [dx, dy, r] of [[-70, 20, 48], [-20, -30, 62], [40, -20, 58], [78, 22, 44], [0, 30, 56]]) { c.moveTo(x + dx * s + r * s, y + dy * s); c.arc(x + dx * s, y + dy * s, r * s, 0, TAU); } c.fill(); }
+function draw(G, c) {
+  const t = G.clock;
+  A.sky(c, W, H, ['#6b7fa8', '#b9c6dc', '#f1e6c9']);
+  for (let i = 0; i < 4; i++) cloud(c, ((i * 260 - t * 0.2) % 1100 + 1100) % 1100 - 150, 110 + (i % 2) * 60, 0.6, 'rgba(255,255,255,.35)');
+  c.fillStyle = '#6b8f5a'; c.beginPath(); c.moveTo(0, 380); for (let x = 0; x <= W; x += 20) c.lineTo(x, 372 + Math.sin(x * 0.015) * 12); c.lineTo(W, H); c.lineTo(0, H); c.fill();
+  c.fillStyle = '#7a5c3a'; c.fillRect(0, GY, W, H - GY); c.fillStyle = '#9b7a4d'; c.fillRect(0, GY, W, 6); c.fillStyle = 'rgba(0,0,0,.15)'; for (let x = 0; x < W; x += 40) c.fillRect(x, GY + 20, 18, 3);
+  for (const pl of PLAT) { c.fillStyle = '#5b4426'; c.fillRect(pl.x, pl.y + 4, pl.w, 8); c.fillStyle = '#c69c5b'; c.fillRect(pl.x, pl.y, pl.w, 8); c.fillStyle = 'rgba(255,255,255,.25)'; c.fillRect(pl.x + 3, pl.y + 1, pl.w - 6, 2); }
+  /* boss */
+  c.save(); const dead = B.dead; c.translate(B.x, B.y); if (dead) { c.rotate(Math.sin(dead * 0.4) * 0.1); c.scale(1 - dead / 220, 1 - dead / 220); }
+  const flash = B.hurt > 0, ch = B.charge === 1 && Math.floor(t / 4) % 2;
+  cloud(c, 6, 10, 1.05, 'rgba(40,52,84,.5)'); cloud(c, 0, 0, 1, flash ? '#fff' : ch ? '#fecaca' : '#475577'); cloud(c, -4, -8, 0.88, flash ? '#fff' : ch ? '#fff1f2' : '#5d6e94');
+  c.fillStyle = '#fff'; c.beginPath(); c.ellipse(-36, -14, 17, 22, 0, 0, TAU); c.ellipse(20, -14, 17, 22, 0, 0, TAU); c.fill();
+  const lookX = A.clamp((P.x - B.x) / 200, -1, 1) * 6, lookY = A.clamp((P.y - B.y) / 200, -1, 1) * 6; c.fillStyle = dead ? '#111' : B.phase === 3 ? '#dc2626' : '#111'; c.beginPath(); c.arc(-36 + lookX, -12 + lookY, 8, 0, TAU); c.arc(20 + lookX, -12 + lookY, 8, 0, TAU); c.fill();
+  c.strokeStyle = '#1e293b'; c.lineWidth = 6; c.lineCap = 'round'; c.beginPath(); c.moveTo(-56, -42 + (B.phase - 1) * 4); c.lineTo(-18, -32); c.moveTo(40, -42 + (B.phase - 1) * 4); c.lineTo(2, -32); c.stroke();
+  const open = B.charge === 2 || (B.t % 130 > 60 && B.t % 130 < 90 && B.phase >= 2) || (B.t % 100 > 80); c.fillStyle = '#1e1b2e'; c.beginPath(); c.ellipse(-8, 36, 30, open ? 22 : 9, 0, 0, TAU); c.fill(); if (open) { c.fillStyle = '#fca5a5'; c.beginPath(); c.ellipse(-8, 46, 16, 8, 0, 0, TAU); c.fill(); }
+  c.restore();
+  for (const b of bolts) {
+    if (b.t < 50) { c.save(); c.globalAlpha = 0.25 + 0.35 * (Math.floor(b.t / 5) % 2); c.fillStyle = '#fde047'; c.fillRect(b.x - 18, 0, 36, GY); c.restore(); c.fillStyle = '#facc15'; c.beginPath(); c.moveTo(b.x - 10, 40); c.lineTo(b.x + 10, 40); c.lineTo(b.x, 70); c.fill(); }
+    else { c.save(); c.shadowColor = '#fde047'; c.shadowBlur = 24; c.fillStyle = '#fef9c3'; c.beginPath(); c.moveTo(b.x - 4, 0); for (let y = 0; y < GY; y += 40) c.lineTo(b.x + (y / 40 % 2 ? 16 : -16), y + 40); c.lineTo(b.x + 6, GY); c.lineTo(b.x + 14, GY); c.lineTo(b.x + 6, 0); c.fill(); c.fillStyle = 'rgba(253,224,71,.5)'; c.fillRect(b.x - 18, 0, 36, GY); c.restore(); }
+  }
+  for (const f of foe) {
+    c.save(); if (f.kind === 'rain') { c.fillStyle = '#93c5fd'; c.beginPath(); c.moveTo(f.x, f.y - 12); c.quadraticCurveTo(f.x + 8, f.y + 2, f.x, f.y + 6); c.quadraticCurveTo(f.x - 8, f.y + 2, f.x, f.y - 12); c.fill(); }
+    else if (f.pink) { c.shadowColor = '#f472b6'; c.shadowBlur = 16; c.fillStyle = '#f9a8d4'; c.beginPath(); c.arc(f.x, f.y, f.r + Math.sin(t * 0.3) * 1.5, 0, TAU); c.fill(); c.fillStyle = '#fff'; c.beginPath(); c.arc(f.x - 3, f.y - 3, 4, 0, TAU); c.fill(); }
+    else { c.shadowColor = '#fde047'; c.shadowBlur = 12; c.fillStyle = '#fde047'; c.beginPath(); c.arc(f.x, f.y, f.r, 0, TAU); c.fill(); }
+    c.restore();
+  }
+  for (const b of bul) { c.fillStyle = '#fff'; c.shadowColor = '#fff'; c.shadowBlur = 6; c.beginPath(); c.ellipse(b.x, b.y, 8, 3.5, 0, 0, TAU); c.fill(); c.shadowBlur = 0; }
+  /* hero: a round kettle-kid */
+  if (!(P.inv > 0 && Math.floor(P.inv / 4) % 2)) {
+    const cx = P.x + P.w / 2, b = P.y + P.h, f = P.face, run = P.ground ? Math.sin(P.walk) : 0;
+    if (P.dash > 0) { c.save(); c.globalAlpha = 0.3; c.fillStyle = '#fff'; for (let i = 1; i < 4; i++) { c.beginPath(); c.ellipse(cx - f * i * 14, P.y + 28, 12, 16, 0, 0, TAU); c.fill(); } c.restore(); }
+    A.shadow(c, cx, GY + 2, 14, 3, 0.3); c.save(); c.translate(cx, b); c.scale(f * (1 + P.sq * 0.4), 1 - P.sq * 0.4);
+    if (P.sup > 0) { c.shadowColor = '#fde047'; c.shadowBlur = 24; }
+    c.fillStyle = '#111'; c.fillRect(-8 + run * 4, -9, 6, 9); c.fillRect(2 - run * 4, -9, 6, 9); c.fillStyle = '#fff'; c.fillRect(-9 + run * 4, -3, 8, 3); c.fillRect(1 - run * 4, -3, 8, 3);
+    c.fillStyle = '#ef4444'; c.beginPath(); c.ellipse(0, -22, 13, 15, 0, 0, TAU); c.fill(); c.fillStyle = '#fef3c7'; c.beginPath(); c.ellipse(0, -36, 11, 10, 0, 0, TAU); c.fill();
+    c.fillStyle = '#111'; c.beginPath(); c.ellipse(3, -38, 2.2, 4, 0, 0, TAU); c.ellipse(8, -38, 2.2, 4, 0, 0, TAU); c.fill(); c.fillStyle = '#7dd3fc'; c.fillRect(-7, -48, 14, 4); c.fillRect(-3, -53, 6, 6);
+    c.fillStyle = '#fef3c7'; c.beginPath(); c.arc(14, -24 - (P.shotT > 0 ? 2 : 0), 5, 0, TAU); c.arc(-14, -20, 4, 0, TAU); c.fill(); c.restore();
+  }
+  G.drawFX(c);
+  c.save(); c.globalAlpha = 0.07; for (let i = 0; i < 90; i++) { c.fillStyle = Math.random() < 0.5 ? '#000' : '#fff'; c.fillRect(Math.random() * W, Math.random() * H, 2, 2); } c.restore();
+  A.vignette(c, W, H, 0.4);
+  for (let i = 0; i < 3; i++) { c.fillStyle = i < P.hp ? '#f87171' : 'rgba(255,255,255,.2)'; c.beginPath(); c.arc(30 + i * 24, 52, 9, 0, TAU); c.fill(); }
+  c.fillStyle = 'rgba(0,0,0,.5)'; c.fillRect(16, 70, 110, 10); c.fillStyle = meter >= 100 ? '#fde047' : '#f9a8d4'; c.fillRect(17, 71, 108 * meter / 100, 8); A.text(c, meter >= 100 ? 'SUPER READY — C' : 'SUPER', 16, 96, 11, meter >= 100 ? '#fde047' : '#e5e7eb', 'left', '800');
+  c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(W / 2 - 152, H - 28, 304, 14); c.fillStyle = '#ef4444'; c.fillRect(W / 2 - 150, H - 26, 300 * B.hp / B.max, 10); c.fillStyle = 'rgba(255,255,255,.25)'; c.fillRect(W / 2 - 150, H - 26, 300 * B.hp / B.max, 3);
+  if (intro > 0) A.glowText(c, intro > 50 ? 'READY?' : 'WALLOP!', W / 2, 200, intro > 50 ? 56 : 72 + (50 - intro) * 0.6, '#fde047', 'center', 18);
+  if (bannerT > 0) { c.save(); c.globalAlpha = Math.min(1, bannerT / 25); A.glowText(c, banner, W / 2, 130, 40, '#fff', 'center', 16); c.restore(); }
+  if (B.dead) A.glowText(c, 'KNOCKOUT!', W / 2, 220, 70, '#fde047', 'center', 24);
+}
+
+Arcade.game({
+  id: 'stormcap-showdown', title: 'Stormcap Showdown', subtitle: 'A one-on-one duel with Mama Thundercloud', color: '#f87171', w: W, h: H,
+  controls: [['← →  /  A D', 'Run'], ['Space  /  ↑  /  W  /  Z', 'Jump (hold for height)'], ['Hold X  /  J', 'Shoot'], ['Shift  /  L', 'Dash (invulnerable while dashing)'], ['Jump again near a pink shot', 'PARRY — charges your super'], ['C  /  K', 'Super (when the bar is full)'], ['P / M', 'Pause / mute']],
+  help: '← → run · Space jump · hold X to shoot · Shift dash (safe) · press jump in mid-air next to a PINK shot to parry it · C super when charged',
+  touchL: [['◀', 'ArrowLeft'], ['▶', 'ArrowRight']], touchR: [['⚡', 'ShiftLeft'], ['🔥', 'KeyX'], ['▲', 'Space']],
+  init, update, draw,
+});
+</script>
+<script src="../../kits/menu-bootstrap.js"></script>
+</body>
+</html>

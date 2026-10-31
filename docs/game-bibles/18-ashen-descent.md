@@ -54,7 +54,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `18-dead-cells.html`. Current family: Action Kit (Arcade) (Yes). Catalog description: “Fast-paced sword combat with invulnerable dodge rolls, weapon chests, procedural biomes, and a Warden boss.” Controls: A/D run, Space jump, X attack, Shift roll (invulnerable), Down+Jump drops through floors. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `18-dead-cells/index.html`. Current family: Action Kit (Arcade) (Yes). Catalog description: “Fast-paced sword combat with invulnerable dodge rolls, weapon chests, procedural biomes, and a Warden boss.” Controls: A/D run, Space jump, X attack, Shift roll (invulnerable), Down+Jump drops through floors. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

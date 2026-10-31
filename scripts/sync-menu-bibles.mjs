@@ -2,7 +2,7 @@ import { readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const root = process.cwd();
-const bootstrap = await readFile(path.join(root, 'public/assets/aistudio/menu-bootstrap.js'), 'utf8');
+const bootstrap = await readFile(path.join(root, 'public/assets/kits/menu-bootstrap.js'), 'utf8');
 const bibleDir = path.join(root, 'docs/game-bibles');
 const bibleFiles = await readdir(bibleDir);
 const rowPattern = /^\s*\['([^']+)','([^']+)','([^']+)','([^']+)','([^']+)','([^']+)','([^']*)','([^']*)'\],$/gm;

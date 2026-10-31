@@ -54,7 +54,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `10-sonic.html`. Current family: Platform Kit (Arcade) (Yes). Catalog description: “Build momentum, hit cyan acceleration pads, roll into a spinning ball, launch off springs, and collect rings.” Controls: A/D run to build speed, Space/W jump & spin attack. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `10-sonic/index.html`. Current family: Platform Kit (Arcade) (Yes). Catalog description: “Build momentum, hit cyan acceleration pads, roll into a spinning ball, launch off springs, and collect rings.” Controls: A/D run to build speed, Space/W jump & spin attack. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

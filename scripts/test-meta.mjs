@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
-const configSource = await readFile(new URL('../public/assets/aistudio/meta-config.js', import.meta.url), 'utf8');
-const kitSource = await readFile(new URL('../public/assets/aistudio/meta-kit.js', import.meta.url), 'utf8');
+const configSource = await readFile(new URL('../public/assets/kits/meta-config.js', import.meta.url), 'utf8');
+const kitSource = await readFile(new URL('../public/assets/kits/meta-kit.js', import.meta.url), 'utf8');
 
 function createMetaHarness(configure) {
   const values = new Map();

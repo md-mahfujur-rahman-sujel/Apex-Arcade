@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dots &amp; Boxes</title>
+<style>
+  .db { display: grid; grid-template-columns: auto minmax(240px, 1fr); gap: 22px; align-items: start; }
+  @media (max-width: 860px) { .db { grid-template-columns: 1fr; } }
+  #bd { --s: max(290px, min(100vw - 40px, 620px)); width: var(--s); aspect-ratio: 1; background: #0f1424; border-radius: 14px; box-shadow: 0 20px 50px -20px #000, 0 0 0 6px #1b2340; user-select: none; }
+  #bd svg { width: 100%; height: 100%; display: block; touch-action: manipulation; }
+  .vis { stroke: rgba(255,255,255,.13); stroke-width: 5; stroke-linecap: round; }
+  .hit { stroke: transparent; stroke-width: 26; stroke-linecap: round; }
+  .eg.ok { cursor: pointer; }
+  .eg.ok:hover .vis { stroke: rgba(255,255,255,.55); }
+  .eg.p1 .vis { stroke: #06b6d4; stroke-width: 7; }
+  .eg.p2 .vis { stroke: #f59e0b; stroke-width: 7; }
+  .eg.last .vis { filter: drop-shadow(0 0 5px #fff); }
+  .eg.hint .vis { stroke: #fff; stroke-width: 7; animation: hp .6s ease-in-out infinite alternate; }
+  @keyframes hp { to { opacity: .25; } }
+  .bx { opacity: .3; animation: bp .55s ease-out; transform-box: fill-box; transform-origin: center; }
+  .bx.p1 { fill: #06b6d4; }
+  .bx.p2 { fill: #f59e0b; }
+  @keyframes bp { from { transform: scale(.3); opacity: 0; } }
+  .bt { font: 800 26px "Segoe UI", sans-serif; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+  .bt.p1 { fill: #06b6d4; } .bt.p2 { fill: #f59e0b; }
+  .dt { fill: #e6e9f5; }
+  .side { display: grid; gap: 12px; }
+  .score { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .score div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 13px; color: var(--muted); }
+  .score b { display: block; font-size: 28px; color: var(--text); }
+  .score .on { border-color: var(--cyan); }
+  .score .a2.on { border-color: var(--amber); }
+  .capt { color: var(--muted); line-height: 1.8; }
+  .note { margin-top: 6px; color: var(--amber); font-weight: 600; font-size: 13px; }
+</style>
+<script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
+</head>
+<body>
+
+<script src="../../kits/perf-kit.js"></script>
+<script src="../../kits/save-kit.js"></script>
+<script src="../../kits/meta-config.js"></script>
+<script src="../../kits/meta-kit.js"></script>
+<script src="../../kits/board-kit.js"></script>
+<script src="../../kits/score-bridge.js"></script>
+<script src="../../kits/ui-kit.js"></script>
+<script>
+const ui = Board.shell({
+  id: 'dots-boxes', cpu: true, title: 'Dots & Boxes', subtitle: 'Draw lines, close boxes and keep the turn',
+  rules: 'Take turns drawing one line between two neighbouring dots. When your line completes the fourth side of a box, you claim the box and must move again. When every box is claimed, the player with more boxes wins. Be careful: drawing the third side of a box hands it to your rival, so look for safe lines first and make the smallest sacrifice when you run out.',
+  controls: [['Click a line', 'Draw it between two dots'], ['T', 'Show a hint'], ['U', 'Undo'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
+});
+ui.main.innerHTML = `
+<div class="db">
+  <div id="bd"></div>
+  <div class="side">
+    <div class="bk-status" id="st"></div>
+    <div class="score" id="sc"></div>
+    <div class="bk-row">
+      <label>Play <select class="bk-select" id="mode"><option value="1">You (first) vs computer</option><option value="2">Computer first</option><option value="two">Two players</option></select></label>
+      <label>Level <select class="bk-select" id="lvl"><option value="0">Easy</option><option value="1" selected>Medium</option><option value="2">Hard</option></select></label>
+      <label>Board <select class="bk-select" id="size"><option value="3">3 × 3</option><option value="4">4 × 4</option><option value="5" selected>5 × 5</option></select></label>
+    </div>
+    <div class="bk-row"><button class="bk-btn bk-primary" id="new">New game</button><button class="bk-btn" id="undo">Undo</button><button class="bk-btn" id="hint">Hint</button></div>
+    <div class="capt" id="cp"></div>
+  </div>
+</div>`;
+const $ = (s) => ui.main.querySelector(s);
+const CELL = 80, PAD = 34;
+let N, EC, EDG, BX, ed, own, turn, over, mode, busy, hist, last, hint, note, gen = 0;
+const NAME = { 1: 'Cyan', 2: 'Amber' };
+
+/* ---- geometry ---- */
+function build() {
+  EC = 2 * N * (N + 1); EDG = []; BX = [];
+  const hI = (r, c) => r * N + c, vI = (r, c) => N * (N + 1) + r * (N + 1) + c, X = (c) => PAD + c * CELL, Y = (r) => PAD + r * CELL;
+  for (let r = 0; r <= N; r++) for (let c = 0; c < N; c++) EDG[hI(r, c)] = { x1: X(c), y1: Y(r), x2: X(c + 1), y2: Y(r), bx: [r > 0 ? (r - 1) * N + c : -1, r < N ? r * N + c : -1].filter((b) => b >= 0) };
+  for (let r = 0; r < N; r++) for (let c = 0; c <= N; c++) EDG[vI(r, c)] = { x1: X(c), y1: Y(r), x2: X(c), y2: Y(r + 1), bx: [c > 0 ? r * N + c - 1 : -1, c < N ? r * N + c : -1].filter((b) => b >= 0) };
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) BX[r * N + c] = [hI(r, c), hI(r + 1, c), vI(r, c), vI(r, c + 1)];
+}
+const cnt = (e, b) => BX[b].reduce((n, i) => n + (e[i] ? 1 : 0), 0);
+function apply(e, o, i, p) { e[i] = p; const done = []; for (const b of EDG[i].bx) if (cnt(e, b) === 4 && !o[b]) { o[b] = p; done.push(b); } return done; }
+const score = (p) => own.reduce((n, v) => n + (v === p ? 1 : 0), 0);
+
+/* ---- computer ---- */
+const rnd = (a) => a[Board.rand(a.length)];
+function sacrifice(i) {
+  const e = ed.slice(), o = own.slice(); apply(e, o, i, 9); let n = 0;
+  for (;;) { let f = -1; for (let k = 0; k < EC; k++) if (!e[k] && EDG[k].bx.some((b) => cnt(e, b) === 3)) { f = k; break; } if (f < 0) break; n += apply(e, o, f, 9).length; }
+  return n;
+}
+function pick(L) {
+  const free = []; for (let i = 0; i < EC; i++) if (!ed[i]) free.push(i);
+  if (!free.length) return -1;
+  const takes = free.filter((i) => EDG[i].bx.some((b) => cnt(ed, b) === 3));
+  if (takes.length && (L > 0 || Math.random() < 0.65)) return rnd(takes);
+  if (L === 0 && Math.random() < 0.5) return rnd(free);
+  const safe = free.filter((i) => EDG[i].bx.every((b) => cnt(ed, b) < 2));
+  if (safe.length) return rnd(safe);
+  if (L < 2) return rnd(free);
+  let best = [], bv = 1e9;
+  for (const i of free) { const v = sacrifice(i); if (v < bv) { bv = v; best = [i]; } else if (v === bv) best.push(i); }
+  return rnd(best);
+}
+
+/* ---- UI ---- */
+const human = () => mode === 'two' || turn === mode;
+function newGame() {
+  gen++; N = +$('#size').value; build(); mode = $('#mode').value === 'two' ? 'two' : +$('#mode').value;
+  ed = Array(EC).fill(0); own = Array(N * N).fill(0); turn = 1; over = ''; busy = false; hist = []; last = -1; hint = -1; note = '';
+  render(); cpu();
+}
+function render() {
+  const W = PAD * 2 + N * CELL, can = !over && !busy && human();
+  let s = `<svg viewBox="0 0 ${W} ${W}" role="img" aria-label="Dots and boxes board">`;
+  for (let b = 0; b < N * N; b++) if (own[b]) {
+    const r = Math.floor(b / N), c = b % N, x = PAD + c * CELL, y = PAD + r * CELL;
+    s += `<rect class="bx p${own[b]}" x="${x + 5}" y="${y + 5}" width="${CELL - 10}" height="${CELL - 10}" rx="8"/><text class="bt p${own[b]}" x="${x + CELL / 2}" y="${y + CELL / 2}">${own[b] === 1 ? 'C' : 'A'}</text>`;
+  }
+  for (let i = 0; i < EC; i++) {
+    const g = EDG[i], cls = 'eg' + (ed[i] ? ' p' + ed[i] : can ? ' ok' : '') + (i === last ? ' last' : '') + (i === hint ? ' hint' : '');
+    s += `<g class="${cls}" data-e="${i}"><line class="hit" x1="${g.x1}" y1="${g.y1}" x2="${g.x2}" y2="${g.y2}"/><line class="vis" x1="${g.x1}" y1="${g.y1}" x2="${g.x2}" y2="${g.y2}"/></g>`;
+  }
+  for (let r = 0; r <= N; r++) for (let c = 0; c <= N; c++) s += `<circle class="dt" cx="${PAD + c * CELL}" cy="${PAD + r * CELL}" r="7"/>`;
+  $('#bd').innerHTML = s + '</svg>';
+  const a = score(1), b = score(2), left = N * N - a - b;
+  $('#st').innerHTML = (over || (busy ? 'Computer is thinking…' : `${NAME[turn]} to move${mode !== 'two' && human() ? ' — your turn' : ''}`)) + (!over && note ? `<div class="note">${note}</div>` : '');
+  $('#sc').innerHTML = `<div class="${turn === 1 && !over ? 'on' : ''}">Cyan${mode === 1 ? ' (you)' : ''}<b>${a}</b></div><div class="a2 ${turn === 2 && !over ? 'on' : ''}">Amber${mode === 2 ? ' (you)' : ''}<b>${b}</b></div>`;
+  $('#cp').innerHTML = `Boxes left: <b>${left}</b><br>Lines drawn: <b>${ed.filter(Boolean).length}</b> of ${EC}`;
+}
+function play(i) {
+  if (ed[i] || over) return;
+  hist.push({ ed: ed.slice(), own: own.slice(), turn, last, note });
+  const done = apply(ed, own, i, turn); last = i; hint = -1; note = '';
+  if (done.length) { Board.sfx('capture'); note = `${NAME[turn]} claims ${done.length > 1 ? done.length + ' boxes' : 'a box'} and moves again.`; }
+  else { Board.sfx('move'); turn = 3 - turn; }
+  if (own.every(Boolean)) {
+    const a = score(1), b = score(2), w = a > b ? 1 : b > a ? 2 : 0;
+    over = w ? `${NAME[w]} wins ${Math.max(a, b)}–${Math.min(a, b)}` : `Draw ${a}–${b}`; note = '';
+    render(); Board.sfx(!w ? 'move' : mode === 'two' || w === mode ? 'win' : 'lose');
+    const title = !w ? 'Draw' : mode === 'two' ? NAME[w] + ' wins!' : w === mode ? 'You won!' : 'Computer wins';
+    Board.after(600, () => Board.modal(title, over, [['New game', newGame], ['Close']]));
+    return;
+  }
+  render(); cpu();
+}
+function cpu() {
+  if (over || human()) return; busy = true; render();
+  const g = gen;
+  Board.think(() => pick(+$('#lvl').value), note ? 650 : 950).then(async (m) => {
+    if (g !== gen || m < 0) return;
+    hint = m; render(); await Board.sleep(Board.pace(450));   /* flash the line it is about to draw */
+    if (g !== gen) return;
+    busy = false; play(m);
+  });
+}
+function undo() {
+  if (busy || !hist.length) return;
+  let h;
+  do { h = hist.pop(); ed = h.ed; own = h.own; turn = h.turn; last = h.last; note = h.note; } while (hist.length && mode !== 'two' && !human());
+  over = ''; hint = -1; gen++; busy = false; render(); cpu();
+}
+function showHint() { if (over || busy || !human()) return; const m = pick(2); if (m < 0) return; hint = m; render(); }
+$('#bd').addEventListener('click', (e) => {
+  const g = e.target.closest('.eg'); if (!g || over || busy || !human()) return;
+  const i = +g.dataset.e; if (ed[i]) { Board.sfx('error'); return; } play(i);
+});
+$('#new').onclick = newGame; $('#undo').onclick = undo; $('#hint').onclick = showHint; $('#mode').onchange = newGame; $('#size').onchange = newGame;
+document.addEventListener('keydown', (e) => {
+  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'n') newGame(); else if (k === 'u') undo(); else if (k === 't') showHint();
+});
+newGame();
+</script>
+<script src="../../kits/menu-bootstrap.js"></script>
+</body>
+</html>

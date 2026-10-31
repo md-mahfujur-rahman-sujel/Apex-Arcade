@@ -50,7 +50,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `28-mancala.html`. Current family: Board Kit (No). Catalog description: “Kalah rules Mancala: pick stones from your pit, sow them counter-clockwise, get bonus turns, and capture rival stores.” Controls: Click a highlighted pit or press 1-6. U undo. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `28-mancala/index.html`. Current family: Board Kit (No). Catalog description: “Kalah rules Mancala: pick stones from your pit, sow them counter-clockwise, get bonus turns, and capture rival stores.” Controls: Click a highlighted pit or press 1-6. U undo. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

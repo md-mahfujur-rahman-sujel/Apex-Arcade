@@ -57,7 +57,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `06-pac-man.html`; `Arcade.game` save id is `glow-beetle`. The page already implements a fixed 21×23 maze, 3 lives, four individually targeted drones, scatter/chase timing, frightened state and combo captures, side tunnels, timed bonus gems, 10,000-point extra lives, six hue-shifted levels, and win/loss states. It has no `UI.mountGame` config. Keyboard arrows/WASD steer with turn buffering; touch uses four direction buttons. The modes, 15 cosmetics, and 10 achievements above remain rollout proposals; seed the randomized frightened-drone choices and gem schedule for Daily Circuit.
+Canonical page: `06-pac-man/index.html`; `Arcade.game` save id is `glow-beetle`. The page already implements a fixed 21×23 maze, 3 lives, four individually targeted drones, scatter/chase timing, frightened state and combo captures, side tunnels, timed bonus gems, 10,000-point extra lives, six hue-shifted levels, and win/loss states. It has no `UI.mountGame` config. Keyboard arrows/WASD steer with turn buffering; touch uses four direction buttons. The modes, 15 cosmetics, and 10 achievements above remain rollout proposals; seed the randomized frightened-drone choices and gem schedule for Daily Circuit.
 
 ## Menu Identity Card
 

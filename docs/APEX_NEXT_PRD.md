@@ -87,13 +87,13 @@ Project root: `C:\Users\Mahfujur Rahman\Apex-Arcade` (Windows). Write shell comm
 
 ### 3.5 The 50 games
 
-- 50 single-file HTML pages in `public/assets/aistudio/`, numbered `01-...html` to `50-...html`, about 753,539 bytes in total (the inventory's figure).
+- 50 single-page games in `public/assets/games/<NN-slug>/index.html`, about 753,539 bytes in total (the inventory's figure).
 - Families: `arcade-core.js` 25 games (01 to 20 and 37 to 41); `act-kit.js` 6 of them (13, 14, 15, 18, 19, 20); `platform-kit.js` 3 of them (08, 09, 10); `board-kit.js` 24 games (21 to 36 and 42 to 49); 1 standalone inline page (50 Mahjong).
 - Game 49 (Table Tennis) is a 48.4 KB `board-kit` page with its own 3D arena.
 - Every game also has a hashed duplicate ("twin") file, and a copy of a PRD sits inside the assets folder. Not verified: which pages or configs reference the twins.
 - **Three id spaces exist and are not aligned.** `GameInfo.id` (host), the id passed to `Arcade.game({ id })` (for example game 01 uses `glowmoth`), and the `Save` key. Task `S0-0` produces the map.
 
-### 3.6 Shared kits (`public/assets/aistudio/*.js`)
+### 3.6 Shared kits (`public/assets/kits/*.js`)
 
 | Kit | Global | Verified public API |
 | --- | --- | --- |
@@ -426,7 +426,7 @@ Two-week sprints, a demo build and an owner review checklist at the end of each.
 
 **S0-6 verification record (2026-10-22).** The smoke runner, npm command, and 50-row report are present. Two consecutive complete runs produced the same pass/fail check outcomes for all 100 game/viewport cases, and D-11 passed. The report correctly remains non-green: mobile Play activation is intercepted across all 50 games, while several games lack `session_start`, board input coverage, or pause/resume controls. The output-file checksums differed despite matching pass/fail outcomes, so only outcome repeatability is verified. See `docs/SMOKE_REPORT.md` and `docs/UI_QA.md`.
 
-**S0-7 Twins and stray copies (D-9).** Identify the naming pattern of the hashed twins. Search `src/`, `index.html`, `vite.config.ts`, `docs/` and every game for references to them. Report the result before deleting. Also move PRD copies out of `public/assets/aistudio/`, because everything in `public/` is served to visitors. Delete in one commit. *Done when:* build passes and the smoke test is green.
+**S0-7 Twins and stray copies (D-9).** Identify the naming pattern of the hashed twins. Search `src/`, `index.html`, `vite.config.ts`, `docs/` and every game for references to them. Report the result before deleting. Also move PRD copies out of `public/assets/games/`, because everything in `public/` is served to visitors. Delete in one commit. *Done when:* build passes and the smoke test is green.
 
 **S0-7 verification record (2026-10-22).** Found 57 hashed twins named with an eight-character hexadecimal suffix and one hashed PRD copy. No runtime references to the twins were found in `src/`, `index.html`, `vite.config.ts`, or canonical game pages. `docs/ID_MAP.md` was the live filename inventory and is updated; the archived PRD retains historical filename examples only. Two paired kit files were byte-identical; the other twins contained older or divergent page/kit copies but were unreferenced. The PRD copy was byte-identical to root `PRD.md` and is preserved in `docs/archive/`. Canonical routes remain the game pages referenced by `src/data/gamesData.ts`. Build verification passes; `npm run test:smoke` still reports pre-existing failures listed in `docs/SMOKE_REPORT.md`, so the PRD's smoke-green completion criterion is unmet pending those fixes.
 

@@ -54,7 +54,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `44-minesweeper.html`. Current family: Board Kit (No). Catalog description: “Deduce hidden mines from number clues with guaranteed safe first clicks, chord-clearing satisfied numbers, and flagging.” Controls: Left-click reveals square, Right-click or F flags a mine. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `44-minesweeper/index.html`. Current family: Board Kit (No). Catalog description: “Deduce hidden mines from number clues with guaranteed safe first clicks, chord-clearing satisfied numbers, and flagging.” Controls: Left-click reveals square, Right-click or F flags a mine. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

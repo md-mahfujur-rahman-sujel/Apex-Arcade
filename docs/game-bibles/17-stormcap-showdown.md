@@ -54,7 +54,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `17-cuphead.html`. Current family: Arcade Core (Yes). Catalog description: “One-on-one boss showdown: hold finger-gun shot, invincible dash, jump-parry pink projectiles, and unleash super attacks.” Controls: A/D run, Space jump, hold X shoot, Shift dash, jump again on pink shots to parry. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `17-cuphead/index.html`. Current family: Arcade Core (Yes). Catalog description: “One-on-one boss showdown: hold finger-gun shot, invincible dash, jump-parry pink projectiles, and unleash super attacks.” Controls: A/D run, Space jump, hold X shoot, Shift dash, jump again on pink shots to parry. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

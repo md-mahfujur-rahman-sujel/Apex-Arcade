@@ -10,169 +10,169 @@ SAVES AND SHARING
 Profile details, favorites, and play history are stored in this browser. Use the theater share button to share a score-card PNG or download it. A link such as #game=flappy-bird opens that game in the theater.
 
 OPEN GAME FILES DIRECTLY
-You can also open a numbered .html file below directly. Keep its referenced kit scripts (for example perf-kit.js, arcade-core.js, board-kit.js, save-kit.js, and score-bridge.js) alongside the page in assets/aistudio/.
+You can also open each game's index.html directly from its folder under assets/games/. Shared kit scripts (for example perf-kit.js, arcade-core.js, board-kit.js, save-kit.js, and score-bridge.js) live in assets/kits/.
 Each game's own CONTROLS or How to play panel is authoritative. Controls vary: P pauses many arcade games, M mutes where supported, and board/puzzle games use their own keys. Touch controls are available in supported games.
 If a game shows a red error box, copy the displayed text when reporting the issue.
 
 
-1. Flappy Bird tribute — Glowmoth Gauntlet — 01-flappy-bird.html
+1. Flappy Bird tribute — Glowmoth Gauntlet — 01-flappy-bird/index.html
 Controls: Space, ↑, W or click/tap to flap. Slip through the gaps between crystal columns (some drift). Medals at 10 / 20 / 30 / 40.
 
-2. Pong tribute — Ion Rally — 02-pong.html
+2. Pong tribute — Ion Rally — 02-pong/index.html
 Controls: W/S or ↑/↓ move your paddle against the CPU. Press 2 for two players (W/S left, ↑/↓ right); press 1 to return to the CPU. First to 7. Hit with the paddle edge for steeper angles.
 
-3. Snake tribute — Ember Serpent — 03-snake.html
+3. Snake tribute — Ember Serpent — 03-snake/index.html
 Controls: Arrow keys or WASD steer (turns can be queued). Eat fruit; golden gems are timed bonuses; rocks appear each level. T toggles wrap-around vs solid walls (walls score +50%).
 
-4. Space Invaders tribute — Hivefall Defense — 04-space-invaders.html
+4. Space Invaders tribute — Hivefall Defense — 04-space-invaders/index.html
 Controls: ←/→ or A/D move, hold Space to fire. Bunkers erode, a bonus saucer flies past, extra life every 1500 points.
 
-5. Tetris tribute — Prism Stack — 05-tetris.html
+5. Tetris tribute — Prism Stack — 05-tetris/index.html
 Controls: ←/→ move, ↑ or X rotate, Z rotate back, ↓ soft drop, Space hard drop, C or Shift hold. Clear 4 lines for a PRISM; combos and back-to-back score extra.
 
-6. Pac-Man tribute — Glow Beetle — 06-pac-man.html
+6. Pac-Man tribute — Glow Beetle — 06-pac-man/index.html
 Controls: Arrow keys (or WASD) steer; you can queue a turn. Eat every seed, avoid the drones, grab power seeds to turn the tables, and collect bonus gems.
 
-7. Asteroids tribute — Starfall Rift — 07-asteroids.html
+7. Asteroids tribute — Starfall Rift — 07-asteroids/index.html
 Controls: ←/→ or A/D rotate, ↑ or W thrust, hold Space to fire, Shift or X hyperspace jump. Grab S / R / T pick-ups for shield, rapid fire and triple shot.
 
-8. Super Mario Bros. tribute — Fox Courier — 08-mario.html
+8. Super Mario Bros. tribute — Fox Courier — 08-mario/index.html
 Controls: ←/→ or A/D run, Space / ↑ / W / Z jump (hold for height), ↓ + jump drops through thin platforms. Stomp enemies, hit crates, use springs and checkpoints, reach the flag.
 
-9. Super Mario World tribute — Cloudhop Pip — 09-mario-world.html
+9. Super Mario World tribute — Cloudhop Pip — 09-mario-world/index.html
 Controls: same as Fox Courier, plus press jump again in mid-air for a double jump. Ride the moving platforms.
 
-10. Sonic tribute — Rollo Rush — 10-sonic.html
+10. Sonic tribute — Rollo Rush — 10-sonic/index.html
 Controls: ←/→ or A/D run (speed builds up), Space / ↑ / W jump and spin. Cyan arrow pads give a boost, springs launch you, land on enemies to stomp them, collect rings.
 
-11. Street Fighter II tribute — Iron Circuit — 11-street-fighter.html
+11. Street Fighter II tribute — Iron Circuit — 11-street-fighter/index.html
 Controls: A/D or ←/→ move, W / ↑ / Space jump, S / ↓ or hold back to block, F punch, G kick, H Rift Rush (costs half the meter). Three-rival tournament, best of three rounds.
 
-12. Chrono Trigger tribute — Clockwork Dawn — 12-chrono-adventure.html
+12. Chrono Trigger tribute — Clockwork Dawn — 12-chrono-adventure/index.html
 Controls: Arrows or WASD walk / move the cursor, Space / Enter / Z talk and confirm, X or Esc cancel (or open party status in the field). Battle menu: Attack, Skill, Item, Flee. Tall grass and the Gear Gate hide monsters; defeat the Clockwork Warden, then enter the portal.
 
-13. Castlevania tribute — Lanternbound — 13-castlevania.html
+13. Castlevania tribute — Lanternbound — 13-castlevania/index.html
 Controls: ←/→ or A/D walk, Space / ↑ / W / Z jump, X or J whip (also breaks candles), C or K throw axe (uses ammo), ↓ + jump drops through thin floors. Defeat the Hollow Duke.
 
-14. Super Metroid tribute — Deepcore Drifter — 14-metroid.html
+14. Super Metroid tribute — Deepcore Drifter — 14-metroid/index.html
 Controls: ←/→ or A/D move, Space / ↑ / W / Z jump, X or J fire (hold to charge after the Charge Cell), C or K missile (after pickup; opens red doors). Shoot cyan doors and cracked walls, find 3 upgrades, defeat the Brood Warden.
 
-15. Hollow Knight tribute — Hollowbell — 15-hollow-knight.html
+15. Hollow Knight tribute — Hollowbell — 15-hollow-knight/index.html
 Controls: ←/→ or A/D walk, Space / ↑ / W / Z jump, X or J needle strike (hits build focus), ↓ + X in the air to pogo, Shift or L shade dash (after the Cloak), hold V or H to focus and heal. Benches save progress.
 
-16. Celeste tribute — Skyfall Ridge — 16-celeste.html
+16. Celeste tribute — Skyfall Ridge — 16-celeste/index.html
 Controls: ←/→ move, Space jump (hold for height), Shift dash (aim with the arrow keys; one air dash that refills on landing, springs and crystals). Slide down walls and jump off them.
 
-17. Cuphead tribute — Stormcap Showdown — 17-cuphead.html
+17. Cuphead tribute — Stormcap Showdown — 17-cuphead/index.html
 Controls: ←/→ or A/D run, Space / ↑ / W / Z jump, hold X or J to shoot, Shift or L dash (safe while dashing), press jump again near a PINK shot to parry it, C or K super when the bar is full.
 
-18. Dead Cells tribute — Ashen Descent — 18-dead-cells.html
+18. Dead Cells tribute — Ashen Descent — 18-dead-cells/index.html
 Controls: ←/→ or A/D run, Space / ↑ / W / Z jump, X or J attack, Shift or L dodge-roll (invulnerable), walk into a chest to swap weapons and heal, ↓ + jump drops through thin floors. One life per run; beat the Warden.
 
-19. Ori and the Blind Forest tribute — Lumen Sprite — 19-ori.html
+19. Ori and the Blind Forest tribute — Lumen Sprite — 19-ori/index.html
 Controls: ←/→ or A/D glide, Space / ↑ / W / Z jump (again in the air after the Leaf Charm), Shift or L light dash (after the Star Charm), X or J flare, land on creatures to bounce. In the tower, never let the darkness catch you.
 
-20. Rayman Legends tribute — Glimmer Gadabout — 20-rayman.html
+20. Rayman Legends tribute — Glimmer Gadabout — 20-rayman/index.html
 Controls: ←/→ or A/D run, Space / ↑ / W / Z jump (hold in the air to glide), X or J punch, land on enemies to bounce. Spikes pulse with the beat — safe when faded. Collect every spark to open the gate.
 
 Note: games 1-20 are original games inspired by the classics. They use their own characters, art and code.
 
-The website launcher catalog lists all 50 games. The standalone assets/aistudio/index.html is a separate local catalog page.
+The website launcher catalog lists all 50 games. The standalone assets/games/index.html is a separate local catalog page.
 
 
 BOARD GAMES (21+) — open index.html and use the Board Games section, or open the files directly. Keep board-kit.js in the same folder.
 In every board game: H toggles the how-to-play panel, M mutes, N starts a new game. Most can be played against the computer or with a friend.
 
-21. Chess — 21-chess.html
+21. Chess — 21-chess/index.html
 Controls: click a piece, then a highlighted square. U undo, F flip the board, T hint. Castling, en passant, promotion and draws are included. Choose your side and the computer's level.
 
-22. Snakes & Ladders — 22-snakes-ladders.html
+22. Snakes & Ladders — 22-snakes-ladders/index.html
 Controls: Space / Enter / R or the Roll button. Climb ladders, slide down snakes, roll a 6 to go again, and land on 100 exactly.
 
-23. Ludo — 23-ludo.html
+23. Ludo — 23-ludo/index.html
 Controls: Space / R to roll, then press 1-4 or click a token to move it. Roll a 6 to leave the yard, capture rivals, bring all four tokens home.
 
-24. Carrom — 24-carrom.html
+24. Carrom — 24-carrom/index.html
 Controls: slide the striker with the slider, click the baseline or the left/right arrows, then drag back from the striker and release to flick (longer pull = harder). Space flicks straight ahead.
 
-25. Tycoon Town — 25-tycoon-town.html
+25. Tycoon Town — 25-tycoon-town/index.html
 Controls: Space / Enter / R presses the main button (roll, buy, end turn). B opens the build menu. Buy streets, build houses, collect rent and bankrupt your rivals.
 
-26. Checkers — 26-checkers.html
+26. Checkers — 26-checkers/index.html
 Controls: click a piece, then a green square. Captures are mandatory. U undo, F flip.
 
-27. Connect Four — 27-connect-four.html
+27. Connect Four — 27-connect-four/index.html
 Controls: click a column, or press 1-7, or use the arrow keys and Enter. U undo.
 
-28. Mancala — 28-mancala.html
+28. Mancala — 28-mancala/index.html
 Controls: click a highlighted pit, or press 1-6. U undo.
 
-29. Reversi — 29-reversi.html
+29. Reversi — 29-reversi/index.html
 Controls: click a dot to place a disc that traps rival discs in a line. U undo, T hint. If you have no legal move you pass; most discs when the board fills wins. Choose your colour and the computer's level.
 
-30. Tic-Tac-Toe — 30-tic-tac-toe.html
+30. Tic-Tac-Toe — 30-tic-tac-toe/index.html
 Controls: choose Classic 3x3, four-in-a-row 4x4, or Ultimate (linked 3x3 boards), then choose solo/two-player mode and AI strength. Click/tap a square or press 1-9 in numpad layout; U undo, N new match. Wins and match stats save in this browser; Statistics shows your record.
 
-31. Backgammon — 31-backgammon.html
+31. Backgammon — 31-backgammon/index.html
 Controls: R or Space rolls the dice. Click one of your checkers (or the bar), then click a glowing point to move it. U undoes your moves this turn, T hints. Hit single rival checkers, re-enter from the bar, bear off once all 15 are home. You must use as many dice as you can (the larger die if only one is playable). Gammons count double and backgammons triple.
 
-32. Dots & Boxes — 32-dots-boxes.html
+32. Dots & Boxes — 32-dots-boxes/index.html
 Controls: click a line between two dots. Completing the fourth side of a box claims it and gives you another move. U undo, T hint. Choose 3x3, 4x4 or 5x5 and the computer's level.
 
-33. Go 9x9 — 33-go.html
+33. Go 9x9 — 33-go/index.html
 Controls: click an intersection to place a stone, P passes, U undo, T hint. Captures, no suicide, and no repeating an earlier position (ko). When both players pass, dead stones are guessed for you - click a group to toggle it - then press Confirm score. Area scoring with 7.5 komi for White.
 
-34. Solitaire (Klondike) — 34-solitaire.html
+34. Solitaire (Klondike) — 34-solitaire/index.html
 Controls: click the stock to turn cards over (draw 1 or 3), click a card then a destination to move it, double-click a card to send it to its foundation. U undo, T hint. Auto-complete appears when every card is face up.
 
-35. Memory Match — 35-memory-match.html
+35. Memory Match — 35-memory-match/index.html
 Controls: click or use the arrow keys + Space to flip cards and find the pairs. N new game. Play solo against the clock or head to head.
 
-36. Maths Dash — 36-maths-dash.html
+36. Maths Dash — 36-maths-dash/index.html
 Controls: type the answer and press Enter, or tap the on-screen keypad. Build a combo and race the clock.
 
 SPORTS & SKILL (37-41, 49) — these use arcade-core.js or dedicated arena canvas. P = pause, M = mute. Aiming games use the mouse or touch: press, drag AWAY from where you want to go and release (the longer the pull, the harder the shot).
 
-37. 8-Ball Pool — 37-pool.html
+37. 8-Ball Pool — 37-pool/index.html
 Controls: drag back and release to shoot. Pot all of your group (solids or stripes, decided by your first pot), then the 8-ball. Scratches, wrong first contact and missing every ball give your rival ball-in-hand: click to place the cue ball. Potting the 8-ball early loses. You play the computer.
 
-38. Bowling — 38-bowling.html
+38. Bowling — 38-bowling/index.html
 Controls: Left/Right or the mouse position the ball, then Space or click three times: lock position, lock angle, then stop the power meter. Hold Left/Right while the ball rolls to curve it. Ten frames with real strike and spare scoring and tenth-frame bonus balls.
 
-39. Basketball Hoops — 39-basketball.html
+39. Basketball Hoops — 39-basketball/index.html
 Controls: drag back and release to shoot, or Up/Down to set the angle and hold Space to charge, release to shoot. 60 seconds. Shots from beyond the 3 PTS line score 3, a clean swish adds 1, and three makes in a row add a streak bonus.
 
-40. Mini Golf — 40-mini-golf.html
+40. Mini Golf — 40-mini-golf/index.html
 Controls: drag back and release to putt, or Left/Right to aim and hold Space to charge, release to putt. Nine holes with bumpers, sand, water (+1 stroke), a windmill and moving walls. Par scores the most points; after 8 strokes the ball is picked up.
 
-41. Soccer Pool — 41-soccer-pool.html
+41. Soccer Pool — 41-soccer-pool/index.html
 Controls: drag back from one of your cyan discs and release to flick it. Knock the ball into the amber goal on the right; the computer flicks its amber discs back. Take turns; first to 5 goals wins.
 
 PUZZLES & PHYSICS (42-48, 50)
 
-42. Merge 2048 — 42-2048.html
+42. Merge 2048 — 42-2048/index.html
 Controls: choose Classic (3x3–6x6), Foundry Trials (30 move-limited goals), or the date-seeded Daily Core. Arrow keys/WASD or swipe to slide; matching tiles merge. Choose Easy/Normal/Hard (8/4/1 undo). U undo, N new run, Statistics for local records. Runs resume in this browser; M mute, H controls.
 
-43. Sudoku — 43-sudoku.html
+43. Sudoku — 43-sudoku/index.html
 Controls: click or use the arrow keys to select a cell, 1-9 place a digit, Backspace or 0 erase, Space or P toggles Notes mode, T hint, U undo, N new puzzle. Every puzzle has exactly one solution.
 
-44. Minefield — 44-minesweeper.html
+44. Minefield — 44-minesweeper/index.html
 Controls: click reveals a square (click a satisfied number to open its neighbours), right-click, long-press or F flags a mine, the Flag mode button helps on touch screens, arrows + Space move the cursor and reveal. Your first click is always safe. N new game.
 
-45. Slide Tiles — 45-sliding-puzzle.html
+45. Slide Tiles — 45-sliding-puzzle/index.html
 Controls: click a tile to slide it (and any tiles between it and the gap), or use the arrow keys to slide the neighbouring tile into the gap. N shuffles a new puzzle. Every puzzle is solvable.
 
-46. Nuts & Bolts — 46-nuts-bolts.html
+46. Nuts & Bolts — 46-nuts-bolts/index.html
 Controls: click or tap a bolt to unscrew it into the tray; three bolts of one colour pop. A bolt is free only if no plank lies on top of it. U undo, R restart the level, N new layout.
 
-47. Bubble Sort — 47-colour-sort.html
+47. Bubble Sort — 47-colour-sort/index.html
 Controls: tap a tube to pick it up, then tap another tube to pour (onto an empty tube or a matching colour). Keys 1-9 and 0 select tubes. U undo, R restart, T adds one spare tube per level, N new layout.
 
-48. Orchard Drop — 48-fruit-merge.html
+48. Orchard Drop — 48-fruit-merge/index.html
 Controls: move the mouse or finger (or Left/Right, A/D) to aim, then click, tap or press Space/Down to drop the fruit. Two matching fruits merge into the next size, up to the watermelon; two watermelons vanish for a bonus. Do not let the pile stay above the red line. N new game.
 
-49. Table Tennis — 49-table-tennis.html
+49. Table Tennis — 49-table-tennis/index.html
 Controls: move the mouse or finger up and down, or use W/S, to move your bat; Space or click serves. First to 11, win by two. Pick Easy, Medium or Hard computer, or Two players (W/S left bat, I/K or arrows right bat). N new match.
 
-50. Jade Table — 50-mahjong.html
+50. Jade Table — 50-mahjong/index.html
 Controls: click two matching free tiles to remove them. Hint, Undo, and Shuffle available. Clear all 144 tiles in the turtle formation to win.

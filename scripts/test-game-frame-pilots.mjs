@@ -23,7 +23,7 @@ try {
   await tic.locator('.apex-menu-root').waitFor({ state: 'hidden' });
   await tic.locator('#bd .cl').first().waitFor({ state: 'visible' });
   await tic.locator('#bd .cl.free').first().click();
-  const ticPage = page.frames().find((frame) => frame.url().includes('30-tic-tac-toe.html'));
+  const ticPage = page.frames().find((frame) => frame.url().includes('30-tic-tac-toe/index.html'));
   await ticPage.waitForFunction(() => document.querySelector('#st')?.textContent?.includes('your turn'), null, { timeout: 5000 });
   const ticBefore = await tic.locator('#bd .cl').evaluateAll((cells) => cells.map((cell) => `${cell.textContent}:${cell.className}`).join('|'));
   await ticPage.locator('body').press('Escape');
@@ -47,7 +47,7 @@ try {
   await merge.locator('[data-menu-action="play"], [data-menu-action="continue"]').first().click({ timeout: 5000 });
   await merge.locator('.apex-menu-root').waitFor({ state: 'hidden' });
   await merge.locator('#bd').waitFor({ state: 'visible' });
-  const mergePage = page.frames().find((frame) => frame.url().includes('42-2048.html'));
+  const mergePage = page.frames().find((frame) => frame.url().includes('42-2048/index.html'));
   const intro = merge.locator('#bk-dlg');
   if (await intro.count() && await intro.evaluate((dialog) => dialog.open)) await intro.locator('button').first().click();
   await mergePage.locator('body').press('ArrowRight');
@@ -76,7 +76,7 @@ try {
   await mobilePage.locator('#playable-theater-modal button[data-ui-open]').click();
   await mobilePage.locator('#playable-theater-modal iframe').waitFor({ state: 'visible' });
   await mobilePage.waitForFunction(() => document.querySelector('#playable-theater-modal iframe')?.contentDocument?.readyState === 'complete');
-  const mobileMerge = mobilePage.frames().find((frame) => frame.url().includes('42-2048.html'));
+  const mobileMerge = mobilePage.frames().find((frame) => frame.url().includes('42-2048/index.html'));
   assert.ok(mobileMerge, '2048 iframe loads in touch viewport');
   await mobileMerge.locator('[data-menu-action="play"], [data-menu-action="continue"]').first().click({ timeout: 5000 });
   await mobileMerge.locator('.apex-menu-root').waitFor({ state: 'hidden' });

@@ -57,7 +57,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `12-chrono-adventure.html`; `Arcade.game` save id is `clockwork-dawn`. It builds a tile world with a village, bridge, wilds, and Gear Gate; the party starts with three potions, one ether, and 30 gold. Kai and Mira gain XP, stats, HP, and MP from wins; a shop sells potions/ethers and an inn fully restores the party for 10 gold. Encounters and combat damage use random values. The boss has 210 HP and must be defeated before entering the portal ends the run. Controls: arrows/WASD move, Space/Enter/Z confirm or talk, X/Escape/Backspace cancel/status, and number keys use items from status. This page currently lacks seeded randomness and a `UI.mountGame` config; proposed modes above need those additions.
+Canonical page: `12-chrono-adventure/index.html`; `Arcade.game` save id is `clockwork-dawn`. It builds a tile world with a village, bridge, wilds, and Gear Gate; the party starts with three potions, one ether, and 30 gold. Kai and Mira gain XP, stats, HP, and MP from wins; a shop sells potions/ethers and an inn fully restores the party for 10 gold. Encounters and combat damage use random values. The boss has 210 HP and must be defeated before entering the portal ends the run. Controls: arrows/WASD move, Space/Enter/Z confirm or talk, X/Escape/Backspace cancel/status, and number keys use items from status. This page currently lacks seeded randomness and a `UI.mountGame` config; proposed modes above need those additions.
 
 ## Menu Identity Card
 

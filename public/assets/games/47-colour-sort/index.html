@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bubble Sort</title>
+<style>
+  .cs { display: grid; gap: 16px; }
+  .top { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center; color: var(--muted); font: 600 14px ui-monospace, Consolas, monospace; } .top b { color: var(--text); }
+  #bd { display: flex; flex-wrap: wrap; gap: 22px 18px; justify-content: center; padding: 26px 12px 18px; background: linear-gradient(#1a2140, #121830); border-radius: 18px; min-height: 300px; box-shadow: 0 20px 50px -20px #000; align-content: center; user-select: none; touch-action: manipulation; }
+  .tb { width: 58px; height: 218px; border: 3px solid rgba(255,255,255,.35); border-top-color: rgba(255,255,255,.15); border-radius: 8px 8px 30px 30px; display: flex; flex-direction: column-reverse; align-items: center; padding: 6px 0 6px; gap: 3px; cursor: pointer; background: rgba(255,255,255,.05); transition: transform .15s, border-color .15s; position: relative; }
+  .tb:hover { border-color: rgba(255,255,255,.65); } .tb.sel { transform: translateY(-16px); border-color: #fde047; } .tb.done { border-color: #4ade80; box-shadow: 0 0 18px rgba(74,222,128,.4); }
+  .bb { width: 44px; height: 44px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font: 800 17px sans-serif; color: rgba(0,0,0,.55); box-shadow: inset -4px -5px 0 rgba(0,0,0,.2), inset 3px 3px 0 rgba(255,255,255,.4); }
+  .bb.pop { animation: pp .25s ease-out; } @keyframes pp { from { transform: scale(.4); } }
+  .tb.shake { animation: sk .25s; } @keyframes sk { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+</style>
+<script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
+</head>
+<body>
+
+<script src="../../kits/perf-kit.js"></script>
+<script src="../../kits/save-kit.js"></script>
+<script src="../../kits/meta-config.js"></script>
+<script src="../../kits/meta-kit.js"></script>
+<script src="../../kits/board-kit.js"></script>
+<script src="../../kits/score-bridge.js"></script>
+<script src="../../kits/ui-kit.js"></script>
+<script>
+const ui = Board.shell({
+  id: 'bubble-sort', title: 'Bubble Sort', subtitle: 'Pour the bubbles until every tube holds a single colour',
+  rules: 'Tap a tube to pick it up, then tap another tube to pour. You can only pour the top bubble (or run of same-coloured bubbles) onto an empty tube or onto a matching colour, as long as there is room — each tube holds four. Sort every colour into its own tube to clear the level. Stuck? Undo as often as you like, add a spare tube once per level, or restart. Every level is solvable. Turn on Symbols if the colours are hard to tell apart.',
+  controls: [['Click / tap a tube', 'Pick up, then tap a second tube to pour'], ['1 – 9, 0', 'Select tube by number (0 = tube 10)'], ['U', 'Undo'], ['R', 'Restart the level'], ['T', 'Add a spare tube'], ['N', 'New layout for this level'], ['H / M', 'Toggle help / mute']],
+});
+ui.main.innerHTML = `<div class="cs"><div class="top"><span>Level <b id="lv">1</b></span><span>Moves <b id="mv">0</b></span><span>Best <b id="bs">1</b></span></div>
+  <div id="bd"></div><div class="bk-status" id="st"></div>
+  <div class="bk-row"><button class="bk-btn" id="undo">Undo</button><button class="bk-btn" id="rst">Restart</button><button class="bk-btn" id="add">＋ Spare tube</button><button class="bk-btn" id="sym">Symbols: off</button><button class="bk-btn bk-primary" id="nxt">New layout</button>
+    <label style="color:var(--muted)">Level <select class="bk-select" id="jump"></select></label></div></div>`;
+const $ = (s) => ui.main.querySelector(s);
+const COL = ['#ef4444', '#3b82f6', '#22c55e', '#facc15', '#a855f7', '#fb923c', '#22d3ee', '#f472b6', '#84cc16', '#94a3b8', '#8b5a2b', '#14b8a6'], SYM = '●▲■★♥◆✚☾♣✿✖☀', CAP = 4;
+let T, level, moves, sel, hist, start0, spare, sym, busy;
+const bd = $('#bd');
+function solvable(t0) {
+  const seen = new Set(); let nodes = 0;
+  const key = (t) => t.map((x) => x.join('')).sort().join('|');
+  function dfs(t) {
+    if (t.every((x) => !x.length || (x.length === CAP && x.every((c) => c === x[0])))) return true; if (++nodes > 30000) return false;
+    const k = key(t); if (seen.has(k)) return false; seen.add(k);
+    for (let a = 0; a < t.length; a++) { if (!t[a].length || (t[a].length === CAP && t[a].every((c) => c === t[a][0]))) continue;
+      for (let b = 0; b < t.length; b++) { if (a === b) continue; const A = t[a], B = t[b], c = A[A.length - 1]; if (B.length >= CAP || (B.length && B[B.length - 1] !== c)) continue; if (!B.length && A.every((x) => x === c)) continue;
+        let n = 0; while (n < A.length && A[A.length - 1 - n] === c && B.length + n < CAP) n++;
+        const nt = t.map((x) => x.slice()); nt[b].push(...nt[a].splice(nt[a].length - n, n)); if (dfs(nt)) return true; } }
+    return false;
+  }
+  return dfs(t0.map((x) => x.slice()));
+}
+function make(lvl) {
+  const nc = Math.min(12, 3 + ((lvl - 1) >> 1)), nt = nc + 2;
+  for (let tries = 0; ; tries++) {
+    const pool = []; for (let c = 0; c < nc; c++) for (let k = 0; k < CAP; k++) pool.push(c); Board.shuffle(pool);
+    const t = Array.from({ length: nt }, () => []); pool.forEach((c, i) => t[i % nc].push(c));
+    if (t.slice(0, nc).some((x) => x.every((c) => c === x[0]))) continue; if (solvable(t) || tries > 40) return t;
+  }
+}
+function begin(lvl, same) { level = lvl; T = same ? JSON.parse(start0) : make(lvl); start0 = JSON.stringify(T); moves = 0; sel = -1; hist = []; spare = false; busy = false; const b = +Board.ls.get('apex:cs:best') || 1; $('#bs').textContent = b; fillJump(); render(); }
+function fillJump() { const best = +Board.ls.get('apex:cs:best') || 1, j = $('#jump'); j.innerHTML = ''; for (let i = 1; i <= Math.max(best, level); i++) { const o = document.createElement('option'); o.value = i; o.textContent = i; if (i === level) o.selected = true; j.appendChild(o); } }
+const full = (x) => x.length === CAP && x.every((c) => c === x[0]);
+function render(popTube) {
+  bd.innerHTML = ''; T.forEach((x, i) => { const d = document.createElement('div'); d.className = 'tb' + (i === sel ? ' sel' : '') + (full(x) ? ' done' : ''); d.dataset.i = i; d.title = 'Tube ' + (i + 1);
+    x.forEach((c, k) => { const b = document.createElement('div'); b.className = 'bb' + (i === popTube && k >= x.length - 1 ? ' pop' : ''); b.style.background = COL[c]; b.textContent = sym ? SYM[c] : ''; d.appendChild(b); }); bd.appendChild(d); });
+  $('#lv').textContent = level; $('#mv').textContent = moves; $('#st').textContent = sel >= 0 ? 'Tube ' + (sel + 1) + ' lifted — tap where to pour' : 'Tap a tube to lift its top bubbles';
+}
+function pick(i) {
+  if (busy) return;
+  if (sel < 0) { if (!T[i].length) { Board.sfx('error'); return; } sel = i; Board.sfx('click'); render(); return; }
+  if (i === sel) { sel = -1; render(); return; }
+  const A = T[sel], B = T[i], c = A[A.length - 1];
+  if (B.length >= CAP || (B.length && B[B.length - 1] !== c)) { Board.sfx('error'); const el = bd.children[i]; el.classList.add('shake'); Board.after(260, () => el.classList.remove('shake')); if (B.length && B[B.length - 1] !== c) { sel = i; render(); } else { sel = -1; render(); } return; }
+  let n = 0; while (n < A.length && A[A.length - 1 - n] === c && B.length + n < CAP) n++;
+  hist.push(JSON.stringify(T)); T[i].push(...T[sel].splice(T[sel].length - n, n)); moves++; sel = -1; Board.sfx('move'); render(i);
+  if (T.every((x) => !x.length || full(x))) { const b = Math.max(+Board.ls.get('apex:cs:best') || 1, level + 1); Board.ls.set('apex:cs:best', b); busy = true; Board.sfx('win'); $('#st').textContent = 'Level cleared! 🎉'; Board.after(500, () => Board.modal('Level ' + level + ' cleared!', moves + ' moves.', [['Next level', () => begin(level + 1)], ['Close', () => { busy = false; }]])); }
+}
+function undo() { if (!hist.length || busy) return; T = JSON.parse(hist.pop()); moves = Math.max(0, moves - 1); sel = -1; spare = T.length > JSON.parse(start0).length; render(); }
+$('#bd').addEventListener('click', (e) => { const d = e.target.closest('.tb'); if (d) pick(+d.dataset.i); });
+$('#undo').onclick = undo; $('#rst').onclick = () => begin(level, true); $('#nxt').onclick = () => begin(level);
+$('#add').onclick = () => { if (spare || busy) return; spare = true; T.push([]); render(); };
+$('#sym').onclick = () => { sym = !sym; $('#sym').textContent = 'Symbols: ' + (sym ? 'on' : 'off'); render(); };
+$('#jump').onchange = (e) => { begin(+e.target.value); e.target.blur(); };
+document.addEventListener('keydown', (e) => {
+  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || document.getElementById('bk-dlg')?.open) return; const k = e.key.toLowerCase();
+  if (k === 'u') undo(); else if (k === 'r') begin(level, true); else if (k === 'n') begin(level); else if (k === 't') $('#add').click();
+  else if (/^[0-9]$/.test(k)) { const i = k === '0' ? 9 : +k - 1; if (i < T.length) pick(i); }
+});
+begin(Math.min(+Board.ls.get('apex:cs:best') || 1, 99));
+</script>
+<script src="../../kits/menu-bootstrap.js"></script>
+</body>
+</html>

@@ -50,7 +50,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `48-fruit-merge.html`. Current family: Board Kit (No). Catalog description: “Suika-style physics puzzle: drop fruits from cherries up to pineapples and gigantic watermelons without letting the container overflow.” Controls: Mouse / A/D to aim, click or Space/Down to drop fruit. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `48-fruit-merge/index.html`. Current family: Board Kit (No). Catalog description: “Suika-style physics puzzle: drop fruits from cherries up to pineapples and gigantic watermelons without letting the container overflow.” Controls: Mouse / A/D to aim, click or Space/Down to drop fruit. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

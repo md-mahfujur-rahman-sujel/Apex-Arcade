@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ember Serpent</title>
+</head>
+<body>
+
+
+
+
+<script src="../../kits/perf-kit.js"></script>
+<script src="../../kits/save-kit.js"></script>
+<script src="../../kits/meta-config.js"></script>
+<script src="../../kits/meta-kit.js"></script>
+<script src="../../kits/arcade-core.js"></script>
+<script src="../../kits/score-bridge.js"></script>
+<script src="../../kits/ui-kit.js"></script>
+<script src="../../kits/fx-kit.js"></script>
+<script src="../../kits/music-kit.js"></script>
+<script src="../../kits/menu-kit.js"></script>
+<script>
+/* Ember Serpent — grid-snake with smooth movement, bonus fruit, levels and rock hazards.
+   Two skins share the same rules (press K, or the paint button on touch, to switch; the choice is remembered):
+     "ember"   — lava-forged obsidian board, glowing fire serpent, ember trail, flame bite.
+     "classic" — the original green serpent on the dark garden board. */
+const A = Arcade;
+const COLS = 25, ROWS = 16, C = 28, OX = 10, OY = 46, W = 720, H = 520, PER_LEVEL = 6, MAX_LEVEL = 10;
+const DIRS = { ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] };
+const SKIN_KEY = 'ember-serpent-skin';
+let cur, prev, dir, queue, grow, tickT, interval, food, bonus, rocks, level, eaten, wrap, flick, dead;
+let eatFlash = 0, flash = 0;
+let skin = 'ember';
+try { const s = localStorage.getItem(SKIN_KEY); if (s === 'classic' || s === 'ember') skin = s; } catch (e) { /* storage blocked: stay on the default skin */ }
+function setSkin(G, s) {
+  skin = s; try { localStorage.setItem(SKIN_KEY, s); } catch (e) { /* ignore */ }
+  A.sfx('select'); G.popup(W / 2, 70, 'Skin: ' + (s === 'ember' ? 'Ember (fire serpent)' : 'Classic (green serpent)'), '#fde68a', 18);
+}
+
+const px = (x) => OX + (x + 0.5) * C, py = (y) => OY + (y + 0.5) * C;
+const occupied = (x, y) => cur.some((s) => s.x === x && s.y === y) || rocks.some((r) => r.x === x && r.y === y) ||
+  (food && food.x === x && food.y === y) || (bonus && bonus.x === x && bonus.y === y);
+function freeCell() {
+  for (let i = 0; i < 400; i++) { const x = A.randi(0, COLS - 1), y = A.randi(0, ROWS - 1); if (!occupied(x, y)) return { x, y }; }
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (!occupied(x, y)) return { x, y }; // crowded board: scan for any free cell
+  return null;
+}
+function speedFor(l) { return Math.max(4, 10 - Math.floor((l - 1) * 0.7)); }
+function buildRocks() {
+  rocks = [];
+  const n = Math.min(26, (level - 1) * 3), h = cur[0];
+  for (let i = 0; i < n; i++) {
+    for (let k = 0; k < 60; k++) {
+      const x = A.randi(0, COLS - 1), y = A.randi(0, ROWS - 1);
+      let ok = !occupied(x, y) && Math.abs(x - h.x) + Math.abs(y - h.y) > 5;
+      for (let s = 1; s <= 6 && ok; s++) if (x === h.x + dir[0] * s && y === h.y + dir[1] * s) ok = false;
+      if (ok) { rocks.push({ x, y, v: A.randi(0, 2) }); break; }
+    }
+  }
+}
+
+/* ---------- baked art (ember skin) ---------- */
+function bgSprite() {
+  return Fx.bake('ember-bg', W, H, (c) => {
+    A.sky(c, W, H, ['#0e0508', '#1a0a0a', '#2a0e07']);
+    c.fillStyle = '#12080a';
+    c.beginPath(); c.moveTo(0, 46);
+    for (let x = 0; x <= W; x += 24) c.lineTo(x, 40 - Math.abs(Math.sin(x * 0.013)) * 22 - Math.sin(x * 0.04 + 1) * 4);
+    c.lineTo(W, 46); c.closePath(); c.fill();
+    const cg = c.createRadialGradient(W * 0.72, 24, 2, W * 0.72, 24, 70);
+    cg.addColorStop(0, 'rgba(251,146,60,.4)'); cg.addColorStop(1, 'rgba(251,146,60,0)');
+    c.fillStyle = cg; c.fillRect(W * 0.72 - 70, 0, 140, 80);
+    const lg = c.createLinearGradient(0, H - 40, 0, H);
+    lg.addColorStop(0, 'rgba(249,115,22,0)'); lg.addColorStop(1, 'rgba(249,115,22,.2)');
+    c.fillStyle = lg; c.fillRect(0, H - 40, W, 40);
+  });
+}
+function boardSprite() {
+  return Fx.bake('ember-board', COLS * C + 8, ROWS * C + 8, (c, w, h) => {
+    c.fillStyle = '#100808'; c.fillRect(0, 0, w, h);
+    for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+      const ox = 4 + x * C, oy = 4 + y * C, v = A.hash(x, y);
+      c.fillStyle = (x + y) % 2 ? '#1b1211' : '#150e0e'; c.fillRect(ox, oy, C, C);
+      c.fillStyle = 'rgba(255,255,255,' + (0.025 + v * 0.03).toFixed(3) + ')'; c.fillRect(ox + 1, oy + 1, C - 2, 2);
+      c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(ox, oy + C - 2, C, 2);
+      if (v > 0.8) {
+        c.strokeStyle = 'rgba(251,146,60,' + (0.14 + v * 0.16).toFixed(2) + ')'; c.lineWidth = 1.5;
+        c.beginPath(); c.moveTo(ox + 4, oy + C - 6); c.lineTo(ox + C * 0.5, oy + C * 0.5); c.lineTo(ox + C - 5, oy + 6); c.stroke();
+      }
+    }
+    const g = c.createRadialGradient(w / 2, h + 40, 10, w / 2, h + 40, w * 0.6);
+    g.addColorStop(0, 'rgba(249,115,22,.2)'); g.addColorStop(1, 'rgba(249,115,22,0)');
+    c.fillStyle = g; c.fillRect(0, 0, w, h);
+  });
+}
+
+function init(G) {
+  cur = [{ x: 12, y: 8 }, { x: 11, y: 8 }, { x: 10, y: 8 }, { x: 9, y: 8 }];
+  prev = cur.map((s) => ({ ...s }));
+  dir = [1, 0]; queue = []; grow = 0; tickT = 0; level = 1; eaten = 0; interval = speedFor(1);
+  rocks = []; bonus = null; food = null; flick = 0; dead = false; eatFlash = 0; flash = 0;
+  if (wrap === undefined) wrap = false;
+  food = freeCell();
+}
+
+function levelUp(G) {
+  if (level >= MAX_LEVEL) { G.addScore(500); return G.win('Serpent Supreme!', 'You cleared all ' + MAX_LEVEL + ' levels'); }
+  level++; eaten = 0; interval = speedFor(level);
+  buildRocks();
+  A.sfx('power'); G.shake(5); flash = 1;
+  G.popup(W / 2, H / 2 - 20, 'LEVEL ' + level, '#fde68a', 34);
+  G.ring(px(cur[0].x), py(cur[0].y), '#fde68a', 110, 34);
+  if (skin === 'ember') G.ring(px(cur[0].x), py(cur[0].y), '#fb923c', 70, 24);
+}
+
+function die(G) {
+  dead = true; A.sfx('hurt'); A.sfx('boom'); G.shake(14); G.freeze(8);
+  for (const s of cur) G.burst(px(s.x), py(s.y), 4, { color: ['#fb923c', '#fbbf24', '#f87171'], speed: 4, glow: true, life: 36, grav: 0.05 });
+  G.over('Burned Out', 'Level ' + level + ' · length ' + cur.length);
+}
+
+function tick(G) {
+  if (queue.length) dir = queue.shift();
+  const old = cur.map((s) => ({ ...s }));
+  let nx = cur[0].x + dir[0], ny = cur[0].y + dir[1];
+  if (wrap) { nx = (nx + COLS) % COLS; ny = (ny + ROWS) % ROWS; }
+  else if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) return die(G);
+  const body = grow > 0 ? cur : cur.slice(0, -1);
+  if (body.some((s) => s.x === nx && s.y === ny) || rocks.some((r) => r.x === nx && r.y === ny)) return die(G);
+  cur.unshift({ x: nx, y: ny });
+  if (grow > 0) grow--; else cur.pop();
+  prev = cur.map((s, i) => (old[i] ? old[i] : { ...s }));
+  const hx = px(nx), hy = py(ny);
+  if (skin === 'ember') { const tl = cur[cur.length - 1]; G.burst(px(tl.x), py(tl.y), 1, { color: ['#fb923c', '#fbbf24', '#f87171'], speed: 0.9, min: 0.2, glow: true, life: 26, size: 2, grav: -0.03 }); }
+  if (food && nx === food.x && ny === food.y) {
+    const pts = Math.round(10 * level * (wrap ? 1 : 1.5));
+    G.addScore(pts); grow++; eaten++; A.sfx('eat');
+    G.popup(hx, hy - 14, '+' + pts, '#fecaca', 16);
+    if (skin === 'ember') {
+      eatFlash = 1; Fx.squash.punch('head', { sx: 1.28, sy: 0.82 });
+      G.burst(hx, hy, 14, { color: ['#34d399', '#a7f3d0', '#fff'], speed: 3.5, glow: true, life: 26 });
+      G.ring(hx, hy, '#34d399', 44, 18);
+    } else G.burst(hx, hy, 14, { color: ['#f87171', '#fca5a5', '#fff'], speed: 3.5, glow: true, life: 26 });
+    food = freeCell();
+    if (!food) return G.win('Board Cleared!', 'The serpent fills the whole board');
+    if (eaten % 5 === 0 && !bonus) { const b = freeCell(); if (b) { bonus = { ...b, t: 540 }; A.sfx('select'); } }
+    if (eaten >= PER_LEVEL) levelUp(G);
+  } else if (bonus && nx === bonus.x && ny === bonus.y) {
+    const pts = 50 * level;
+    G.addScore(pts); grow += 2; A.sfx('gem'); A.sfx('coin');
+    if (skin === 'ember') { eatFlash = 1; Fx.squash.punch('head', { sx: 1.32, sy: 0.78 }); }
+    G.popup(hx, hy - 14, 'BONUS +' + pts, '#fde68a', 18);
+    G.burst(hx, hy, 24, { color: ['#fde68a', '#fbbf24', '#fff'], speed: 4.5, glow: true, life: 34 });
+    G.ring(hx, hy, '#fde68a', 70); bonus = null;
+  }
+}
+
+function update(G) {
+  Fx.update(1);
+  eatFlash *= 0.9; flash *= 0.92;
+  for (const k in DIRS) {
+    if (A.hit(k)) {
+      const d = DIRS[k], last = queue.length ? queue[queue.length - 1] : dir;
+      if (queue.length < 3 && !(d[0] === -last[0] && d[1] === -last[1]) && !(d[0] === last[0] && d[1] === last[1])) { queue.push(d); A.sfx('tick'); }
+    }
+  }
+  if (A.hit('KeyT')) { wrap = !wrap; A.sfx('select'); G.popup(W / 2, 70, wrap ? 'Wrap-around ON' : 'Solid walls (+50% score)', '#a5f3fc', 18); }
+  if (A.hit('KeyK')) setSkin(G, skin === 'ember' ? 'classic' : 'ember');
+  flick++;
+  if (bonus && --bonus.t <= 0) bonus = null;
+  if (++tickT >= interval) { tickT = 0; tick(G); }
+  G.hudL = 'LV ' + level + ' · ' + eaten + '/' + PER_LEVEL + ' · ' + (wrap ? 'WRAP' : 'WALLS') + ' · SCORE ' + G.score;
+}
+
+function seg(c, p0, p1, f) {
+  let dx = p1.x - p0.x, dy = p1.y - p0.y;
+  if (Math.abs(dx) > 1.5 || Math.abs(dy) > 1.5) { dx = 0; dy = 0; f = 1; } // wrapped: snap
+  return { x: px(p0.x + dx * f), y: py(p0.y + dy * f) };
+}
+
+/* ================= CLASSIC SKIN (the original look) ================= */
+function drawClassic(G, c) {
+  const t = G.clock, f = G.state === 'playing' ? tickT / interval : 1;
+  A.sky(c, W, H, ['#0b1220', '#101a2e']);
+  c.save(); c.shadowColor = wrap ? '#38bdf8' : '#fb923c'; c.shadowBlur = 20;
+  c.fillStyle = '#0a1a14'; c.fillRect(OX - 4, OY - 4, COLS * C + 8, ROWS * C + 8); c.restore();
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) { c.fillStyle = (x + y) % 2 ? '#10281f' : '#0d2219'; c.fillRect(OX + x * C, OY + y * C, C, C); }
+  c.strokeStyle = wrap ? 'rgba(56,189,248,.7)' : 'rgba(251,146,60,.8)'; c.lineWidth = 3;
+  if (wrap) c.setLineDash([10, 8]); c.strokeRect(OX - 2, OY - 2, COLS * C + 4, ROWS * C + 4); c.setLineDash([]);
+  for (const r of rocks) {
+    const x = OX + r.x * C + 2, y = OY + r.y * C + 6;
+    A.shadow(c, x + C / 2 + 4, y + C - 2, 12, 4, 0.35);
+    A.block3d(c, x, y, C - 8, C - 10, 7, ['#64748b', '#78716c', '#6b7280'][r.v]);
+  }
+  const pulse = 1 + Math.sin(t * 0.12) * 0.08;
+  if (food) {
+    const x = px(food.x), y = py(food.y);
+    A.shadow(c, x + 3, y + 11, 9, 3, 0.35);
+    c.save(); c.shadowColor = '#f87171'; c.shadowBlur = 16;
+    const g = c.createRadialGradient(x - 3, y - 3, 1, x, y, 11 * pulse); g.addColorStop(0, '#fecaca'); g.addColorStop(1, '#dc2626');
+    c.fillStyle = g; c.beginPath(); c.arc(x, y, 10 * pulse, 0, A.TAU); c.fill(); c.restore();
+    c.fillStyle = '#4ade80'; c.beginPath(); c.ellipse(x + 3, y - 11, 5, 2.5, -0.5, 0, A.TAU); c.fill();
+  }
+  if (bonus) {
+    const x = px(bonus.x), y = py(bonus.y), k = bonus.t / 540;
+    c.save(); c.shadowColor = '#fde68a'; c.shadowBlur = 22;
+    c.fillStyle = '#fbbf24'; c.beginPath(); c.moveTo(x, y - 13 * pulse); c.lineTo(x + 10, y); c.lineTo(x, y + 13 * pulse); c.lineTo(x - 10, y); c.closePath(); c.fill();
+    c.fillStyle = '#fff7c2'; c.beginPath(); c.moveTo(x, y - 8); c.lineTo(x + 4, y); c.lineTo(x, y + 8); c.lineTo(x - 4, y); c.closePath(); c.fill();
+    c.strokeStyle = k < 0.25 && t % 20 < 10 ? '#f87171' : '#fde68a'; c.lineWidth = 2; c.beginPath(); c.arc(x, y, 17, -Math.PI / 2, -Math.PI / 2 + A.TAU * k); c.stroke();
+    c.restore();
+  }
+  const pts = cur.map((s, i) => seg(c, prev[i] || s, s, f));
+  for (const p of pts) A.shadow(c, p.x + 3, p.y + 9, 10, 4, 0.3);
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i], k = i / Math.max(1, pts.length - 1);
+    const rad = 12.5 - k * 3.5;
+    if (i < pts.length - 1) {
+      const q = pts[i + 1];
+      if (Math.hypot(p.x - q.x, p.y - q.y) < C * 1.4) {
+        c.strokeStyle = A.mix('#22c55e', '#0f766e', k); c.lineWidth = rad * 1.9; c.lineCap = 'round';
+        c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(q.x, q.y); c.stroke();
+      }
+    }
+    c.fillStyle = A.mix('#4ade80', '#14b8a6', k); c.beginPath(); c.arc(p.x, p.y, rad, 0, A.TAU); c.fill();
+    c.fillStyle = 'rgba(255,255,255,.14)'; c.beginPath(); c.arc(p.x - 3, p.y - 4, rad * 0.5, 0, A.TAU); c.fill();
+    if (i % 2 === 0 && i > 0) { c.fillStyle = 'rgba(15,60,40,.35)'; c.beginPath(); c.arc(p.x, p.y, rad * 0.35, 0, A.TAU); c.fill(); }
+  }
+  const h = pts[0], d = dir, ang = Math.atan2(d[1], d[0]);
+  c.save(); c.translate(h.x, h.y); c.rotate(ang);
+  c.fillStyle = '#86efac'; c.beginPath(); c.ellipse(2, 0, 14, 12, 0, 0, A.TAU); c.fill();
+  if (Math.floor(t / 22) % 3 === 0) { c.strokeStyle = '#f43f5e'; c.lineWidth = 2; c.beginPath(); c.moveTo(14, 0); c.lineTo(22, 0); c.moveTo(22, 0); c.lineTo(26, -3); c.moveTo(22, 0); c.lineTo(26, 3); c.stroke(); }
+  for (const s of [-1, 1]) {
+    c.fillStyle = '#fff'; c.beginPath(); c.arc(7, s * 6, 4, 0, A.TAU); c.fill();
+    c.fillStyle = '#052e16'; c.beginPath(); c.arc(8.5, s * 6, 2, 0, A.TAU); c.fill();
+  }
+  c.restore();
+  A.vignette(c, W, H, 0.4);
+  G.drawFX(c);
+  A.text(c, 'T: wrap/walls · K: skin (Classic) · food ×' + (wrap ? '1' : '1.5'), W / 2, H - 8, 12, '#8b93b3', 'center', '600');
+}
+
+/* ================= EMBER SKIN ================= */
+function drawFruit(c, x, y, t, pulse) {
+  const bob = Math.sin(t * 0.08) * 1.5;
+  A.shadow(c, x + 3, y + 11, 9, 3, 0.35);
+  Fx.glow(c, x, y + bob, 26 * pulse, 'rgba(52,211,153,.2)');
+  c.save(); c.shadowColor = '#34d399'; c.shadowBlur = 10;
+  const g = c.createRadialGradient(x - 3, y - 3 + bob, 1, x, y + bob, 11 * pulse);
+  g.addColorStop(0, '#d1fae5'); g.addColorStop(0.5, '#34d399'); g.addColorStop(1, '#047857');
+  c.fillStyle = g; c.beginPath(); c.arc(x, y + bob, 10 * pulse, 0, A.TAU); c.fill(); c.restore();
+  c.fillStyle = 'rgba(255,255,255,.55)'; c.beginPath(); c.ellipse(x - 3.5, y - 4 + bob, 3, 2, -0.6, 0, A.TAU); c.fill();
+  c.fillStyle = '#facc15'; c.beginPath(); c.ellipse(x + 3, y - 11 + bob, 5, 2.5, -0.5, 0, A.TAU); c.fill();
+}
+function drawGem(c, x, y, t, pulse, k) {
+  Fx.glow(c, x, y, 30, 'rgba(251,191,36,.26)');
+  c.save(); c.shadowColor = '#fde68a'; c.shadowBlur = 12;
+  c.fillStyle = '#fbbf24'; c.beginPath(); c.moveTo(x, y - 13 * pulse); c.lineTo(x + 10, y); c.lineTo(x, y + 13 * pulse); c.lineTo(x - 10, y); c.closePath(); c.fill();
+  c.fillStyle = '#fff7c2'; c.beginPath(); c.moveTo(x, y - 8); c.lineTo(x + 4, y); c.lineTo(x, y + 8); c.lineTo(x - 4, y); c.closePath(); c.fill();
+  c.restore();
+  const sp = 0.5 + 0.5 * Math.sin(t * 0.2);
+  c.strokeStyle = 'rgba(255,255,255,' + (0.35 + sp * 0.4).toFixed(2) + ')'; c.lineWidth = 1.5;
+  c.beginPath(); c.moveTo(x - 7 - sp * 3, y - 9); c.lineTo(x + 7 + sp * 3, y - 9); c.moveTo(x, y - 16 - sp * 3); c.lineTo(x, y - 2 + sp * 3); c.stroke();
+  c.strokeStyle = k < 0.25 && t % 20 < 10 ? '#f87171' : '#fde68a'; c.lineWidth = 2; c.beginPath(); c.arc(x, y, 17, -Math.PI / 2, -Math.PI / 2 + A.TAU * k); c.stroke();
+}
+function drawRock(c, r, t) {
+  const x = OX + r.x * C + 2, y = OY + r.y * C + 6;
+  A.shadow(c, x + C / 2 + 4, y + C - 2, 12, 4, 0.4);
+  A.block3d(c, x, y, C - 8, C - 10, 7, ['#2f2a3a', '#3a2d33', '#262a36'][r.v]);
+  const a = 0.4 + 0.3 * Math.sin(t * 0.06 + r.x * 1.3 + r.y);
+  c.strokeStyle = 'rgba(251,146,60,' + a.toFixed(2) + ')'; c.lineWidth = 1.5; c.lineCap = 'round';
+  c.beginPath(); c.moveTo(x + 4, y + 5); c.lineTo(x + 9, y + 11); c.lineTo(x + 14, y + 8); c.stroke();
+}
+function drawEmber(G, c) {
+  const t = G.clock, f = G.state === 'playing' ? tickT / interval : 1, still = Fx.reducedMotion('ember-serpent');
+  const tt = still ? 0 : t;
+  c.drawImage(bgSprite(), 0, 0, W, H);
+  const wc = wrap ? '56,189,248' : '251,146,60';
+  c.save(); c.shadowColor = 'rgb(' + wc + ')'; c.shadowBlur = 12 + 4 * Math.sin(tt * 0.05);
+  c.fillStyle = '#100808'; c.fillRect(OX - 4, OY - 4, COLS * C + 8, ROWS * C + 8); c.restore();
+  c.drawImage(boardSprite(), OX - 4, OY - 4);
+  c.strokeStyle = 'rgba(' + wc + ',.75)'; c.lineWidth = 3;
+  if (wrap) c.setLineDash([10, 8]); c.strokeRect(OX - 2, OY - 2, COLS * C + 4, ROWS * C + 4); c.setLineDash([]);
+  for (const r of rocks) drawRock(c, r, tt);
+  const pulse = 1 + Math.sin(tt * 0.12) * 0.08;
+  if (food) drawFruit(c, px(food.x), py(food.y), tt, pulse);
+  if (bonus) drawGem(c, px(bonus.x), py(bonus.y), t, pulse, bonus.t / 540);
+  const pts = cur.map((s, i) => seg(c, prev[i] || s, s, f)), n = pts.length;
+  for (let i = 0; i < n; i += 3) Fx.glow(c, pts[i].x, pts[i].y, 22 - (i / Math.max(1, n - 1)) * 6, 'rgba(249,115,22,.1)');
+  for (const p of pts) A.shadow(c, p.x + 3, p.y + 9, 10, 4, 0.3);
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = n - 1; i >= 0; i--) {
+      const p = pts[i], k = i / Math.max(1, n - 1);
+      const rad = 12.5 - k * 4 + (pass === 0 ? 2 : 0);
+      const col = pass === 0 ? '#3b0d06' : A.mix('#fb923c', '#b91c1c', k);
+      if (i < n - 1) {
+        const q = pts[i + 1];
+        if (Math.hypot(p.x - q.x, p.y - q.y) < C * 1.4) {
+          c.strokeStyle = col; c.lineWidth = rad * 1.9; c.lineCap = 'round';
+          c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(q.x, q.y); c.stroke();
+        }
+      }
+      c.fillStyle = col; c.beginPath(); c.arc(p.x, p.y, rad, 0, A.TAU); c.fill();
+    }
+  }
+  for (let i = n - 1; i >= 1; i--) {
+    const p = pts[i], k = i / Math.max(1, n - 1), rad = 12.5 - k * 4;
+    c.fillStyle = 'rgba(253,230,138,.18)'; c.beginPath(); c.arc(p.x - 2.5, p.y - 4, rad * 0.45, 0, A.TAU); c.fill();
+    if (i % 2 === 0) { c.strokeStyle = 'rgba(60,10,5,.45)'; c.lineWidth = 1.5; c.beginPath(); c.arc(p.x, p.y, rad * 0.62, 0, A.TAU); c.stroke(); }
+    const hp = 0.22 + 0.26 * Math.sin(tt * 0.15 - i * 0.6);
+    c.fillStyle = 'rgba(253,224,71,' + hp.toFixed(2) + ')'; c.beginPath(); c.arc(p.x, p.y, rad * 0.24, 0, A.TAU); c.fill();
+  }
+  const h = pts[0], ang = Math.atan2(dir[1], dir[0]), hs = Fx.squash.get('head');
+  Fx.glow(c, h.x, h.y, 34 + eatFlash * 10, 'rgba(251,146,60,.16)');
+  c.save(); c.translate(h.x, h.y); c.rotate(ang); c.scale(hs.sx, hs.sy);
+  c.fillStyle = '#7c2d12';
+  for (const s of [-1, 1]) { c.beginPath(); c.moveTo(-3, s * 8); c.lineTo(-15, s * 14); c.lineTo(-1, s * 3); c.closePath(); c.fill(); }
+  const hg = c.createRadialGradient(4, -4, 2, 2, 0, 16); hg.addColorStop(0, '#fdba74'); hg.addColorStop(1, '#ea580c');
+  c.fillStyle = hg; c.beginPath(); c.ellipse(2, 0, 15, 12.5, 0, 0, A.TAU); c.fill();
+  c.strokeStyle = '#3b0d06'; c.lineWidth = 2; c.beginPath(); c.ellipse(2, 0, 15, 12.5, 0, 0, A.TAU); c.stroke();
+  c.fillStyle = '#3b0d06'; for (const s of [-1, 1]) { c.beginPath(); c.arc(13, s * 3, 1.3, 0, A.TAU); c.fill(); }
+  if (Math.floor(tt / 22) % 3 === 0 && eatFlash < 0.2) { c.strokeStyle = '#f43f5e'; c.lineWidth = 2; c.beginPath(); c.moveTo(16, 0); c.lineTo(23, 0); c.moveTo(23, 0); c.lineTo(27, -3); c.moveTo(23, 0); c.lineTo(27, 3); c.stroke(); }
+  if (eatFlash > 0.08) {
+    c.save(); c.globalCompositeOperation = 'lighter';
+    c.fillStyle = 'rgba(253,186,116,' + (eatFlash * 0.6).toFixed(2) + ')';
+    c.beginPath(); c.moveTo(15, -5); c.lineTo(15 + eatFlash * 24, 0); c.lineTo(15, 5); c.closePath(); c.fill();
+    c.fillStyle = 'rgba(254,240,138,' + (eatFlash * 0.7).toFixed(2) + ')';
+    c.beginPath(); c.moveTo(15, -2.5); c.lineTo(15 + eatFlash * 13, 0); c.lineTo(15, 2.5); c.closePath(); c.fill(); c.restore();
+  }
+  for (const s of [-1, 1]) {
+    c.save(); c.shadowColor = '#fde047'; c.shadowBlur = 5;
+    c.fillStyle = '#fde047'; c.beginPath(); c.arc(7, s * 6, 3.8, 0, A.TAU); c.fill(); c.restore();
+    c.fillStyle = '#1c0a05'; c.beginPath(); c.ellipse(8, s * 6, 1, 2.8, 0, 0, A.TAU); c.fill();
+  }
+  c.restore();
+  c.save(); c.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 30; i++) {
+    const v = 0.18 + A.hash(i, 4) * 0.5, s = 0.9 + A.hash(i, 6) * 1.8;
+    const y = (((A.hash(i, 2) * (H + 20)) - tt * v) % (H + 20) + (H + 20)) % (H + 20) - 10;
+    const x = A.hash(i, 1) * W + Math.sin(tt * 0.02 + i) * 8;
+    c.fillStyle = 'rgba(' + (i % 3 ? '251,146,60' : '253,224,71') + ',' + (0.15 + 0.3 * Math.abs(Math.sin(tt * 0.04 + i))).toFixed(2) + ')';
+    c.fillRect(x, y, s, s);
+  }
+  c.restore();
+  if (flash > 0.02) { c.fillStyle = 'rgba(253,230,138,' + (flash * 0.16).toFixed(2) + ')'; c.fillRect(0, 0, W, H); }
+  if (G.state === 'over') { c.fillStyle = 'rgba(127,29,29,' + Math.min(0.3, G.stateT / 90).toFixed(2) + ')'; c.fillRect(0, 0, W, H); }
+  Fx.bloom(c, W, H, 0.45);
+  Fx.vignette(c, W, H, 0.4);
+  G.drawFX(c);
+  A.text(c, 'T: wrap/walls · K: skin (Ember) · food ×' + (wrap ? '1' : '1.5'), W / 2, H - 8, 12, '#8b93b3', 'center', '600');
+}
+
+function draw(G, c) { if (skin === 'classic') drawClassic(G, c); else drawEmber(G, c); }
+
+const emberSerpentGame = Arcade.game({
+  id: 'ember-serpent', title: 'Ember Serpent', subtitle: 'Eat, grow, survive ten levels', color: '#fb923c',
+  help: 'Arrow keys or WASD steer (you can queue turns). Eat fruit; golden gems are timed bonuses. Rocks appear each level. T toggles wrap-around vs solid walls (walls score +50%). K switches between the Ember and Classic skins (remembered). P pauses, M mutes.',
+  w: W, h: H, touchL: [['◀', 'ArrowLeft'], ['▲', 'ArrowUp'], ['🎨', 'KeyK']], touchR: [['▼', 'ArrowDown'], ['▶', 'ArrowRight']], init, update, draw,
+});
+
+function emberMenuScene(c, frame) {
+  const w = frame.width, h = frame.height, motion = !frame.static && !frame.reducedMotion;
+  const sky = c.createLinearGradient(0, 0, w, h);
+  sky.addColorStop(0, '#120b13'); sky.addColorStop(0.56, '#27131a'); sky.addColorStop(1, '#411d18');
+  c.fillStyle = sky; c.fillRect(0, 0, w, h);
+  const glow = c.createRadialGradient(w * 0.75, h * 0.48, 0, w * 0.75, h * 0.48, Math.max(w, h) * 0.55);
+  glow.addColorStop(0, 'rgba(251,146,60,.26)'); glow.addColorStop(0.5, 'rgba(220,69,35,.10)'); glow.addColorStop(1, 'rgba(18,11,19,0)');
+  c.fillStyle = glow; c.fillRect(0, 0, w, h);
+  const layers = Math.min(frame.quality.layers, 3);
+  for (let layer = 0; layer < layers; layer++) {
+    const base = h * (0.65 + layer * 0.11), amp = h * (0.035 + layer * 0.013), drift = motion ? frame.time * (0.00008 + layer * 0.00004) : 0;
+    c.beginPath(); c.moveTo(0, h);
+    for (let x = 0; x <= w + 6; x += Math.max(20, w / 30)) {
+      const ridge = base - (Math.sin(x / w * 8 + drift + layer) * 0.6 + Math.sin(x / w * 15 - drift * 0.7) * 0.28) * amp;
+      c.lineTo(x, ridge);
+    }
+    c.lineTo(w, h); c.closePath(); c.fillStyle = ['#381d20', '#29161c', '#1b1119'][layer]; c.fill();
+  }
+  // A small original ember serpent curls around a molten seed on the clear right side.
+  c.save(); c.translate(w * 0.77, h * 0.52); c.rotate(motion ? Math.sin(frame.time * 0.0004) * 0.025 : 0);
+  c.shadowColor = '#fb923c'; c.shadowBlur = frame.quality.glow ? 18 : 5;
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  c.strokeStyle = '#7c2d12'; c.lineWidth = Math.max(14, h * 0.045); c.beginPath();
+  c.moveTo(-w * 0.16, h * 0.1); c.bezierCurveTo(-w * 0.23, -h * 0.12, -w * 0.04, -h * 0.25, w * 0.02, -h * 0.08); c.bezierCurveTo(w * 0.1, h * 0.15, -w * 0.03, h * 0.22, -w * 0.11, h * 0.08); c.stroke();
+  c.strokeStyle = '#f97316'; c.lineWidth = Math.max(7, h * 0.021); c.stroke();
+  c.fillStyle = '#fde047'; c.beginPath(); c.arc(w * 0.02, -h * 0.08, Math.max(9, h * 0.024), 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#14532d'; c.beginPath(); c.arc(w * 0.02, -h * 0.08, Math.max(4, h * 0.011), 0, Math.PI * 2); c.fill();
+  c.restore();
+  const sparks = Math.min(frame.quality.particles, 28);
+  for (let i = 0; i < sparks; i++) {
+    const x = ((i * 137.3 + 29) % 997) / 997 * w;
+    const drift = motion ? frame.time * (0.008 + (i % 4) * 0.003) : 0;
+    const y = ((i * 193.7 + drift) % 991) / 991 * h;
+    c.globalAlpha = motion ? 0.22 + 0.28 * Math.abs(Math.sin(frame.time * 0.001 + i)) : 0.34;
+    c.fillStyle = i % 4 ? '#fb923c' : '#fde047'; c.fillRect(x, y, 2 + i % 2, 2 + i % 2);
+  }
+  c.globalAlpha = 1;
+}
+
+const emberSerpentMenu = Menu.mount({
+  gameId: 'ember-serpent', title: 'Ember Serpent', tagline: 'Follow the fire. Grow through the cavern.',
+  archetype: 'banner', items: ['play', 'options', 'about', 'exit'],
+  theme: {
+    frame: 'basalt-arch', button: 'molten-facet',
+    palette: { bg: '#120b13', panel: 'rgba(30,17,23,0.84)', accent: '#fb923c', button: '#f6bd75', buttonText: '#32150f', text: '#fff4e8', danger: '#ef4444' },
+    type: { title: 'system-ui, sans-serif', body: 'system-ui, sans-serif' },
+    scene: emberMenuScene, sceneFallback: emberMenuScene,
+    music: { tempo: 82, root: 40, scale: 'minor', layers: ['bass', 'pad', 'lead'] },
+    sfx: { hover: 'tick', select: 'select', back: 'blip' }
+  },
+  options: { difficulty: 'normal' },
+  onSettingChange: function (key, value) {
+    if (key === 'difficulty') A.difficulty = value;
+    if (key === 'sfxVol') A.sfxVolume = Math.max(0, Math.min(1, Number(value) || 0));
+  },
+  onPlay: function () { emberSerpentGame.inputLocked = false; emberSerpentGame.begin(); },
+  onRestart: function () { emberSerpentGame.restart(true); },
+  onResume: function () { if (emberSerpentGame.state === 'paused') emberSerpentGame.pauseToggle(); },
+  screens: {
+    about: function (view) {
+      const doc = view.panel.ownerDocument;
+      const heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Into the ember caverns'; view.panel.appendChild(heading);
+      const story = doc.createElement('p'); story.className = 'apex-menu-tagline'; story.textContent = 'Eat fruit to grow, collect timed golden gems, and climb through ten increasingly dangerous levels.'; view.panel.appendChild(story);
+      const controls = doc.createElement('p'); controls.className = 'apex-menu-tagline'; controls.textContent = 'Steer with Arrow keys or WASD. Queue one safe turn. T switches walls or wrap; K changes the serpent skin. P pauses, M mutes.'; view.panel.appendChild(controls);
+      const note = doc.createElement('p'); note.className = 'apex-menu-caption'; note.textContent = 'Solid walls award a 50% food bonus. The Classic skin changes the look only.'; view.panel.appendChild(note);
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    }
+  }
+});
+emberSerpentGame.inputLocked = true;
+</script>
+</body>
+</html>

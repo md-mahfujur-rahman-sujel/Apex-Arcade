@@ -54,7 +54,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `13-castlevania.html`. Current family: Action Kit (Arcade) (Yes). Catalog description: “Whip haunted candles to gather throwing axe ammo, explore gothic crypts, and defeat the floating Hollow Duke.” Controls: A/D walk, Space jump, X/J whip, C/K throwing axe. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `13-castlevania/index.html`. Current family: Action Kit (Arcade) (Yes). Catalog description: “Whip haunted candles to gather throwing axe ammo, explore gothic crypts, and defeat the floating Hollow Duke.” Controls: A/D walk, Space jump, X/J whip, C/K throwing axe. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

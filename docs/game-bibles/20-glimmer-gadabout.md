@@ -54,7 +54,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `20-rayman.html`. Current family: Action Kit (Arcade) (Yes). Catalog description: “Hop to the beat across musical stages, punch obstacles, helicopter glide, and collect glowing sparks.” Controls: A/D run, Space jump (hold in air to glide), X punch, bounce off foes. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `20-rayman/index.html`. Current family: Action Kit (Arcade) (Yes). Catalog description: “Hop to the beat across musical stages, punch obstacles, helicopter glide, and collect glowing sparks.” Controls: A/D run, Space jump (hold in air to glide), X punch, bounce off foes. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

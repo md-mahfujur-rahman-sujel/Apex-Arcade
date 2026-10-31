@@ -54,7 +54,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `19-ori.html`. Current family: Action Kit (Arcade) (Yes). Catalog description: “Glide through dark woods, unlock double jump and light dash, burst spirit flares, and outrun rising shadows.” Controls: A/D glide, Space jump, Shift light dash, X flare, land on creatures to bounce. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `19-ori/index.html`. Current family: Action Kit (Arcade) (Yes). Catalog description: “Glide through dark woods, unlock double jump and light dash, burst spirit flares, and outrun rising shadows.” Controls: A/D glide, Space jump, Shift light dash, X flare, land on creatures to bounce. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

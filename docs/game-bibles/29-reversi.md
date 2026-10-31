@@ -50,7 +50,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `29-reversi.html`. Current family: Board Kit (No). Catalog description: “Trap your opponent’s discs between your own to flip them to your colour. Dominate the board when all 64 squares fill.” Controls: Click a legal dot to place disc. U undo, T hint. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `29-reversi/index.html`. Current family: Board Kit (No). Catalog description: “Trap your opponent’s discs between your own to flip them to your colour. Dominate the board when all 64 squares fill.” Controls: Click a legal dot to place disc. U undo, T hint. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

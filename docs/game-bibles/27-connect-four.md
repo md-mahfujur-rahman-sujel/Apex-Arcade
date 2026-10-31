@@ -50,7 +50,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `27-connect-four.html`. Current family: Board Kit (No). Catalog description: “7-column vertical drop grid: alternate dropping coloured discs to build a horizontal, vertical, or diagonal 4-in-a-row.” Controls: Click column or press numbers 1-7, or arrows + Enter. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `27-connect-four/index.html`. Current family: Board Kit (No). Catalog description: “7-column vertical drop grid: alternate dropping coloured discs to build a horizontal, vertical, or diagonal 4-in-a-row.” Controls: Click column or press numbers 1-7, or arrows + Enter. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

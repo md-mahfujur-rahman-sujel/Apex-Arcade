@@ -57,7 +57,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `49-table-tennis.html`. Current family: Board Kit (Yes). Catalog description: “Perspective 3D ping-pong table with paddle tracking, spin deflection, Easy/Medium/Hard AI, and local 2-player keyboard sharing.” Controls: Mouse / touch / WASD to move paddle. Space or click to serve and swing. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `49-table-tennis/index.html`. Current family: Board Kit (Yes). Catalog description: “Perspective 3D ping-pong table with paddle tracking, spin deflection, Easy/Medium/Hard AI, and local 2-player keyboard sharing.” Controls: Mouse / touch / WASD to move paddle. Space or click to serve and swing. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
 
 ## Menu Identity Card
 

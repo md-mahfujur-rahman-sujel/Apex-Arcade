@@ -5,9 +5,9 @@ import { chromium } from 'playwright';
 import { preview } from 'vite';
 
 const [saveSource, configSource, metaSource] = await Promise.all([
-  readFile(new URL('../public/assets/aistudio/save-kit.js', import.meta.url), 'utf8'),
-  readFile(new URL('../public/assets/aistudio/meta-config.js', import.meta.url), 'utf8'),
-  readFile(new URL('../public/assets/aistudio/meta-kit.js', import.meta.url), 'utf8'),
+  readFile(new URL('../public/assets/kits/save-kit.js', import.meta.url), 'utf8'),
+  readFile(new URL('../public/assets/kits/meta-config.js', import.meta.url), 'utf8'),
+  readFile(new URL('../public/assets/kits/meta-kit.js', import.meta.url), 'utf8'),
 ]);
 const values = new Map([['apex:meta', JSON.stringify({ v: 1, sparks: 250 })]]);
 const localStorage = {

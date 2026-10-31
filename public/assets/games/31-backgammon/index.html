@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backgammon</title>
+<style>
+  .bgm { display: grid; gap: 16px; }
+  #bd { width: min(100%, 980px); border-radius: 14px; box-shadow: 0 20px 50px -20px #000, 0 0 0 6px #1b2340; overflow: hidden; user-select: none; background: #0c1226; }
+  #bd svg { width: 100%; height: auto; display: block; touch-action: manipulation; }
+  .zone { fill: transparent; }
+  .zone.go { cursor: pointer; }
+  .pulse { animation: pl .7s ease-in-out infinite alternate; }
+  @keyframes pl { to { opacity: .25; } }
+  .panel { display: grid; grid-template-columns: minmax(260px, 1.3fr) minmax(220px, 1fr); gap: 14px; align-items: start; max-width: 980px; }
+  @media (max-width: 760px) { .panel { grid-template-columns: 1fr; } }
+  .dice { display: flex; gap: 8px; align-items: center; min-height: 58px; }
+  .die { font-size: 50px; line-height: 1; color: #e6e9f5; filter: drop-shadow(0 2px 4px rgba(0,0,0,.6)); }
+  .die.u { opacity: .25; }
+  .die.v { opacity: .25; text-decoration: line-through; }
+  .stat { color: var(--muted); line-height: 1.8; }
+  .note { margin-top: 6px; color: var(--amber); font-weight: 600; font-size: 13px; }
+  .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+  .dot.c { background: #06b6d4; } .dot.a { background: #f59e0b; }
+</style>
+<script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
+</head>
+<body>
+
+<script src="../../kits/perf-kit.js"></script>
+<script src="../../kits/save-kit.js"></script>
+<script src="../../kits/meta-config.js"></script>
+<script src="../../kits/meta-kit.js"></script>
+<script src="../../kits/board-kit.js"></script>
+<script src="../../kits/score-bridge.js"></script>
+<script src="../../kits/ui-kit.js"></script>
+<script>
+const ui = Board.shell({
+  id: 'backgammon', cpu: true, title: 'Backgammon', subtitle: 'Roll, race your checkers home and hit your rival\'s blots',
+  rules: 'Cyan moves anticlockwise from the top-right, round the top and bottom-left, into the bottom-right home board, and bears off there. Amber moves the other way into the top-right home board. Roll two dice and move checkers by those numbers (doubles give four moves). You may land on an empty point, your own point, or a point with a single rival checker (a blot) — which is hit and sent to the bar. A point with two or more rival checkers is blocked. Checkers on the bar must re-enter before anything else moves. Once all 15 of your checkers are in your home board you may bear them off. You must use as many dice as you can; if only one can be played, it must be the larger. First to bear off all 15 wins; a gammon (rival has borne off none) counts double and a backgammon triple.',
+  controls: [['R / Space', 'Roll the dice'], ['Click a checker, then a point', 'Move it (glowing points are legal)'], ['U', 'Undo your moves this turn'], ['T', 'Show a hint'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
+});
+ui.main.innerHTML = `
+<div class="bgm">
+  <div id="bd"></div>
+  <div class="panel">
+    <div style="display:grid;gap:12px">
+      <div class="bk-status" id="st"></div>
+      <div class="dice" id="dice"></div>
+      <div class="bk-row"><button class="bk-btn bk-primary" id="roll">Roll dice</button><button class="bk-btn" id="undo">Undo moves</button><button class="bk-btn" id="hint">Hint</button><button class="bk-btn" id="new">New game</button></div>
+    </div>
+    <div style="display:grid;gap:12px">
+      <div class="bk-row">
+        <label>Play <select class="bk-select" id="mode"><option value="1">You (Cyan) vs computer</option><option value="2">You (Amber) vs computer</option><option value="two">Two players</option></select></label>
+        <label>Level <select class="bk-select" id="lvl"><option value="0">Easy</option><option value="1" selected>Medium</option><option value="2">Hard</option></select></label>
+      </div>
+      <div class="stat" id="cp"></div>
+    </div>
+  </div>
+</div>`;
+const $ = (s) => ui.main.querySelector(s);
+const NAME = { 1: 'Cyan', 2: 'Amber' }, OFF = 99;
+
+/* ---- rules ---- */
+const initSt = () => { const pts = Array(24).fill(0); pts[23] = 2; pts[12] = 5; pts[7] = 3; pts[5] = 5; pts[0] = -2; pts[11] = -5; pts[16] = -3; pts[18] = -5; return { pts, bar: [0, 0, 0], off: [0, 0, 0] }; };
+const own = (s, i, p) => (p === 1 ? Math.max(0, s.pts[i]) : Math.max(0, -s.pts[i]));
+const oppN = (s, i, p) => own(s, i, 3 - p);
+const inHome = (i, p) => (p === 1 ? i <= 5 : i >= 18);
+const dist = (i, p) => (p === 1 ? i + 1 : 24 - i);
+const key = (s) => s.pts.join() + '|' + s.bar + '|' + s.off;
+const pip = (s, p) => { let v = s.bar[p] * 25; for (let i = 0; i < 24; i++) v += own(s, i, p) * dist(i, p); return v; };
+function allHome(s, p) { if (s.bar[p]) return false; for (let i = 0; i < 24; i++) if (own(s, i, p) && !inHome(i, p)) return false; return true; }
+function apply(s, p, m) {
+  const n = { pts: s.pts.slice(), bar: s.bar.slice(), off: s.off.slice() }, sg = p === 1 ? 1 : -1;
+  if (m.f === -1) n.bar[p]--; else n.pts[m.f] -= sg;
+  if (m.t === OFF) n.off[p]++; else { if (n.pts[m.t] === -sg) { n.pts[m.t] = 0; n.bar[3 - p]++; } n.pts[m.t] += sg; }
+  return n;
+}
+function singles(s, p, d) {
+  const out = [], dir = p === 1 ? -1 : 1;
+  if (s.bar[p]) { const t = p === 1 ? 24 - d : d - 1; if (oppN(s, t, p) <= 1) out.push({ f: -1, t, d }); return out; }
+  const home = allHome(s, p);
+  for (let f = 0; f < 24; f++) {
+    if (!own(s, f, p)) continue; const t = f + dir * d;
+    if (t >= 0 && t < 24) { if (oppN(s, t, p) <= 1) out.push({ f, t, d }); }
+    else if (home) {
+      const ds = dist(f, p);
+      if (d === ds) out.push({ f, t: OFF, d });
+      else if (d > ds) { let far = false; for (let g = 0; g < 24; g++) if (own(s, g, p) && dist(g, p) > ds) { far = true; break; } if (!far) out.push({ f, t: OFF, d }); }
+    }
+  }
+  return out;
+}
+const memo = new Map();
+const uniq = (a) => [...new Set(a)];
+const without = (a, v) => { const r = a.slice(); r.splice(r.indexOf(v), 1); return r; };
+function maxUse(s, p, rem) {
+  if (!rem.length) return 0;
+  const k = key(s) + '#' + p + rem.slice().sort().join(); if (memo.has(k)) return memo.get(k);
+  if (memo.size > 30000) memo.clear();
+  let best = 0;
+  outer: for (const d of uniq(rem)) { const rest = without(rem, d); for (const m of singles(s, p, d)) { const v = 1 + maxUse(apply(s, p, m), p, rest); if (v > best) best = v; if (best === rem.length) break outer; } }
+  memo.set(k, best); return best;
+}
+function nextMoves(s, p, rem) {
+  const M = maxUse(s, p, rem); if (!M) return [];
+  let dice = uniq(rem);
+  if (M === 1 && dice.length > 1) { const mx = Math.max(...dice); if (singles(s, p, mx).length) dice = [mx]; }
+  const out = [];
+  for (const d of dice) { const rest = without(rem, d); for (const m of singles(s, p, d)) if (1 + maxUse(apply(s, p, m), p, rest) === M) out.push(m); }
+  return out;
+}
+function plans(s, p, rem) {
+  const out = new Map(), seen = new Set();
+  (function go(x, r, moves) {
+    const k = key(x) + '#' + r.join(); if (seen.has(k)) return; seen.add(k);
+    const nm = nextMoves(x, p, r);
+    if (!nm.length) { const kk = key(x); if (!out.has(kk)) out.set(kk, { st: x, moves }); return; }
+    for (const m of nm) go(apply(x, p, m), without(r, m.d), moves.concat([m]));
+  })(s, rem, []);
+  return [...out.values()];
+}
+
+/* ---- computer evaluation ---- */
+function evalSt(s, p) {
+  const o = 3 - p; if (s.off[p] === 15) return 1e6; if (s.off[o] === 15) return -1e6;
+  let v = (pip(s, o) - pip(s, p)) + s.bar[o] * 28 - s.bar[p] * 30 + (s.off[p] - s.off[o]) * 14, run = 0, best = 0;
+  const dirO = o === 1 ? -1 : 1;
+  for (let i = 0; i < 24; i++) {
+    const c = own(s, i, p);
+    if (c >= 2) { v += 5 + (inHome(i, p) ? 2 : 0); run++; if (run > best) best = run; if (c > 4) v -= 2 * (c - 4); } else run = 0;
+    if (c === 1) {
+      let direct = 0, ind = 0;
+      for (let g = 0; g < 24; g++) if (own(s, g, o)) { const d = (i - g) * dirO; if (d >= 1 && d <= 6) direct++; else if (d >= 7 && d <= 12) ind += 0.5; }
+      if (s.bar[o]) { const d = o === 1 ? 24 - i : i + 1; if (d <= 6) direct++; else if (d <= 12) ind += 0.5; }
+      const loss = p === 1 ? 24 - i : i + 1; v -= Math.min(0.9, direct * 0.3 + ind * 0.08) * (loss + 20);
+    }
+  }
+  return v + best * best * 1.2;
+}
+
+/* ---- game state ---- */
+let st, turn, dl = [], phase, mode, busy, sel, turnMoves, turnSt, turnDl, hintM, note, lastMoves, gen = 0;
+const human = () => mode === 'two' || turn === mode;
+const rem = () => dl.filter((d) => !d.used).map((d) => d.v);
+const validMoves = () => (phase === 'move' ? nextMoves(st, turn, rem()) : []);
+function newGame() {
+  gen++; mode = $('#mode').value === 'two' ? 'two' : +$('#mode').value; st = initSt(); turn = 1 + Board.rand(2); dl = []; phase = 'roll'; busy = false; sel = null; turnMoves = []; hintM = null; lastMoves = []; note = NAME[turn] + ' starts.';
+  render(); cpuStart();
+}
+function roll() {
+  if (phase !== 'roll') return; const g = gen, a = 1 + Board.rand(6), b = 1 + Board.rand(6); Board.sfx('dice');
+  dl = (a === b ? [a, a, a, a] : [a, b]).map((v) => ({ v, used: false })); turnSt = st; turnMoves = []; hintM = null; sel = null; lastMoves = []; note = '';
+  const M = maxUse(st, turn, rem());
+  if (!M) { note = `${NAME[turn]} rolled ${a}-${b} and has no legal move.`; phase = 'stuck'; render(); Board.after(1500, () => { if (g === gen) endTurn(); }); return; }
+  if (M === 1 && a !== b) { const mx = Math.max(a, b); if (singles(st, turn, mx).length) { const j = dl.findIndex((d) => d.v !== mx); dl[j].used = true; dl[j].void = true; note = 'Only one die can be played — the larger.'; } }
+  turnDl = dl.map((d) => ({ ...d })); phase = 'move'; autoSel(); render();
+}
+function autoSel() { if (!human()) return; const s = uniq(validMoves().map((m) => m.f)); sel = s.length === 1 ? s[0] : null; }
+function doMove(m) {
+  const p = turn, hit = m.t !== OFF && oppN(st, m.t, p) === 1, g = gen;
+  turnMoves.push(m); st = apply(st, p, m); dl[dl.findIndex((d) => !d.used && d.v === m.d)].used = true; lastMoves.push(m); sel = null; hintM = null;
+  Board.sfx(hit ? 'capture' : m.t === OFF ? 'ladder' : 'move');
+  if (st.off[p] === 15) { phase = 'over'; render(); gameOver(p); return; }
+  if (!nextMoves(st, p, rem()).length) { phase = 'done'; render(); Board.after(human() ? 550 : Board.pace(900), () => { if (g === gen) endTurn(); }); return; }
+  if (human()) autoSel(); render();
+}
+function endTurn() { turn = 3 - turn; phase = 'roll'; sel = null; turnMoves = []; hintM = null; if (!/no legal/.test(note)) note = ''; render(); cpuStart(); }
+function gameOver(p) {
+  const lo = 3 - p; let mult = 1;
+  if (!st.off[lo]) { mult = 2; const h = p === 1 ? [0, 5] : [18, 23]; let bk = st.bar[lo] > 0; for (let i = h[0]; i <= h[1]; i++) if (own(st, i, lo)) bk = true; if (bk) mult = 3; }
+  const kind = ['', 'a single game', 'a gammon (double)', 'a backgammon (triple)'][mult];
+  const msg = `${NAME[p]} wins ${kind} — ${mult} point${mult > 1 ? 's' : ''}`; $('#st').innerHTML = msg;
+  Board.sfx(mode === 'two' || p === mode ? 'win' : 'lose');
+  Board.after(600, () => Board.modal(mode === 'two' ? NAME[p] + ' wins!' : p === mode ? 'You won!' : 'Computer wins', msg, [['New game', newGame], ['Close']]));
+}
+
+/* ---- computer turn ---- */
+function cpuStart() {
+  if (phase !== 'roll' || human()) return; busy = true; render(); const g = gen;
+  Board.after(Board.pace(1100), () => { if (g !== gen || Board.paused()) return; busy = false; roll(); if (phase === 'move') cpuPlay(g); });
+}
+function choose() {
+  const p = turn, L = +$('#lvl').value, ps = plans(st, p, rem());
+  if (!ps.length) return { moves: [] };
+  const noise = [45, 8, 0][L]; ps.forEach((x) => (x.v = evalSt(x.st, p) + Math.random() * noise)); ps.sort((a, b) => b.v - a.v);
+  if (L < 2) return ps[0];
+  let best = null;
+  for (const x of ps.slice(0, 6)) {
+    let tot = 0, w = 0;
+    for (let a = 1; a <= 6; a++) for (let b = a; b <= 6; b++) {
+      const wt = a === b ? 1 : 2, o = plans(x.st, 3 - p, a === b ? [a, a, a, a] : [a, b]); let bs = x.st, bv = -1e9;
+      for (const y of o) { const v = evalSt(y.st, 3 - p); if (v > bv) { bv = v; bs = y.st; } }
+      tot += wt * evalSt(bs, p); w += wt;
+    }
+    x.v2 = tot / w; if (!best || x.v2 > best.v2) best = x;
+  }
+  return best;
+}
+function cpuPlay(g) {
+  busy = true; render();
+  Board.think(() => choose(), 900).then((pl) => {
+    if (g !== gen) return; busy = false; let k = 0;
+    (function step() { if (g !== gen || Board.paused() || phase !== 'move' || k >= pl.moves.length) return; doMove(pl.moves[k++]); if (phase === 'move') Board.after(Board.pace(950), step); })();
+  });
+}
+function undo() { if (phase !== 'move' || !human() || !turnMoves.length) return; st = turnSt; dl = turnDl.map((d) => ({ ...d })); turnMoves = []; lastMoves = []; hintM = null; autoSel(); render(); }
+function showHint() {
+  if (phase !== 'move' || !human()) return; const ps = plans(st, turn, rem()); if (!ps.length) return;
+  ps.forEach((x) => (x.v = evalSt(x.st, turn))); ps.sort((a, b) => b.v - a.v); const m = ps[0].moves[0]; if (!m) return;
+  hintM = { f: m.f, t: m.t }; sel = m.f; render();
+}
+
+/* ---- drawing ---- */
+const PW = 64, BARW = 56, X0 = 20, TOP = 24, BOT = 616, TH = 250, R = 27, TRX = X0 + 12 * PW + BARW + 14, TRW = 70, VW = TRX + TRW + 20, VH = 640, CC = { 1: '#06b6d4', 2: '#f59e0b' };
+const colX = (c) => X0 + c * PW + (c >= 6 ? BARW : 0);
+const ptPos = (i) => (i >= 12 ? { col: i - 12, top: true } : { col: 11 - i, top: false });
+const slot = (i, k, n) => { const { col, top } = ptPos(i), sp = n <= 5 ? 2 * R : (TH - 2 * R - 4) / (n - 1), x = colX(col) + PW / 2; return { x, y: top ? TOP + R + k * sp : BOT - R - k * sp }; };
+function chk(x, y, p, extra) { return `<circle cx="${x}" cy="${y}" r="${R - 2}" fill="${CC[p]}" stroke="${p === 1 ? '#0e7490' : '#b45309'}" stroke-width="3"/><circle cx="${x}" cy="${y}" r="${R - 11}" fill="none" stroke="rgba(0,0,0,.25)" stroke-width="2"/>${extra || ''}`; }
+function render() {
+  const can = phase === 'move' && human() && !busy, vm = can ? validMoves() : [], srcs = new Set(vm.map((m) => m.f)), dests = new Set(sel !== null ? vm.filter((m) => m.f === sel).map((m) => m.t) : []);
+  let s = `<svg viewBox="0 0 ${VW} ${VH}" role="img" aria-label="Backgammon board"><rect width="${VW}" height="${VH}" fill="#0c1226"/><rect x="${X0 - 8}" y="${TOP - 10}" width="${12 * PW + BARW + 16}" height="${BOT - TOP + 20}" rx="10" fill="#10182e" stroke="#26335c" stroke-width="3"/><rect x="${X0 + 6 * PW}" y="${TOP - 10}" width="${BARW}" height="${BOT - TOP + 20}" fill="#1b2340"/>`;
+  for (let i = 0; i < 24; i++) {
+    const { col, top } = ptPos(i), x = colX(col), pts = top ? `${x},${TOP} ${x + PW},${TOP} ${x + PW / 2},${TOP + TH}` : `${x},${BOT} ${x + PW},${BOT} ${x + PW / 2},${BOT - TH}`;
+    s += `<polygon points="${pts}" fill="${col % 2 ? '#6b4a2e' : '#26407a'}"/>`;
+    if (dests.has(i)) s += `<polygon points="${pts}" fill="rgba(6,182,212,.35)" stroke="#67e8f9" stroke-width="3" class="pulse"/>`;
+    if (hintM && hintM.t === i) s += `<polygon points="${pts}" fill="none" stroke="#fff" stroke-width="3" stroke-dasharray="8 6"/>`;
+  }
+  for (let i = 0; i < 24; i++) {
+    const c = st.pts[i], n = Math.abs(c), p = c > 0 ? 1 : 2;
+    for (let k = 0; k < n; k++) { const { x, y } = slot(i, k, n), topC = k === n - 1; s += chk(x, y, p, topC && n > 5 ? `<text x="${x}" y="${y + 6}" text-anchor="middle" font-size="18" font-weight="800" fill="#04121a">${n}</text>` : ''); }
+    if (n && sel === i) { const { x, y } = slot(i, n - 1, n); s += `<circle cx="${x}" cy="${y}" r="${R + 3}" fill="none" stroke="#fff" stroke-width="4"/>`; }
+    else if (n && can && srcs.has(i)) { const { x, y } = slot(i, n - 1, n); s += `<circle cx="${x}" cy="${y}" r="${R + 3}" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="2" stroke-dasharray="4 4"/>`; }
+  }
+  const bx = X0 + 6 * PW + BARW / 2;
+  for (let p = 1; p <= 2; p++) for (let k = 0; k < st.bar[p]; k++) { const y = p === 1 ? 372 + k * 40 : 268 - k * 40; s += chk(bx, y, p); }
+  if (can && srcs.has(-1)) s += `<circle cx="${bx}" cy="${turn === 1 ? 372 : 268}" r="${R + 3}" fill="none" stroke="${sel === -1 ? '#fff' : 'rgba(255,255,255,.6)'}" stroke-width="3" stroke-dasharray="${sel === -1 ? 0 : '4 4'}"/>`;
+  s += `<rect x="${TRX}" y="${TOP - 10}" width="${TRW}" height="${BOT - TOP + 20}" rx="10" fill="#10182e" stroke="#26335c" stroke-width="3"/>`;
+  for (let p = 1; p <= 2; p++) for (let k = 0; k < st.off[p]; k++) { const y = p === 1 ? BOT - 16 - k * 15 : TOP + 4 + k * 15; s += `<rect x="${TRX + 8}" y="${y}" width="${TRW - 16}" height="12" rx="3" fill="${CC[p]}"/>`; }
+  if (dests.has(OFF)) s += `<rect x="${TRX}" y="${(turn === 1 ? BOT - 260 : TOP - 10)}" width="${TRW}" height="270" rx="10" fill="rgba(6,182,212,.3)" stroke="#67e8f9" stroke-width="3" class="pulse"/>`;
+  s += `<text x="${TRX + TRW / 2}" y="${VH / 2 + 5}" text-anchor="middle" fill="#8b93b3" font-size="14" font-weight="700">OFF</text>`;
+  for (let i = 0; i < 24; i++) { const { col, top } = ptPos(i), x = colX(col); s += `<rect class="zone${can ? ' go' : ''}" data-pt="${i}" x="${x}" y="${top ? TOP : BOT - TH}" width="${PW}" height="${TH}"/>`; }
+  s += `<rect class="zone${can ? ' go' : ''}" data-bar="1" x="${X0 + 6 * PW}" y="${TOP}" width="${BARW}" height="${BOT - TOP}"/><rect class="zone${can ? ' go' : ''}" data-off="1" x="${TRX}" y="${TOP - 10}" width="${TRW}" height="${BOT - TOP + 20}"/>`;
+  $('#bd').innerHTML = s + '</svg>';
+
+  let status;
+  if (phase === 'over') status = $('#st').innerHTML;
+  else if (busy) status = 'Computer is thinking…';
+  else if (phase === 'roll') status = `<span class="dot ${turn === 1 ? 'c' : 'a'}"></span>${NAME[turn]} to roll${mode !== 'two' && human() ? ' — press Roll dice' : ''}`;
+  else if (phase === 'move') status = `<span class="dot ${turn === 1 ? 'c' : 'a'}"></span>${NAME[turn]} to move${mode !== 'two' && human() ? ' — pick a checker, then a glowing point' : ''}`;
+  else status = `<span class="dot ${turn === 1 ? 'c' : 'a'}"></span>${NAME[turn]}…`;
+  if (phase !== 'over') $('#st').innerHTML = status + (note ? `<div class="note">${note}</div>` : '');
+  $('#dice').innerHTML = dl.map((d) => `<span class="die${d.void ? ' v' : d.used ? ' u' : ''}">${'⚀⚁⚂⚃⚄⚅'[d.v - 1]}</span>`).join('') || '<span class="stat">Dice appear here</span>';
+  $('#roll').disabled = !(phase === 'roll' && human() && !busy); $('#undo').disabled = !(phase === 'move' && human() && turnMoves.length); $('#hint').disabled = !(can);
+  $('#cp').innerHTML = `<span class="dot c"></span>Cyan — pips <b>${pip(st, 1)}</b> · bar <b>${st.bar[1]}</b> · off <b>${st.off[1]}</b><br><span class="dot a"></span>Amber — pips <b>${pip(st, 2)}</b> · bar <b>${st.bar[2]}</b> · off <b>${st.off[2]}</b><br>Pips = total distance still to travel; lower is ahead in the race.`;
+}
+function pickMove(f, t) { const c = validMoves().filter((m) => m.f === f && m.t === t).sort((a, b) => a.d - b.d); return c[0]; }
+$('#bd').addEventListener('click', (e) => {
+  if (phase !== 'move' || !human() || busy) return;
+  const z = e.target.closest('.zone'); if (!z) return; const vm = validMoves(), srcs = new Set(vm.map((m) => m.f));
+  let target = null;
+  if (z.dataset.off) target = OFF; else if (z.dataset.pt !== undefined) target = +z.dataset.pt; else if (z.dataset.bar) target = 'bar';
+  if (sel !== null && target !== 'bar') { const m = pickMove(sel, target); if (m) { doMove(m); return; } }
+  const src = target === 'bar' ? -1 : target;
+  if (src !== OFF && srcs.has(src)) { sel = src; hintM = null; Board.sfx('click'); render(); }
+  else { if (sel !== null && !autoOnly()) sel = null; Board.sfx('error'); render(); }
+});
+function autoOnly() { return uniq(validMoves().map((m) => m.f)).length === 1; }
+$('#roll').onclick = () => { if (phase === 'roll' && human() && !busy) { roll(); } };
+$('#undo').onclick = undo; $('#hint').onclick = showHint; $('#new').onclick = newGame; $('#mode').onchange = newGame;
+document.addEventListener('keydown', (e) => {
+  if (/INPUT|SELECT|TEXTAREA|BUTTON/.test(e.target.tagName) && e.key === ' ') return;
+  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'n') newGame(); else if (k === 'u') undo(); else if (k === 't') showHint();
+  else if (k === 'r' || k === ' ') { if (phase === 'roll' && human() && !busy) { e.preventDefault(); roll(); } }
+});
+newGame();
+</script>
+<script src="../../kits/menu-bootstrap.js"></script>
+</body>
+</html>

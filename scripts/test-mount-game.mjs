@@ -37,7 +37,7 @@ try {
   page.on('console', (message) => { if (message.type() === 'error') errors.push(`${message.text()} ${JSON.stringify(message.location())}`); });
   page.on('requestfailed', (request) => errors.push(`request failed ${request.url()}: ${request.failure()?.errorText}`));
   page.on('response', (response) => { if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`); });
-  await page.goto(`${origin}/assets/aistudio/01-flappy-bird.html`);
+  await page.goto(`${origin}/assets/games/01-flappy-bird/index.html`);
   await page.waitForFunction(() => window.UI?.mountGame && window.Arcade?.test?.G?.ui?.controls?.isConnected);
   const menu = page.locator('.apex-game-menu');
   const launchMenu = page.locator('.apex-menu-root');

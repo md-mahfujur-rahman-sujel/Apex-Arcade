@@ -24,7 +24,8 @@ if (await access(chromePath, constants.R_OK).then(() => true, () => false)) {
 }
 
 const previewServer = await preview({ preview: { host: '127.0.0.1', port: 0 } });
-const baseUrl = `http://127.0.0.1:${previewServer.httpServer.address().port}`;
+const basePath = previewServer.config.base || '/';
+const baseUrl = `http://127.0.0.1:${previewServer.httpServer.address().port}${basePath.replace(/\/$/, '')}`;
 const distRoot = path.resolve(root, 'dist');
 const browser = await chromium.launch(browserOptions);
 const viewports = [
@@ -532,7 +533,8 @@ try {
     // Fulfill preview requests from the exact production output through Playwright routing.
     await context.route(`${baseUrl}/**`, async (route) => {
       const pathname = decodeURIComponent(new URL(route.request().url()).pathname);
-      const filePath = path.resolve(distRoot, `.${pathname}`);
+      const relativePath = pathname.startsWith(basePath) ? pathname.slice(basePath.length - 1) : pathname;
+      const filePath = path.resolve(distRoot, `.${relativePath}`);
       if (filePath !== distRoot && !filePath.startsWith(`${distRoot}${path.sep}`)) {
         await route.fulfill({ status: 403, body: 'Forbidden' });
         return;

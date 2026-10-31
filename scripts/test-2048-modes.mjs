@@ -16,7 +16,7 @@ try {
   page.on('console', (message) => { if (message.type() === 'error') errors.push(`${message.text()} (${message.location().url})`); });
   page.on('response', (response) => { if (response.status() >= 400) errors.push(`HTTP ${response.status()} ${response.url()}`); });
   await page.route('**/favicon.ico', (route) => route.fulfill({ status: 204, body: '' }));
-  await page.goto(`${origin}/assets/aistudio/42-2048.html`);
+  await page.goto(`${origin}/assets/games/42-2048/index.html`);
   const launchMenu = page.locator('.apex-menu-root');
   await launchMenu.locator('[data-menu-action="play"]').click();
   await launchMenu.waitFor({ state: 'hidden' });
