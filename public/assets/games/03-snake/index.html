@@ -375,7 +375,6 @@ function drawClassic(G, c) {
   drawCombo(c, G);
   A.vignette(c, W, H, 0.4);
   G.drawFX(c);
-  A.text(c, modeLabel() + ' · K: skin (Classic) · T: ' + ((MODE_INFO[activeMode] || MODE_INFO.classic).fixedWrap ? 'walls fixed' : wrap ? 'solid walls' : 'wrap') + ' · food ×' + (wrap ? '1' : '1.5'), W / 2, H - 8, 12, '#8b93b3', 'center', '600');
 }
 
 /* ================= EMBER SKIN ================= */
@@ -486,7 +485,6 @@ function drawEmber(G, c) {
   Fx.bloom(c, W, H, 0.45);
   Fx.vignette(c, W, H, 0.4);
   G.drawFX(c);
-  A.text(c, modeLabel() + ' · K: skin (Ember) · T: ' + ((MODE_INFO[activeMode] || MODE_INFO.classic).fixedWrap ? 'walls fixed' : wrap ? 'solid walls' : 'wrap') + ' · food ×' + (wrap ? '1' : '1.5'), W / 2, H - 8, 12, '#8b93b3', 'center', '600');
 }
 
 function draw(G, c) { if (skin === 'classic') drawClassic(G, c); else drawEmber(G, c); }

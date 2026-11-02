@@ -264,38 +264,30 @@
     /* DOM */
     const style = document.createElement('style');
     style.textContent =
-      '*{box-sizing:border-box}html,body{margin:0;min-height:100%}' +
+      '*{box-sizing:border-box}html,body{margin:0;height:100%}' +
       'body{background:radial-gradient(1200px 700px at 50% -10%,#151b33,#090A10 60%);color:#e6e9f5;font-family:' + A.FONT + ';-webkit-user-select:none;user-select:none;touch-action:manipulation}' +
-      '.arc{max-width:' + (W + 40) + 'px;margin:0 auto;padding:14px 16px 28px;text-align:center}' +
+      '.arc{height:100%;max-width:' + (W + 40) + 'px;margin:0 auto;padding:14px 16px 16px;text-align:center;display:flex;flex-direction:column}' +
       '.arc h1{margin:6px 0 2px;font-size:26px;letter-spacing:-.02em;font-weight:800}' +
       '.arc .sub{margin:0 0 12px;color:#8b93b3;font-size:14px}' +
-      '.wrap{position:relative;display:flex;justify-content:center;background:#000;border-radius:12px;box-shadow:0 0 0 1px rgba(255,255,255,.1),0 12px 50px rgba(6,182,212,.14)}' +
-      'canvas{display:block;width:100%;height:auto;max-width:' + W + 'px;aspect-ratio:' + W + '/' + H + ';border-radius:12px;background:#000;touch-action:none}' +
+      '.wrap{position:relative;flex:1;min-height:0;display:flex;align-items:center;justify-content:center;background:#000;border-radius:12px;box-shadow:0 0 0 1px rgba(255,255,255,.1),0 12px 50px rgba(6,182,212,.14)}' +
+      'canvas{display:block;width:auto;height:auto;max-width:100%;max-height:100%;aspect-ratio:' + W + '/' + H + ';border-radius:12px;background:#000;touch-action:none}' +
       '.wrap:fullscreen{align-items:center;background:#000;border-radius:0}.wrap:fullscreen canvas{height:100vh;width:auto;max-width:100vw;border-radius:0}' +
-      '.bar{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:12px 0 4px}' +
-      '.bar button{background:#151926;color:#e6e9f5;border:1px solid rgba(255,255,255,.12);padding:8px 16px;border-radius:9px;font:600 13px ' + A.FONT + ';cursor:pointer}' +
-      '.bar button:hover{border-color:#06B6D4;color:#67e8f9}' +
-      '.help{color:#c8cde4;font-size:14px;margin:10px 0 0;padding:10px 14px;line-height:1.55;background:#151926;border:1px solid rgba(255,255,255,.1);border-radius:10px}' +
-      '.touch{position:absolute;left:0;right:0;bottom:8px;display:none;justify-content:space-between;padding:0 10px;pointer-events:none}' +
-      '.touch .g{display:flex;gap:10px;pointer-events:auto}' +
+      '.touch{display:none;justify-content:space-between;gap:10px;padding:10px 2px 0}' +
+      '.touch .g{display:flex;gap:10px}' +
       '.touch button{width:62px;height:62px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:rgba(20,26,45,.55);color:#fff;font:700 18px ' + A.FONT + ';touch-action:none;backdrop-filter:blur(4px)}' +
       '.touch button:active,.touch button.on{background:rgba(6,182,212,.55)}' +
       '@media (pointer:coarse){.touch{display:flex}}';
     document.head.appendChild(style);
     document.title = cfg.title;
+    const touchMarkup = !THEATER_EMBEDDED && (cfg.touchL || cfg.touchR)
+      ? '<div class="touch"><div class="g L"></div><div class="g R"></div></div>' : '';
     document.body.innerHTML =
-      '<main class="arc"><h1></h1><p class="sub"></p><div class="wrap"><canvas></canvas><div class="touch"><div class="g L"></div><div class="g R"></div></div></div>' +
-      '<div class="bar"><button data-a="restart">Restart</button><button data-a="pause">Pause</button><button data-a="mute"></button><button data-a="full">Fullscreen</button></div>' +
-      '<p class="help"></p></main>';
+      '<main class="arc"><h1></h1><p class="sub"></p><div class="wrap"><canvas></canvas></div>' + touchMarkup + '</main>';
     document.querySelector('h1').textContent = cfg.title;
     document.querySelector('.sub').textContent = cfg.subtitle || '';
-    document.querySelector('.help').textContent = cfg.controls ? 'Controls — ' + cfg.controls.map((r) => r.join(': ')).join('  ·  ') + '  ·  P pause  ·  M mute' : (cfg.help ? 'Controls — ' + cfg.help : 'P pause  ·  M mute');
     const canvas = document.querySelector('canvas'), wrap = document.querySelector('.wrap');
     canvas.width = W * dpr; canvas.height = H * dpr;
     const ctx = canvas.getContext('2d');
-    const muteBtn = document.querySelector('[data-a=mute]');
-    const syncMute = () => { muteBtn.textContent = A.muted ? 'Sound: off' : 'Sound: on'; };
-    syncMute();
     const mkTouch = (sel, list) => {
       const host = document.querySelector(sel);
       (list || []).forEach(([label, code]) => {
@@ -308,8 +300,10 @@
         host.appendChild(b);
       });
     };
-    mkTouch('.touch .L', cfg.touchL);
-    mkTouch('.touch .R', cfg.touchR);
+    if (!THEATER_EMBEDDED) {
+      mkTouch('.touch .L', cfg.touchL);
+      mkTouch('.touch .R', cfg.touchR);
+    }
 
     /* state */
     let hi = 0;
@@ -501,7 +495,6 @@
           window.Save.update(cfg.id || cfg.title, { settings: { musicVol: A.muted ? 0 : 0.8, sfxVol: A.muted ? 0 : 0.8 } });
         }
         try { localStorage.setItem('arcade-muted', A.muted ? '1' : '0'); } catch (x) {}
-        syncMute();
         return;
       }
       if (e.code === 'KeyP' || e.code === 'Escape') { if (!e.repeat) G.pauseToggle(); return; }
@@ -519,22 +512,6 @@
       else if (G.state === 'over' || G.state === 'won') { if (G.stateT > 25) G.restart(true); }
       else if (G.state === 'paused') G.pauseToggle();
     });
-    document.querySelector('.bar').addEventListener('click', (e) => {
-      const a = e.target.dataset && e.target.dataset.a;
-      if (a === 'restart') G.restart(true);
-      else if (a === 'pause') G.pauseToggle();
-      else if (a === 'mute') {
-        A.muted = !A.muted;
-        if (window.Save && typeof window.Save.update === 'function') {
-          window.Save.update(cfg.id || cfg.title, { settings: { musicVol: A.muted ? 0 : 0.8, sfxVol: A.muted ? 0 : 0.8 } });
-        }
-        try { localStorage.setItem('arcade-muted', A.muted ? '1' : '0'); } catch (x) {}
-        syncMute();
-      }
-      else if (a === 'full') { if (document.fullscreenElement) document.exitFullscreen(); else if (wrap.requestFullscreen) wrap.requestFullscreen().catch(() => {}); }
-      e.target.blur && e.target.blur();
-    });
-
     /* loop */
     let last = performance.now(), acc = 0;
     function stepOnce() {

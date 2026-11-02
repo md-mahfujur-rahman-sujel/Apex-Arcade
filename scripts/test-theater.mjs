@@ -151,6 +151,9 @@ try {
     assert.equal(await gameTheater.getAttribute('data-touch-mode'), gameNumber <= 20 ? 'virtual' : 'native', `${gameId} receives its configured touch mode`);
     await gameTheater.locator('[data-ui-open]').click();
     if (gameNumber <= 20) {
+      const gameFrame = gameTheater.frameLocator('iframe');
+      await gameFrame.locator('[data-menu-action="play"], [data-menu-action="continue"]').first().click({ timeout: 5000 });
+      await gameFrame.locator('.apex-menu-root').waitFor({ state: 'hidden' });
       const controls = gameTheater.locator('[data-touch-layout] button');
       await controls.first().waitFor();
       await page.locator('#playable-theater-modal iframe').evaluate((frame) => {

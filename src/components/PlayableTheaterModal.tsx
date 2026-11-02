@@ -109,6 +109,14 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
 
   const showingEngine = Boolean(game?.playableEngineId && (viewMode === '2.5d' || !game.htmlPath));
   const canPause = Boolean(game && hasLaunched && (showingEngine || iframeStarted));
+  // Keep the touch pad off the game menu; it only belongs during a live run.
+  const showTouchPad = Boolean(
+    game &&
+    hasLaunched &&
+    showVirtualControls &&
+    game.touchControls?.mode === 'virtual' &&
+    (showingEngine || iframeStarted)
+  );
 
   // Auto-detect touch device to enable virtual controls by default
   useEffect(() => {
@@ -888,7 +896,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
               }} />
             </div>
           ) : renderEngine()}
-          {hasLaunched && showVirtualControls && game.touchControls?.mode === 'virtual' && <div aria-label={`${game.title} touch controls`} data-touch-layout={game.id} className="pointer-events-none absolute bottom-2 left-2 right-2 z-30 flex items-end justify-between gap-3 pb-[env(safe-area-inset-bottom)]">
+          {showTouchPad && game.touchControls && <div aria-label={`${game.title} touch controls`} data-touch-layout={game.id} className="z-10 mt-2 flex w-full shrink-0 items-end justify-between gap-3 px-2 pb-[env(safe-area-inset-bottom)]">
             {game.touchControls.directions && <div className="pointer-events-auto grid grid-cols-3 gap-1 rounded-2xl border border-white/10 bg-[#070B18]/85 p-2 shadow-2xl backdrop-blur-md">
               <span />{(['up'] as const).map((direction) => game.touchControls?.directions?.[direction] && <button key={direction} type="button" aria-label={`${direction} (${game.touchControls.directions[direction]})`} onPointerDown={(event) => { event.preventDefault(); dispatchVirtualKey(game.touchControls!.directions![direction]!, 'down'); }} onPointerUp={() => dispatchVirtualKey(game.touchControls!.directions![direction]!, 'up')} onPointerCancel={() => dispatchVirtualKey(game.touchControls!.directions![direction]!, 'up')} onPointerLeave={() => dispatchVirtualKey(game.touchControls!.directions![direction]!, 'up')} className="h-11 w-11 rounded-xl bg-white/10 text-sm font-bold text-cyan-200">&#8593;</button>)}<span />
               {(['left','down','right'] as const).map((direction) => game.touchControls?.directions?.[direction] && <button key={direction} type="button" aria-label={`${direction} (${game.touchControls.directions[direction]})`} onPointerDown={(event) => { event.preventDefault(); dispatchVirtualKey(game.touchControls!.directions![direction]!, 'down'); }} onPointerUp={() => dispatchVirtualKey(game.touchControls!.directions![direction]!, 'up')} onPointerCancel={() => dispatchVirtualKey(game.touchControls!.directions![direction]!, 'up')} onPointerLeave={() => dispatchVirtualKey(game.touchControls!.directions![direction]!, 'up')} className="h-11 w-11 rounded-xl bg-white/10 text-sm font-bold text-cyan-200">{direction === 'left' ? '\u2190' : direction === 'right' ? '\u2192' : '\u2193'}</button>)}

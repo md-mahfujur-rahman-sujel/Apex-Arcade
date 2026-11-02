@@ -234,6 +234,12 @@ try {
   await page.waitForFunction(() => document.querySelector('.apex-menu-root').hidden === true);
   await page.evaluate(() => A.test.step(34));
   await page.waitForTimeout(150);
+  const chrome = await page.evaluate(() => ({
+    shell: Boolean(document.querySelector('.bar, .help')),
+    menuToolbar: getComputedStyle(document.querySelector('.apex-game-menu')).display,
+  }));
+  assert.equal(chrome.shell, false, 'the game shell no longer renders a button bar or controls box');
+  assert.equal(chrome.menuToolbar, 'none', 'no control toolbar covers a live run');
   await page.screenshot({ path: path.join(tmpdir(), 'game-03-gameplay.png') });
   await context.close();
 

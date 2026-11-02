@@ -425,6 +425,8 @@
       button('Back', function () { customizeOpen = false; render(); });
     }
     function render() {
+      // Keep the board unobstructed during play; menus return with the next state.
+      root.style.display = G.state === 'playing' ? 'none' : 'flex';
       panelEl.textContent = ''; panelEl.setAttribute('role', settingsOpen ? 'group' : 'toolbar');
       panelEl.setAttribute('aria-label', settingsOpen ? 'Game settings' : 'Game menu');
       var expanded = customizeOpen || tutorialOpen || achievementsOpen;
@@ -452,7 +454,7 @@
           if (window.Meta && typeof Meta.getCosmetics === 'function' && Meta.getCosmetics(config.id).length) button('Customize', function () { customizeOpen = true; render(); });
         }
       } else if (G.state === 'playing') {
-        button('Pause', pause);
+        /* No toolbar over a live run; P/Esc and the host still pause. */
       } else if (G.state === 'paused') {
         if (settingsOpen) {
           gameSettings.forEach(function (item) {

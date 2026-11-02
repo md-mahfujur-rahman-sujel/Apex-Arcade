@@ -35,7 +35,7 @@ const viewports = [
 
 const ok = (detail = '') => ({ pass: true, detail });
 const fail = (detail) => ({ pass: false, detail });
-const checks = ['load', 'menu', 'start', 'session_start', 'input', 'pause/resume', 'difficulty', 'lite', 'score/session_end'];
+const checks = ['load', 'menu', 'start', 'touch_chrome', 'session_start', 'input', 'pause/resume', 'difficulty', 'lite', 'score/session_end'];
 const messageHook = () => {
   window.__smokeApexEvents = [];
   window.addEventListener('message', (event) => {
@@ -322,7 +322,9 @@ async function testGame(game, viewport, browserContext) {
     frame = page.frames().find((candidate) => candidate.url().includes(game.htmlPath));
     if (!frame) throw new Error(`Game iframe did not load ${game.htmlPath}`);
     const menuRoot = frame.locator('.apex-menu-root');
+    let padOverMenu = false;
     if (await menuRoot.count() && await menuRoot.isVisible().catch(() => false)) {
+      padOverMenu = await page.evaluate(() => Boolean(document.querySelector('#playable-theater-modal [data-touch-layout]')));
       await frame.locator('[data-menu-action="play"], [data-menu-action="continue"]').first().click({ timeout: 2000 });
       await menuRoot.waitFor({ state: 'hidden', timeout: 2000 });
     }
@@ -357,6 +359,11 @@ async function testGame(game, viewport, browserContext) {
           ? ok('Board game initialized after Start')
           : fail('Board root did not initialize after Start');
     }
+
+    const boardTouchPads = await frame.evaluate(() => document.querySelectorAll('.touch button').length);
+    result.touch_chrome = padOverMenu || boardTouchPads > 0
+      ? fail(`Touch controls overlap the game surface (menu pad: ${padOverMenu}, board pads: ${boardTouchPads})`)
+      : ok('Touch controls stay clear of the game menu and board');
 
     result.input = await testMove(frame, viewport.hasTouch, game.id);
 
@@ -607,7 +614,7 @@ const lines = [
   '',
   ...summary,
   '',
-  'Checks: game surface loaded within 2 s; theater launch menu visible; Start entered gameplay or initialized the board; `session_start` reached the host within 3 s; scripted input changed game state or board; pause and resume; Easy/Normal/Hard changed the shared setting and compatible game controls; Lite tier reached `Perf.tier` and the game surface remained active; a final score and `session_end` reached the host; no console or page errors. Board result delivery uses a synthetic terminal modal to exercise the shared board hook; Mahjong uses its page-exit handler.',
+  'Checks: game surface loaded within 2 s; theater launch menu visible; Start entered gameplay or initialized the board; touch controls stayed clear of the game menu and board; `session_start` reached the host within 3 s; scripted input changed game state or board; pause and resume; Easy/Normal/Hard changed the shared setting and compatible game controls; Lite tier reached `Perf.tier` and the game surface remained active; a final score and `session_end` reached the host; no console or page errors. Board result delivery uses a synthetic terminal modal to exercise the shared board hook; Mahjong uses its page-exit handler.',
   '',
   '| # | Game | Desktop 1280 × 720 | Mobile 390 × 844 touch | Result |',
   '|---:|---|---|---|---|',
