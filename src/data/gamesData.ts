@@ -40,9 +40,9 @@ const BASE_GAMES_DATA: GameInfo[] = [
     developer: 'Atari (Allan Alcorn)',
     originalPlatform: 'Arcade Coin-Op',
     tagline: 'The spark that ignited the digital gaming universe.',
-    description: 'A neon paddle duel against an adaptive CPU or a second player with variable deflection angles.',
+    description: 'A neon paddle duel with Ion Pods, a five-pilot circuit, and an adaptive CPU or a second player on the same court.',
     legacy: 'First commercially successful arcade video game in history.',
-    controlsSummary: 'W/S or Up/Down arrows to steer paddle. Press 2 for 2-player.',
+    controlsSummary: 'W/S or Up/Down arrows to steer paddle. Steer returns into Ion Pods to overcharge. Press 2 for 2-player.',
     keys: 'W/S or ↑/↓ — paddle · 2 = two players',
     accentColor: '#22D3EE',
     icon: '⚡',
@@ -1225,7 +1225,7 @@ const launcherDefaults: Record<GameInfo['category'], Omit<CompleteLauncherMetada
 
 const launcherOverrides: Partial<Record<string, Partial<CompleteLauncherMetadata>>> = {
   'flappy-bird': { sessionMinutes: 5, modes: ['Gauntlet', 'Endless Flight', 'Practice'], levelCount: 10 },
-  pong: { players: '1-2P', modes: ['Solo vs CPU', 'Local Versus', 'First to 11'] },
+  pong: { players: '1-2P', modes: ['City Circuit', 'Local Versus', 'Rally Rush'], levelCount: 5 },
   snake: { sessionMinutes: 8, modes: ['Campaign', 'Endless', 'Solid Walls'], levelCount: 10 },
   tetris: { sessionMinutes: 15, modes: ['Marathon', 'Sprint', 'Ultra'], levelCount: 15 },
   'street-fighter-ii': { players: '1-2P', sessionMinutes: 8, modes: ['Arcade Ladder', 'Local Versus', 'Training'], levelCount: 8 },

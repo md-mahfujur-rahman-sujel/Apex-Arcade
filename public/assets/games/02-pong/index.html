@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="../../../apex-icon.svg" type="image/svg+xml">
 <title>Ion Rally</title>
 <script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
 </head>
@@ -30,19 +31,67 @@ let scPop = [0, 0], edge = [0, 0], hitFlash = [0, 0], wallFlash = [0, 0], banner
 let activeMode = 'classic', winTarget = WIN, circuitOpponent = 0, difficulty = 'normal', speedScale = 1, shakeScale = 1;
 let dailySeed = 0, rngState = 1, leftColor = '#22d3ee', rightColor = '#f472b6', ballRim = '#22d3ee', arenaTheme = 'ion';
 let firstRallyScored = false, edgeReturn = false, cpuTier = 0, ionGame = null;
+let pod = null, podHits = 0, lastHitter = -1, overcharge = [0, 0], podRespawn = 0, lastInitMode = null;
+const CIRCUIT = [
+  { name: 'SPARK', color: '#67e8f9' },
+  { name: 'VECTOR', color: '#a78bfa' },
+  { name: 'HALO', color: '#fbbf24' },
+  { name: 'NULL', color: '#34d399' },
+  { name: 'OVERDRIVE', color: '#fb7185' },
+];
+const CIRCUIT_LENGTH = CIRCUIT.length;
 function random01() {
-  if (activeMode !== 'daily-rally') return Math.random();
+  if (!dailySeed) return Math.random();
   rngState ^= rngState << 13; rngState ^= rngState >>> 17; rngState ^= rngState << 5;
   return (rngState >>> 0) / 4294967296;
 }
 function randomRange(min, max) { return min + random01() * (max - min); }
 function scorePoints(G, amount) { G.addScore(Math.round(amount)); }
+function readSeed() {
+  const value = Number(new URLSearchParams(window.location.search).get('seed'));
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+function seedFor(modeId) { return modeId === 'daily-rally' ? todaySeed() : readSeed(); }
+function paddleH(idx) { return PH + (overcharge[idx] > 0 ? 18 : 0); }
+function pilot() { return CIRCUIT[Math.min(circuitOpponent, CIRCUIT_LENGTH - 1)]; }
+function hudText() {
+  const label = activeMode === 'city-circuit' || activeMode === 'grand-circuit'
+    ? (activeMode === 'grand-circuit' ? 'GRAND CIRCUIT' : 'CITY CIRCUIT') + ' · PILOT ' + (circuitOpponent + 1) + ' ' + pilot().name
+    : activeMode === 'rally-rush' ? 'RALLY RUSH'
+    : activeMode === 'daily-rally' ? 'DAILY RALLY · seed ' + String(dailySeed).slice(-5)
+    : mode === 1 ? 'YOU vs CPU' : '2 PLAYERS';
+  const boost = overcharge[0] > 0 ? ' · OVERCHARGE ' + Math.ceil(overcharge[0] / 60) + 's' : '';
+  return label + '  ·  first to ' + winTarget + boost;
+}
+function spawnPod() {
+  pod = { x: randomRange(W * 0.30, W * 0.70), y: randomRange(TOP + 70, BOT - 70), r: 15, active: true };
+  podRespawn = 0;
+}
+function collectPod(G) {
+  if (!pod || !pod.active || lastHitter < 0) return;
+  const who = lastHitter;
+  pod.active = false; podRespawn = 420;
+  overcharge[who] = 480;
+  A.sfx('power'); G.freeze(2); G.shake(5);
+  G.burst(pod.x, pod.y, 28, { color: [leftColor, '#fde68a', '#fff'], speed: 5.5, glow: true, life: 34 });
+  G.ring(pod.x, pod.y, '#fde68a', 64); G.ring(pod.x, pod.y, '#fff', 36, 14);
+  banner = { text: who === 0 ? 'ION POD · OVERCHARGE' : 'CPU OVERCHARGE', color: '#fde68a', t: 0 };
+  if (who === 0) {
+    if (mode === 1) scorePoints(G, 75);
+    G.popup(pod.x, pod.y - 26, mode === 1 ? 'POD +75' : 'POD', '#fde68a', 16);
+    if (++podHits >= 3) unlock('pod-runner');
+  }
+}
+function setCircuitLevel(G, lvl) {
+  Save.update('ion-rally', { level: lvl });
+  if (window.Apex) Apex.report({ gameId: 'ion-rally', type: 'level_complete', level: lvl, score: G.score, mode: activeMode });
+}
 function applyMode(id) {
   activeMode = id || 'classic'; mode = activeMode === 'classic-local' ? 2 : 1;
   winTarget = activeMode === 'rally-rush' ? 5 : WIN;
-  circuitOpponent = 0; cpuTier = 0;
-  dailySeed = activeMode === 'daily-rally' ? todaySeed() : 0; rngState = dailySeed || 1;
-  if (ionGame && ionGame.state !== 'ready') ionGame.restart(true);
+  circuitOpponent = 0; cpuTier = activeMode === 'grand-circuit' ? 1 : 0;
+  dailySeed = seedFor(activeMode); rngState = dailySeed || 1;
+  if (ionGame && lastInitMode !== activeMode) ionGame.restart(false);
 }
 function applySetting(key, value) {
   if (key === 'difficulty') { difficulty = value; speedScale = value === 'easy' ? 0.8 : value === 'hard' ? 1.35 : 1; }
@@ -123,12 +172,15 @@ function resetMatch(G) {
   sc = [0, 0]; level = 1; rally = 0; trail = []; ripples = [];
   scPop = [0, 0]; edge = [0, 0]; hitFlash = [0, 0]; wallFlash = [0, 0]; banner = null;
   firstRallyScored = false; edgeReturn = false;
+  overcharge = [0, 0]; podHits = 0; lastHitter = -1;
+  spawnPod();
   cpu = { target: (TOP + BOT) / 2, err: 0, wait: 0 };
   serve(G, random01() < 0.5 ? 1 : -1);
 }
+function ballSpeed() { return activeMode === 'rally-rush' ? 6.4 : activeMode === 'grand-circuit' ? 6.0 : 5.2; }
 function serve(G, dir) {
-  serveDir = dir; serveT = 100; rally = 0; trail = [];
-  ball = { x: W / 2, y: (TOP + BOT) / 2, vx: 0, vy: 0, sp: activeMode === 'rally-rush' ? 6.4 : 5.2 };
+  serveDir = dir; serveT = 100; rally = 0; trail = []; lastHitter = -1;
+  ball = { x: W / 2, y: (TOP + BOT) / 2, vx: 0, vy: 0, sp: ballSpeed() };
 }
 function launch() {
   const a = randomRange(-0.45, 0.45);
@@ -137,9 +189,10 @@ function launch() {
 function init(G) {
   mode = activeMode === 'classic-local' ? 2 : 1;
   winTarget = activeMode === 'rally-rush' ? 5 : WIN;
-  circuitOpponent = activeMode === 'city-circuit' ? 0 : circuitOpponent;
-  dailySeed = activeMode === 'daily-rally' ? todaySeed() : 0; rngState = dailySeed || 1;
-  resetMatch(G); G.hudL = '';
+  circuitOpponent = 0; cpuTier = activeMode === 'grand-circuit' ? 1 : 0;
+  dailySeed = seedFor(activeMode); rngState = dailySeed || 1;
+  lastInitMode = activeMode;
+  resetMatch(G); G.hudL = hudText();
 }
 
 function predictY() {
@@ -152,9 +205,9 @@ function predictY() {
   return y + TOP + R;
 }
 
-function movePaddle(p, dir, speed) {
+function movePaddle(p, dir, speed, idx) {
   const oy = p.y;
-  p.y = A.clamp(p.y + dir * speed, TOP, BOT - PH);
+  p.y = A.clamp(p.y + dir * speed, TOP, BOT - paddleH(idx));
   p.vy = p.y - oy;
 }
 
@@ -170,17 +223,27 @@ function pointScored(G, who) {
   scPop[who] = 1; edge[who === 0 ? 1 : 0] = 1;
   banner = { text: (mode === 1 ? (who === 0 ? 'POINT!' : 'CPU SCORES') : (who === 0 ? 'LEFT SCORES' : 'RIGHT SCORES')), color: col, t: 0 };
   if (mode === 1 && who === 0) { scorePoints(G, 100 + rally * 5); G.popup(W / 2, 150, 'POINT +' + (100 + rally * 5), '#fde68a', 22); }
-  if (rally >= 8) unlock('long-rally'); if (rally >= 20) unlock('comet-run');
   if (who === 0 && edgeReturn) unlock('edge-artist'); edgeReturn = false;
   if (sc[who] >= winTarget) {
     if (mode === 1 && who === 0) {
       scorePoints(G, 500);
       if (sc[1] === 0 && activeMode === 'classic') unlock('clean-sweep');
-      if (activeMode === 'city-circuit') {
+      if (activeMode === 'city-circuit' || activeMode === 'grand-circuit') {
+        const bestKey = activeMode === 'grand-circuit' ? 'grandCircuitBest' : 'cityCircuitBest';
+        const stats = Save.load('ion-rally').stats || {};
+        const cleared = Math.min(CIRCUIT_LENGTH, circuitOpponent + 1);
+        Save.update('ion-rally', { stats: { [bestKey]: Math.max(cleared, Number(stats[bestKey]) || 0) } });
+        if (circuitOpponent + 1 >= CIRCUIT_LENGTH) {
+          setCircuitLevel(G, CIRCUIT_LENGTH);
+          unlock(activeMode === 'grand-circuit' ? 'grand-circuit' : 'city-circuit');
+          return G.win(activeMode === 'grand-circuit' ? 'Grand Circuit cleared!' : 'City Circuit cleared!', 'Five pilots defeated · Score ' + G.score);
+        }
         circuitOpponent++;
-        if (circuitOpponent >= 3) { unlock('city-circuit'); Save.update('ion-rally', { stats: { cityCircuitBest: Math.max(3, Number(Save.load('ion-rally').stats && Save.load('ion-rally').stats.cityCircuitBest) || 0) } }); return G.win('City Circuit cleared!', 'Three CPU pilots defeated · Score ' + G.score); }
-        Save.update('ion-rally', { stats: { cityCircuitBest: Math.max(circuitOpponent, Number(Save.load('ion-rally').stats && Save.load('ion-rally').stats.cityCircuitBest) || 0) } });
-        cpuTier = circuitOpponent; resetMatch(G); banner = { text: 'PILOT ' + (circuitOpponent + 1), color: '#fde68a', t: 0 }; return;
+        cpuTier = circuitOpponent + (activeMode === 'grand-circuit' ? 1 : 0);
+        setCircuitLevel(G, circuitOpponent + 1);
+        resetMatch(G);
+        banner = { text: 'PILOT ' + (circuitOpponent + 1) + ' · ' + pilot().name, color: pilot().color, t: 0 };
+        return;
       }
       if (activeMode === 'daily-rally') unlock('daily-pilot');
       return G.win(activeMode === 'rally-rush' ? 'Rally Rush clear!' : activeMode === 'daily-rally' ? 'Daily Rally clear!' : 'You Win!', 'Final ' + sc[0] + ' – ' + sc[1] + ' · Score ' + G.score);
@@ -195,13 +258,13 @@ function pointScored(G, who) {
 
 function paddleHit(G, p, dir) {
   const idx = p === L ? 0 : 1;
-  const off = A.clamp((ball.y - (p.y + PH / 2)) / (PH / 2), -1, 1);
+  const off = A.clamp((ball.y - (p.y + paddleH(idx) / 2)) / (paddleH(idx) / 2), -1, 1);
   if (Math.abs(off) > 0.86 && dir > 0) edgeReturn = true;
   ball.sp = Math.min(11.5, ball.sp + 0.35);
   const ang = off * 1.05;
   ball.vx = Math.cos(ang) * ball.sp * dir;
   ball.vy = Math.sin(ang) * ball.sp + p.vy * 0.25;
-  rally++;
+  rally++; lastHitter = idx;
   A.sfx('blip'); G.freeze(2); G.shake(2 + ball.sp * 0.3);
   const col = dir > 0 ? leftColor : rightColor;
   G.burst(ball.x, ball.y, 10, { color: [col, '#fff'], speed: 3.5, glow: true, life: 24, angle: dir > 0 ? 0 : Math.PI, spread: 1 });
@@ -211,6 +274,8 @@ function paddleHit(G, p, dir) {
   Fx.squash.punch('pd' + idx, { sx: 1.5, sy: 0.92 });
   if (mode === 1 && dir > 0) scorePoints(G, 10);
   if (rally === 1) firstRallyScored = false;
+  if (rally === 8) unlock('long-rally');
+  if (rally === 20) unlock('comet-run');
   if (rally > 0 && rally % 8 === 0) G.popup(W / 2, 120, 'Rally ' + rally + '!', '#fde68a', 20);
 }
 
@@ -222,25 +287,36 @@ function wallHit(G, y, up) {
 
 function update(G) {
   Fx.update(1);
-  for (let i = 0; i < 2; i++) { scPop[i] *= 0.9; edge[i] = Math.max(0, edge[i] - 0.035); hitFlash[i] = Math.max(0, hitFlash[i] - 0.08); wallFlash[i] = Math.max(0, wallFlash[i] - 0.07); }
+  G.hudL = hudText();
+  for (let i = 0; i < 2; i++) {
+    scPop[i] *= 0.9; edge[i] = Math.max(0, edge[i] - 0.035); hitFlash[i] = Math.max(0, hitFlash[i] - 0.08); wallFlash[i] = Math.max(0, wallFlash[i] - 0.07);
+    if (overcharge[i] > 0) overcharge[i]--;
+  }
+  if (pod && !pod.active && --podRespawn <= 0) spawnPod();
   if (banner && ++banner.t > 60) banner = null;
-  if (A.hit('Digit2') && mode !== 2) { activeMode = 'classic'; mode = 2; winTarget = WIN; resetMatch(G); G.score = 0; return; }
-  if (A.hit('Digit1') && mode !== 1) { activeMode = 'classic'; mode = 1; winTarget = WIN; resetMatch(G); G.score = 0; return; }
+  if (A.hit('Digit2') && mode !== 2) {
+    if (activeMode !== 'classic') UI.toast('Local play lives in Classic mode.', { color: '#fbbf24' });
+    else { activeMode = 'classic-local'; mode = 2; winTarget = WIN; Save.update('ion-rally', { settings: { mode: 'classic-local' } }); resetMatch(G); G.score = 0; return; }
+  }
+  if (A.hit('Digit1') && mode !== 1) {
+    if (activeMode !== 'classic-local') UI.toast('CPU play lives in Classic mode.', { color: '#fbbf24' });
+    else { activeMode = 'classic'; mode = 1; winTarget = WIN; Save.update('ion-rally', { settings: { mode: 'classic' } }); resetMatch(G); G.score = 0; return; }
+  }
   // paddles
   const paddleSpeed = 6 * speedScale;
-  if (mode === 1) movePaddle(L, A.axisY(), paddleSpeed);
-  else movePaddle(L, (A.held('KeyS') ? 1 : 0) - (A.held('KeyW') ? 1 : 0), paddleSpeed);
-  if (mode === 2) movePaddle(Rt, (A.held('ArrowDown') ? 1 : 0) - (A.held('ArrowUp') ? 1 : 0), paddleSpeed);
+  if (mode === 1) movePaddle(L, A.axisY(), paddleSpeed, 0);
+  else movePaddle(L, (A.held('KeyS') ? 1 : 0) - (A.held('KeyW') ? 1 : 0), paddleSpeed, 0);
+  if (mode === 2) movePaddle(Rt, (A.held('ArrowDown') ? 1 : 0) - (A.held('ArrowUp') ? 1 : 0), paddleSpeed, 1);
   else {
     const sp = Math.min(6.2, 3.3 + level * 0.55) * (difficulty === 'easy' ? 0.8 : difficulty === 'hard' ? 1.35 : 1) * (1 + cpuTier * 0.12);
     const react = Math.max(0.12, 0.62 - level * 0.07 - cpuTier * 0.06);
     if (ball.vx > 0 && ball.x > W * react) {
       if (--cpu.wait <= 0) { cpu.wait = Math.max(4, 12 - cpuTier * 2 - (difficulty === 'hard' ? 3 : 0)); cpu.target = predictY() + cpu.err; }
     } else { cpu.target = (TOP + BOT) / 2; cpu.err = randomRange(-1, 1) * Math.max(8, 70 - level * 11) * (difficulty === 'easy' ? 1.4 : difficulty === 'hard' ? 0.62 : 1) / (1 + cpuTier * 0.35); }
-    const d = cpu.target - (Rt.y + PH / 2);
-    movePaddle(Rt, Math.abs(d) < 5 ? 0 : A.sign(d), Math.min(sp, Math.abs(d)));
+    const d = cpu.target - (Rt.y + paddleH(1) / 2);
+    movePaddle(Rt, Math.abs(d) < 5 ? 0 : A.sign(d), Math.min(sp, Math.abs(d)), 1);
   }
-  ball.sp = ball.sp || 5.2;
+  ball.sp = ball.sp || ballSpeed();
   if (serveT > 0) {
     serveT--;
     if (serveT === 99 || serveT === 66 || serveT === 33) A.sfx('tick');
@@ -251,8 +327,12 @@ function update(G) {
     ball.x += ball.vx / 2 * speedScale; ball.y += ball.vy / 2 * speedScale;
     if (ball.y - R < TOP) { ball.y = TOP + R; ball.vy = Math.abs(ball.vy); wallHit(G, TOP, true); }
     if (ball.y + R > BOT) { ball.y = BOT - R; ball.vy = -Math.abs(ball.vy); wallHit(G, BOT, false); }
-    if (ball.vx < 0 && ball.x - R <= L.x + PW && ball.x >= L.x - 2 && ball.y > L.y - R * 0.6 && ball.y < L.y + PH + R * 0.6) { ball.x = L.x + PW + R; paddleHit(G, L, 1); }
-    if (ball.vx > 0 && ball.x + R >= Rt.x && ball.x <= Rt.x + PW + 2 && ball.y > Rt.y - R * 0.6 && ball.y < Rt.y + PH + R * 0.6) { ball.x = Rt.x - R; paddleHit(G, Rt, -1); }
+    if (ball.vx < 0 && ball.x - R <= L.x + PW && ball.x >= L.x - 2 && ball.y > L.y - R * 0.6 && ball.y < L.y + paddleH(0) + R * 0.6) { ball.x = L.x + PW + R; paddleHit(G, L, 1); }
+    if (ball.vx > 0 && ball.x + R >= Rt.x && ball.x <= Rt.x + PW + 2 && ball.y > Rt.y - R * 0.6 && ball.y < Rt.y + paddleH(1) + R * 0.6) { ball.x = Rt.x - R; paddleHit(G, Rt, -1); }
+    if (pod && pod.active && lastHitter >= 0) {
+      const dx = ball.x - pod.x, dy = ball.y - pod.y;
+      if (dx * dx + dy * dy < (R + pod.r) * (R + pod.r)) collectPod(G);
+    }
     if (ball.x < 4) return pointScored(G, 1);
     if (ball.x > W - 4) return pointScored(G, 0);
   }
@@ -260,43 +340,66 @@ function update(G) {
   if (trail.length > 22) trail.shift();
   for (const r of ripples) r.t++;
   ripples = ripples.filter((r) => r.t < 22);
-  G.hudL = (activeMode === 'city-circuit' ? 'CITY CIRCUIT · PILOT ' + (circuitOpponent + 1) : activeMode === 'rally-rush' ? 'RALLY RUSH · build a 20-hit bonus' : activeMode === 'daily-rally' ? 'DAILY RALLY · seed ' + String(dailySeed).slice(-5) : mode === 1 ? 'YOU vs CPU' : '2 PLAYERS') + '  ·  first to ' + winTarget;
 }
 
 /* ---------- drawing ---------- */
 const GLOW = { cool: 'rgba(103,232,249,.32)', warm: 'rgba(251,191,36,.32)', hot: 'rgba(251,113,133,.36)' };
 
+function drawPod(c, t) {
+  if (!pod || !pod.active) return;
+  const pulse = 1 + Math.sin(t * 0.12) * 0.1;
+  c.save();
+  c.translate(pod.x, pod.y);
+  Fx.glow(c, 0, 0, 54, 'rgba(253,230,138,.30)');
+  c.rotate(t * 0.015);
+  c.strokeStyle = 'rgba(253,230,138,.8)'; c.lineWidth = 2;
+  c.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = i * Math.PI / 3, px = Math.cos(a) * pod.r * pulse, py = Math.sin(a) * pod.r * pulse;
+    if (i) c.lineTo(px, py); else c.moveTo(px, py);
+  }
+  c.closePath(); c.stroke();
+  c.fillStyle = 'rgba(253,230,138,.16)'; c.fill();
+  c.rotate(-t * 0.05);
+  c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 1.5;
+  c.beginPath(); c.arc(0, 0, pod.r + 8 + Math.sin(t * 0.08) * 3, 0.35, 2.8); c.stroke();
+  c.restore();
+  A.text(c, 'ION POD', pod.x, pod.y - pod.r - 14, 9, 'rgba(253,230,138,.8)', 'center', '800', A.MONO);
+}
+
 function drawPaddle(c, p, col, idx, t) {
   const sq = Fx.squash.get('pd' + idx), hf = hitFlash[idx];
-  const cx = p.x + PW / 2, cy = p.y + PH / 2;
-  A.shadow(c, cx + 8, p.y + PH + 8, 14, 4, 0.3);
+  const h = paddleH(idx), oc = overcharge[idx] > 0;
+  const cx = p.x + PW / 2, cy = p.y + h / 2;
+  A.shadow(c, cx + 8, p.y + h + 8, 14, 4, 0.3);
   // afterimages while moving fast
   if (Math.abs(p.vy) > 1.2) {
     for (let k = 3; k >= 1; k--) {
       c.save(); c.globalAlpha = 0.09 * (4 - k); c.fillStyle = col;
-      A.roundRect(c, p.x, p.y - p.vy * k * 1.8, PW, PH, 6); c.fill(); c.restore();
+      A.roundRect(c, p.x, p.y - p.vy * k * 1.8, PW, h, 6); c.fill(); c.restore();
     }
   }
   c.save();
   c.translate(cx, cy); c.scale(sq.sx, sq.sy); c.translate(-cx, -cy);
   // soft halo
-  Fx.glow(c, cx, cy, 52, idx === 0 ? 'rgba(34,211,238,.22)' : (mode === 2 ? 'rgba(244,114,182,.22)' : 'rgba(251,146,60,.22)'));
+  Fx.glow(c, cx, cy, oc ? 64 : 52, oc ? 'rgba(253,230,138,.30)' : idx === 0 ? 'rgba(34,211,238,.22)' : (mode === 2 ? 'rgba(244,114,182,.22)' : 'rgba(251,146,60,.22)'));
   // depth side
-  c.fillStyle = A.shade(col, -0.45); A.roundRect(c, p.x + 5, p.y - 5, PW, PH, 6); c.fill();
+  c.fillStyle = A.shade(col, -0.45); A.roundRect(c, p.x + 5, p.y - 5, PW, h, 6); c.fill();
   // body
-  c.shadowColor = col; c.shadowBlur = 16 + hf * 18;
+  c.shadowColor = oc ? '#fde68a' : col; c.shadowBlur = 16 + hf * 18 + (oc ? 12 : 0);
   const g = c.createLinearGradient(p.x, 0, p.x + PW, 0);
   g.addColorStop(0, A.shade(col, 0.35)); g.addColorStop(0.5, col); g.addColorStop(1, A.shade(col, -0.25));
-  c.fillStyle = g; A.roundRect(c, p.x, p.y, PW, PH, 6); c.fill();
+  c.fillStyle = g; A.roundRect(c, p.x, p.y, PW, h, 6); c.fill();
   c.shadowBlur = 0;
+  if (oc) { c.strokeStyle = 'rgba(253,230,138,.85)'; c.lineWidth = 2; A.roundRect(c, p.x - 2, p.y - 2, PW + 4, h + 4, 7); c.stroke(); }
   // energy core line, pulses and brightens on hit
   c.fillStyle = 'rgba(255,255,255,' + (0.45 + hf * 0.5).toFixed(2) + ')';
-  A.roundRect(c, p.x + PW / 2 - 1.5, p.y + 6, 3, PH - 12, 2); c.fill();
+  A.roundRect(c, p.x + PW / 2 - 1.5, p.y + 6, 3, h - 12, 2); c.fill();
   // striking face light bar
   const fx = idx === 0 ? p.x + PW - 3 : p.x;
-  c.fillStyle = 'rgba(255,255,255,' + (0.35 + hf * 0.6).toFixed(2) + ')'; c.fillRect(fx, p.y + 4, 3, PH - 8);
+  c.fillStyle = 'rgba(255,255,255,' + (0.35 + hf * 0.6).toFixed(2) + ')'; c.fillRect(fx, p.y + 4, 3, h - 8);
   // travelling highlight
-  const hy = p.y + 8 + ((t * 0.9 + idx * 40) % (PH - 16));
+  const hy = p.y + 8 + ((t * 0.9 + idx * 40) % (h - 16));
   c.fillStyle = 'rgba(255,255,255,.35)'; c.fillRect(p.x + 2, hy, PW - 4, 2);
   c.restore();
 }
@@ -353,6 +456,7 @@ function draw(G, c) {
   // centre line with flowing energy
   c.strokeStyle = 'rgba(103,232,249,' + (0.3 + energy * 0.2).toFixed(2) + ')'; c.lineWidth = 3; c.setLineDash([14, 14]); c.lineDashOffset = still ? 0 : -t * 0.4;
   c.beginPath(); c.moveTo(W / 2, TOP); c.lineTo(W / 2, BOT); c.stroke(); c.setLineDash([]);
+  drawPod(c, t);
   // goal-zone proximity glow + point flashes
   c.save(); c.globalCompositeOperation = 'lighter';
   const nearL = ball.vx < 0 ? A.clamp(1 - ball.x / 220, 0, 1) : 0, nearR = ball.vx > 0 ? A.clamp(1 - (W - ball.x) / 220, 0, 1) : 0;
@@ -380,7 +484,7 @@ function draw(G, c) {
     A.glowText(c, String(n), W / 2, (TOP + BOT) / 2 - 40, 64, '#fde68a', 'center', 20);
   }
   if (rally > 3 && G.state === 'playing') A.text(c, 'RALLY ' + rally, W / 2, BOT - 14, 14, '#fde68a', 'center', '800', A.MONO);
-  if (G.state === 'playing' && (sc[0] === WIN - 1 || sc[1] === WIN - 1)) {
+  if (G.state === 'playing' && (sc[0] === winTarget - 1 || sc[1] === winTarget - 1)) {
     c.save(); c.globalAlpha = 0.55 + 0.4 * Math.sin(t * 0.12);
     A.text(c, 'MATCH POINT', W / 2, TOP + 26, 14, '#fda4af', 'center', '800', A.MONO); c.restore();
   }
@@ -389,7 +493,7 @@ function draw(G, c) {
     c.save(); c.globalAlpha = A.clamp(a, 0, 1); A.glowText(c, banner.text, W / 2, TOP + 70 - k * 14, 30, banner.color, 'center', 18); c.restore();
   }
   A.text(c, mode === 1 ? 'Press 2 for local play' : 'Press 1 for CPU play', W / 2, H - 12, 12, '#8b93b3', 'center', '600');
-  if (mode === 1) A.text(c, 'CPU lv ' + level.toFixed(1), W - 150, 54, 13, '#fb923c', 'center', '800', A.MONO);
+  if (mode === 1) A.text(c, ((activeMode === 'city-circuit' || activeMode === 'grand-circuit') ? pilot().name + ' · ' : '') + 'CPU lv ' + level.toFixed(1), W - 150, 54, 13, '#fb923c', 'center', '800', A.MONO);
   Fx.bloom(c, W, H, 0.45);
   Fx.vignette(c, W, H, 0.34);
   G.drawFX(c);
@@ -397,8 +501,8 @@ function draw(G, c) {
 
 const ionRallyGame = Arcade.game({
   id: 'ion-rally', title: 'Ion Rally', subtitle: 'Neon paddle duel — first to 7', color: '#22d3ee',
-  help: 'One player: W/S or ↑/↓ move your paddle vs the CPU (it adapts to how you play). Press 2 for two players: W/S (left) and ↑/↓ (right); press 1 to return to the CPU. Hit with the paddle edge for steeper angles. P pauses, M mutes.',
-  w: W, h: H, touchL: [['▲', 'ArrowUp'], ['▼', 'ArrowDown']], init, update, draw,
+  help: 'One player: W/S or ↑/↓ steer your paddle against an adaptive CPU. Aim returns into the Ion Pod for +75 and an Overcharge that lengthens your paddle for 8 seconds. City Circuit runs five pilots; clear it to unlock the Grand Circuit. In Classic, press 2 for local play (W/S left, arrows right) and 1 to return. P pauses, M mutes.',
+  w: W, h: H, touchL: [['▲', 'KeyW'], ['▼', 'KeyS']], touchR: [['▲', 'ArrowUp'], ['▼', 'ArrowDown']], init, update, draw,
 });
 ionGame = ionRallyGame;
 const ionOriginalShake = ionRallyGame.shake.bind(ionRallyGame);
@@ -409,8 +513,9 @@ ionRallyGame.ui = UI.mountGame(ionRallyGame, {
     { id: 'classic', name: 'Classic', blurb: 'Adaptive CPU or local play · first to 7', seasonTargets: [500, 1500, 3000] },
     { id: 'classic-local', name: 'Local Rivals', blurb: 'Two players · first to 7', seasonTargets: [500, 1200, 2500] },
     { id: 'rally-rush', name: 'Rally Rush', blurb: 'Fast serve · first to 5', seasonTargets: [700, 1600, 2800] },
-    { id: 'city-circuit', name: 'City Circuit', blurb: 'Defeat three increasingly sharp pilots', seasonTargets: [900, 2000, 3600] },
+    { id: 'city-circuit', name: 'City Circuit', blurb: 'Five pilots · one run · report progress', seasonTargets: [900, 2000, 3600] },
     { id: 'daily-rally', name: 'Daily Rally', blurb: 'A seeded match shared for today', seeded: true, seasonTargets: [700, 1500, 3000] },
+    { id: 'grand-circuit', name: 'Grand Circuit', blurb: 'Five overdriven pilots', lockedHint: 'Clear City Circuit to unlock', requires: { stat: 'cityCircuitBest', gte: 5 }, seasonTargets: [1200, 2400, 4200] },
   ],
   settings: [
     { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
@@ -423,7 +528,9 @@ ionRallyGame.ui = UI.mountGame(ionRallyGame, {
     { id: 'long-rally', name: 'Long Rally', desc: 'Reach an 8-hit rally.', rarity: 'rare' },
     { id: 'comet-run', name: 'Comet Run', desc: 'Reach a 20-hit rally.', rarity: 'epic' },
     { id: 'edge-artist', name: 'Edge Artist', desc: 'Score from a steep paddle-edge return.', rarity: 'rare' },
-    { id: 'city-circuit', name: 'City Circuit', desc: 'Clear all three CPU pilots.', rarity: 'legendary' },
+    { id: 'pod-runner', name: 'Pod Runner', desc: 'Collect three Ion Pods in one match.', rarity: 'rare' },
+    { id: 'city-circuit', name: 'City Circuit', desc: 'Clear the five-pilot City Circuit.', rarity: 'legendary' },
+    { id: 'grand-circuit', name: 'Grand Circuit', desc: 'Clear the five-pilot Grand Circuit.', rarity: 'legendary' },
     { id: 'daily-pilot', name: 'Daily Pilot', desc: 'Complete a seeded Daily Rally.', rarity: 'rare' },
     { id: 'local-rivals', name: 'Local Rivals', desc: 'Finish a local two-player match.', rarity: 'common' },
   ],
@@ -431,7 +538,9 @@ ionRallyGame.ui = UI.mountGame(ionRallyGame, {
     { text: 'Move with W/S or the arrow keys. In local play, the left pilot uses W/S.', hold: 'ArrowUp' },
     { text: 'Meet the comet near the top or bottom of your paddle to change its angle.', hold: 'KeyW' },
     { text: 'Keep a rally alive to build speed and earn a larger point bonus.', hold: 'ArrowDown' },
+    { text: 'Steer a return into the Ion Pod to overcharge your paddle.', hold: 'ArrowUp' },
   ] },
+  chapter: 'ION CIRCUIT · 5 PILOTS', levels: [{}, {}, {}, {}, {}],
   hooks: {
     applyMode,
     applySetting: (key, value) => {
@@ -439,7 +548,7 @@ ionRallyGame.ui = UI.mountGame(ionRallyGame, {
       if (key === 'particles' && window.Perf && Perf.setTier) Perf.setTier(value);
     },
     applyCosmetic,
-    getResult: () => ({ score: ionRallyGame.score, win: ionRallyGame.state === 'won', mode: activeMode, rally }),
+    getResult: () => ({ score: ionRallyGame.score, win: ionRallyGame.state === 'won', mode: activeMode, rally, stats: { best: ionRallyGame.hi, cityCircuitBest: Number((Save.load('ion-rally').stats || {}).cityCircuitBest) || 0 } }),
   },
 });
 </script>

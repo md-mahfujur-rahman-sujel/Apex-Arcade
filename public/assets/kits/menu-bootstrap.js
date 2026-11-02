@@ -125,7 +125,7 @@
           var button = doc.createElement('button'); button.type = 'button'; button.className = 'apex-menu-action';
           var save = global.Save && global.Save.load ? global.Save.load(uiConfig.id) : {}, required = mode.requires;
           var locked = !!(required && !(Number(save.stats && save.stats[required.stat]) >= Number(required.gte || 1)));
-          button.textContent = (gameUi.getMode() === mode.id ? '✓  ' : '') + mode.name + (mode.blurb ? ' · ' + mode.blurb : '') + (locked ? ' · Complete Story to unlock' : '');
+          button.textContent = (gameUi.getMode() === mode.id ? '✓  ' : '') + mode.name + (mode.blurb ? ' · ' + mode.blurb : '') + (locked ? ' · ' + (mode.lockedHint || 'Complete Story to unlock') : '');
           button.disabled = !!locked;
           if (!locked) button.addEventListener('click', function () { gameUi.setMode(mode.id); view.refresh(); }); view.panel.appendChild(button);
         });

@@ -19,6 +19,7 @@
     "test:menu-pilots": "npm run build && node scripts/test-menu-pilots.mjs",
     "test:2048-modes": "npm run build && node scripts/test-2048-modes.mjs",
     "test:game-01": "npm run build && node scripts/test-game-01.mjs",
+    "test:game-02": "npm run build && node scripts/test-game-02.mjs",
     "test:home-rails": "npm run build && node scripts/test-home-rails.mjs",
     "test:browse-facets": "npm run build && node scripts/test-browse-facets.mjs",
     "test:game-pages": "npm run build && node scripts/test-game-pages.mjs",

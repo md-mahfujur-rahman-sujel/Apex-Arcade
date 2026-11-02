@@ -583,7 +583,24 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
           />
         );
       case 'holo-pong':
-        return <HoloPongEngine {...commonProps} />;
+        return (
+          <HoloPongEngine
+            {...commonProps}
+            seed={startSeed}
+            highScore={highScore}
+            onLevelComplete={(level) => {
+              recordApexLevelProgress(game.id, level);
+              onStatsUpdated();
+            }}
+            onRestart={() => {
+              sessionEndedRef.current = false;
+              sessionStartRef.current = Date.now();
+              sessionBestRef.current = highScoreRef.current;
+              sessionNewBestRef.current = false;
+              setCurrentScore(0);
+            }}
+          />
+        );
       case 'quantum-snake':
         return <QuantumSnakeEngine {...commonProps} />;
       case 'space-invaders':
