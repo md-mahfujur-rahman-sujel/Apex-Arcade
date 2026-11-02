@@ -1,4 +1,4 @@
-const CACHE_NAME = 'apex-arcade-v16';
+const CACHE_NAME = 'apex-arcade-v17';
 const BASE_PATH = new URL('.', self.location.href).pathname;
 const GAME_FILES = [
   '01-flappy-bird/index.html', '02-pong/index.html', '03-snake/index.html', '04-space-invaders/index.html',
@@ -19,7 +19,7 @@ const GAME_KITS = [
   'meta-config.js', 'meta-kit.js', 'perf-kit.js', 'arcade-core.js', 'platform-kit.js', 'act-kit.js', 'board-kit.js', 'board-art.js', 'save-kit.js', 'score-bridge.js',
   'fx-kit.js', 'ui-kit.js', 'music-kit.js', 'card-scenes.js', 'menu-kit.js', 'menu-kit.css', 'menu-bootstrap.js',
 ].map((file) => `${BASE_PATH}assets/kits/${file}`);
-const APP_SHELL = [BASE_PATH, `${BASE_PATH}manifest.webmanifest`, `${BASE_PATH}apex-icon.svg`];
+const APP_SHELL = [BASE_PATH, `${BASE_PATH}manifest.webmanifest`, `${BASE_PATH}apex-icon.svg`, `${BASE_PATH}apex-icon-180.png`, `${BASE_PATH}apex-icon-192.png`, `${BASE_PATH}apex-icon-512.png`];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Volume2, VolumeX, Sparkles, Menu, X, Gamepad2, Activity, BookOpen, Layers, UserRound, Sun, Moon } from 'lucide-react';
 import { GAMES_DATA } from '../data/gamesData';
 
@@ -28,6 +28,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
   const nextThemePreference = themePreference === 'system' ? 'light' : themePreference === 'light' ? 'dark' : 'system';
   const themeLabel = (preference: 'system' | 'light' | 'dark') =>
     preference[0].toUpperCase() + preference.slice(1);
@@ -38,6 +40,43 @@ export const Navbar: React.FC<NavbarProps> = ({
     window.addEventListener('scroll', updateScrollState, { passive: true });
     return () => window.removeEventListener('scroll', updateScrollState);
   }, []);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const frame = requestAnimationFrame(() => {
+      drawerRef.current?.querySelector<HTMLElement>('button')?.focus({ preventScroll: true });
+    });
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setMobileMenuOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab' || !drawerRef.current) return;
+      const items = Array.from(drawerRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), a[href]'))
+        .filter((element) => element.offsetParent !== null);
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !drawerRef.current.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !drawerRef.current.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKeyDown, true);
+      menuButtonRef.current?.focus({ preventScroll: true });
+    };
+  }, [mobileMenuOpen]);
 
   const handleNavClick = (sectionId: string, filter?: string) => {
     setMobileMenuOpen(false);
@@ -132,8 +171,11 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Mobile Drawer Trigger (min 44px touch target) */}
           <button
+            ref={menuButtonRef}
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label={mobileMenuOpen ? 'Close Menu' : 'Open Navigation Menu'}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-navigation"
             className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-xl border border-line bg-surface-2 p-2.5 text-fg-muted transition-colors hover:border-line-strong hover:bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg xl:hidden"
           >
             {mobileMenuOpen ? <X className="h-5 w-5 text-accent" /> : <Menu className="h-5 w-5" />}
@@ -151,6 +193,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             className={`fixed inset-0 z-40 backdrop-blur-[2px] xl:hidden ${isLightTheme ? 'bg-slate-900/45' : 'bg-black/60'}`}
           />
           <nav
+            ref={drawerRef}
+            id="mobile-navigation"
             aria-label="Mobile navigation"
             className="fixed inset-y-0 right-0 z-50 flex w-[min(22rem,86vw)] flex-col border-l border-line bg-surface px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] shadow-pop xl:hidden"
           >

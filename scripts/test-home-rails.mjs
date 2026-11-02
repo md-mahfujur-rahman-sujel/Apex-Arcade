@@ -10,7 +10,8 @@ await access(path.join(distRoot, 'index.html'));
 async function routeProductionFiles(context) {
   await context.route(`${origin}/**`, async (route) => {
     const pathname = decodeURIComponent(new URL(route.request().url()).pathname);
-    const filePath = path.resolve(distRoot, `.${pathname}`);
+    const relativePath = pathname.startsWith('/Apex-Arcade/') ? pathname.slice('/Apex-Arcade'.length) : pathname;
+    const filePath = path.resolve(distRoot, `.${relativePath}`);
     if (filePath !== distRoot && !filePath.startsWith(`${distRoot}${path.sep}`)) {
       await route.fulfill({ status: 403, body: 'Forbidden' });
       return;

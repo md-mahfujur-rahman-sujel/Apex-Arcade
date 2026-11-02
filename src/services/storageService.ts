@@ -3,6 +3,8 @@ import { PlayerStats, GameSessionScore } from '../types/game';
 const STORAGE_KEY_V1 = 'apex_arcade_stats_v1';
 const STORAGE_KEY_V2 = 'apex_arcade_stats_v2';
 
+const DEFAULT_PROFILE = { name: 'Player One', avatarSeed: 17 };
+
 const defaultStats: PlayerStats = {
   totalPlayCount: 0,
   totalTimeSeconds: 0,
@@ -20,27 +22,123 @@ const defaultStats: PlayerStats = {
   recentSessions: [],
   achievements: {},
   levelProgress: {},
-  profile: { name: 'Player One', avatarSeed: 17 },
+  profile: DEFAULT_PROFILE,
+};
+
+const createDefaultStats = (): PlayerStats => ({
+  totalPlayCount: 0,
+  totalTimeSeconds: 0,
+  highScores: { ...defaultStats.highScores },
+  favorites: [...defaultStats.favorites],
+  recentSessions: [],
+  achievements: {},
+  levelProgress: {},
+  profile: { ...DEFAULT_PROFILE },
+});
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const toNonNegativeInteger = (value: unknown): number =>
+  typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+
+const toNonNegativeNumber = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+
+const normalizeSession = (value: unknown): GameSessionScore | null => {
+  if (!isRecord(value) || typeof value.gameId !== 'string' || value.gameId.length === 0) return null;
+  const score = toNonNegativeNumber(value.score);
+  if (score === null) return null;
+  const difficulty = value.difficulty;
+  return {
+    gameId: value.gameId,
+    gameTitle: typeof value.gameTitle === 'string' ? value.gameTitle : value.gameId,
+    score,
+    date: typeof value.date === 'string' ? value.date : '',
+    durationSeconds: toNonNegativeInteger(value.durationSeconds),
+    ...(typeof value.playedOn === 'string' ? { playedOn: value.playedOn } : {}),
+    ...(difficulty === 'easy' || difficulty === 'normal' || difficulty === 'hard' ? { difficulty } : {}),
+  };
+};
+
+const normalizeHighScores = (value: unknown): Record<string, number> => {
+  const scores: Record<string, number> = {};
+  if (!isRecord(value)) return scores;
+  for (const [gameId, entry] of Object.entries(value)) {
+    const score = toNonNegativeNumber(entry);
+    if (score !== null) scores[gameId] = score;
+  }
+  return scores;
+};
+
+const normalizeLevelProgress = (value: unknown): Record<string, number> => {
+  const progress: Record<string, number> = {};
+  if (!isRecord(value)) return progress;
+  for (const [gameId, entry] of Object.entries(value)) {
+    if (typeof entry === 'number' && Number.isFinite(entry) && entry >= 0) progress[gameId] = Math.floor(entry);
+  }
+  return progress;
+};
+
+const normalizeAchievements = (value: unknown): Record<string, string[]> => {
+  const achievements: Record<string, string[]> = {};
+  if (!isRecord(value)) return achievements;
+  for (const [gameId, entry] of Object.entries(value)) {
+    if (Array.isArray(entry)) achievements[gameId] = entry.filter((id): id is string => typeof id === 'string');
+  }
+  return achievements;
+};
+
+const normalizeProfile = (value: unknown): { name: string; avatarSeed: number } => {
+  if (!isRecord(value)) return { ...DEFAULT_PROFILE };
+  const name = typeof value.name === 'string' && value.name.trim().length > 0 ? value.name : DEFAULT_PROFILE.name;
+  const avatarSeed = typeof value.avatarSeed === 'number' && Number.isFinite(value.avatarSeed)
+    ? value.avatarSeed
+    : DEFAULT_PROFILE.avatarSeed;
+  return { name, avatarSeed };
+};
+
+/**
+ * Coerce anything read from localStorage or an imported backup into the
+ * PlayerStats shape. Partial or corrupted payloads degrade to defaults instead
+ * of handing arrays/objects of the wrong type to the UI.
+ */
+const normalizeStats = (value: unknown): PlayerStats => {
+  const base = createDefaultStats();
+  if (!isRecord(value)) return base;
+
+  return {
+    totalPlayCount: toNonNegativeInteger(value.totalPlayCount),
+    totalTimeSeconds: toNonNegativeInteger(value.totalTimeSeconds),
+    highScores: { ...base.highScores, ...normalizeHighScores(value.highScores) },
+    favorites: Array.isArray(value.favorites)
+      ? value.favorites.filter((id): id is string => typeof id === 'string')
+      : base.favorites,
+    recentSessions: Array.isArray(value.recentSessions)
+      ? value.recentSessions
+          .map(normalizeSession)
+          .filter((session): session is GameSessionScore => session !== null)
+          .slice(0, 20)
+      : base.recentSessions,
+    achievements: normalizeAchievements(value.achievements),
+    levelProgress: normalizeLevelProgress(value.levelProgress),
+    profile: normalizeProfile(value.profile),
+  };
 };
 
 export const getStoredStats = (): PlayerStats => {
-  if (typeof window === 'undefined') return defaultStats;
+  if (typeof window === 'undefined') return createDefaultStats();
   try {
     // 1. Try reading v2
     const rawV2 = localStorage.getItem(STORAGE_KEY_V2);
     if (rawV2) {
-      const parsed = JSON.parse(rawV2);
-      return { ...defaultStats, ...parsed };
+      return normalizeStats(JSON.parse(rawV2));
     }
 
     // 2. Fallback to v1 migration
     const rawV1 = localStorage.getItem(STORAGE_KEY_V1);
     if (rawV1) {
-      const parsedV1 = JSON.parse(rawV1);
-      const migrated: PlayerStats = {
-        ...defaultStats,
-        ...parsedV1,
-      };
+      const migrated = normalizeStats(JSON.parse(rawV1));
       // Persist migrated schema
       try {
         localStorage.setItem(STORAGE_KEY_V2, JSON.stringify(migrated));
@@ -48,9 +146,9 @@ export const getStoredStats = (): PlayerStats => {
       return migrated;
     }
 
-    return defaultStats;
+    return createDefaultStats();
   } catch {
-    return defaultStats;
+    return createDefaultStats();
   }
 };
 
@@ -87,13 +185,18 @@ export const exportStats = (): string => {
 
 export const importStats = (raw: string): PlayerStats | null => {
   try {
-    const parsed = JSON.parse(raw) as Partial<PlayerStats> & { format?: string; stats?: Partial<PlayerStats>; localData?: Record<string, unknown> };
-    const candidate = (parsed.format === 'apex-arcade-profile' ? parsed.stats : parsed) as Partial<PlayerStats>;
-    if (typeof candidate.totalPlayCount !== 'number' || typeof candidate.totalTimeSeconds !== 'number' || !Array.isArray(candidate.favorites)) return null;
-    const updated: PlayerStats = { ...defaultStats, ...candidate, achievements: candidate.achievements || {}, levelProgress: candidate.levelProgress || {}, profile: candidate.profile || defaultStats.profile };
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isRecord(parsed)) return null;
+    const candidate = parsed.format === 'apex-arcade-profile' ? parsed.stats : parsed;
+    if (!isRecord(candidate)) return null;
+    if (typeof candidate.totalPlayCount !== 'number' || !Number.isFinite(candidate.totalPlayCount)) return null;
+    if (typeof candidate.totalTimeSeconds !== 'number' || !Number.isFinite(candidate.totalTimeSeconds)) return null;
+    if (!Array.isArray(candidate.favorites)) return null;
+    const updated = normalizeStats(candidate);
     saveStatsToStorage(updated);
-    if (parsed.format === 'apex-arcade-profile' && parsed.localData && typeof parsed.localData === 'object') {
-      for (const [key, value] of Object.entries(parsed.localData)) {
+    const localData = parsed.localData;
+    if (parsed.format === 'apex-arcade-profile' && isRecord(localData)) {
+      for (const [key, value] of Object.entries(localData)) {
         if ((key.startsWith('apex:save:') || key === 'apex:meta' || key === 'apex:preferences:v1') && typeof value === 'string') {
           try { localStorage.setItem(key, value); } catch { /* Continue restoring other records if storage quota is reached. */ }
         }
@@ -155,6 +258,8 @@ export const recordApexScore = (
   const current = getStoredStats();
   const currentBest = current.highScores[gameId] || 0;
   const isNewBest = score > currentBest;
+
+  if (!isNewBest && !durationSeconds) return current;
 
   const updated: PlayerStats = {
     ...current,
@@ -224,7 +329,7 @@ export const resetAllStats = (): PlayerStats => {
     localStorage.removeItem(STORAGE_KEY_V1);
     localStorage.removeItem(STORAGE_KEY_V2);
   } catch {}
-  return defaultStats;
+  return createDefaultStats();
 };
 
 export const resetAllProfileData = (): PlayerStats => {
@@ -233,11 +338,10 @@ export const resetAllProfileData = (): PlayerStats => {
     const saveKeys: string[] = [];
     for (let index = 0; index < localStorage.length; index += 1) {
       const key = localStorage.key(index);
-      if (key?.startsWith('apex:save:')) saveKeys.push(key);
+      if (key?.startsWith('apex:save:') || key === 'apex:meta') saveKeys.push(key);
     }
     saveKeys.forEach((key) => localStorage.removeItem(key));
-    localStorage.removeItem('apex:meta');
   } catch {}
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('apex:meta'));
-  return defaultStats;
+  return createDefaultStats();
 };

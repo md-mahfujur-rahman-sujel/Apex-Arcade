@@ -64,7 +64,7 @@ export async function shareOrDownloadScoreCard(game: GameInfo, score: number): P
 
   if (navigator.share && navigator.canShare?.({ files: [file] })) {
     const shareUrl = new URL(window.location.href);
-    shareUrl.hash = `game=${encodeURIComponent(game.id)}`;
+    shareUrl.hash = `#/game/${encodeURIComponent(game.id)}`;
     await navigator.share({ title: `${game.title} score`, text: `I scored ${Math.floor(score).toLocaleString()} in ${game.title}. Can you beat it?`, url: shareUrl.toString(), files: [file] });
     return 'shared';
   }

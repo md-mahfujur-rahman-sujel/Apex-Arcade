@@ -11,7 +11,13 @@ const browser = await chromium.launch({ headless: true, ...(executablePath ? { e
 const page = await browser.newPage();
 const errors = [];
 try {
-  await page.addInitScript(() => { localStorage.removeItem('apex:meta'); localStorage.removeItem('apex_arcade_stats_v2'); localStorage.removeItem('apex_arcade_stats_v1'); });
+  await page.addInitScript(() => {
+    if (localStorage.getItem('apex:test-fresh') === '1') return;
+    localStorage.removeItem('apex:meta');
+    localStorage.removeItem('apex_arcade_stats_v2');
+    localStorage.removeItem('apex_arcade_stats_v1');
+    localStorage.setItem('apex:test-fresh', '1');
+  });
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
   await page.goto(`${origin}/#/game/flappy-bird`);

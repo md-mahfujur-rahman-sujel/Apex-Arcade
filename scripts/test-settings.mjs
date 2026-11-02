@@ -14,7 +14,8 @@ try {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   await context.route('http://127.0.0.1:4173/**', async (route) => {
     const pathname = decodeURIComponent(new URL(route.request().url()).pathname);
-    const filePath = path.resolve(distRoot, `.${pathname}`);
+    const relativePath = pathname.startsWith('/Apex-Arcade/') ? pathname.slice('/Apex-Arcade'.length) : pathname;
+    const filePath = path.resolve(distRoot, `.${relativePath}`);
     if (filePath !== distRoot && !filePath.startsWith(`${distRoot}${path.sep}`)) {
       await route.fulfill({ status: 403, body: 'Forbidden' });
       return;

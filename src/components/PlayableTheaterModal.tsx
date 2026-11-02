@@ -21,6 +21,8 @@ import { AppPreferences } from '../services/preferencesService';
 
 const reducedMotionPreferenceKey = (gameId: string) => `apex:reduced-motion:${gameId}`;
 
+const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 function readReducedMotionPreference(gameId: string, fallback: boolean): boolean {
   try {
     const stored = window.localStorage.getItem(reducedMotionPreferenceKey(gameId));
@@ -98,6 +100,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const activeMenuGameIdRef = useRef<string | null>(null);
   const highScoreRef = useRef(highScore);
   highScoreRef.current = highScore;
@@ -211,10 +214,56 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     });
   }, [postFramePause]);
 
+  const closeSettings = useCallback(() => {
+    setShowSettings(false);
+    if (pauseStateRef.current.canPause && !pauseStateRef.current.isPaused) postFramePause(false);
+  }, [postFramePause]);
+
+  const toggleSettings = useCallback(() => {
+    if (showSettings) {
+      closeSettings();
+    } else {
+      setShowSettings(true);
+      if (pauseStateRef.current.canPause && !pauseStateRef.current.isPaused) postFramePause(true);
+    }
+    audio.playClick();
+  }, [showSettings, closeSettings, postFramePause]);
+
   const pauseStateRef = useRef({ isPaused, canPause });
   pauseStateRef.current = { isPaused, canPause };
   const pauseActionsRef = useRef({ pauseGame, resumeGame });
   pauseActionsRef.current = { pauseGame, resumeGame };
+
+  useEffect(() => {
+    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = requestAnimationFrame(() => {
+      const container = containerRef.current;
+      const target = container?.querySelector<HTMLElement>('[data-theater-initial-focus]')
+        || container?.querySelector<HTMLElement>('[aria-label="Close theater"]');
+      target?.focus({ preventScroll: true });
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      previouslyFocusedRef.current?.focus?.({ preventScroll: true });
+    };
+  }, []);
+
+  const trapFocus = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab' || !containerRef.current) return;
+    const items = Array.from(containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE))
+      .filter((element) => !element.closest('[inert]') && element.offsetParent !== null);
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || !containerRef.current.contains(active))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (active === last || !containerRef.current.contains(active))) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
 
   const frameSrc = useCallback((cacheBust = false) => {
     if (!game?.htmlPath) return '';
@@ -341,14 +390,14 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (showSettings) {
+        event.preventDefault();
+        closeSettings();
+        return;
+      }
       if (isPaused) {
         event.preventDefault();
         resumeGame();
-        return;
-      }
-      if (showSettings) {
-        event.preventDefault();
-        setShowSettings(false);
         return;
       }
       if (canPause) {
@@ -358,7 +407,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     };
     window.addEventListener('keydown', handleEscape, true);
     return () => window.removeEventListener('keydown', handleEscape, true);
-  }, [isPaused, showSettings, canPause, pauseGame, resumeGame]);
+  }, [isPaused, showSettings, canPause, pauseGame, resumeGame, closeSettings]);
 
   useEffect(() => {
     const handleVisibility = () => {
@@ -420,9 +469,10 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     setDifficulty(newDiff);
     setEngineKey((k) => k + 1);
     setCurrentScore(0);
+    sessionStartRef.current = Date.now();
     audio.playClick();
     try {
-      iframeRef.current?.contentWindow?.postMessage({ type: 'SET_DIFFICULTY', difficulty: newDiff }, '*');
+      iframeRef.current?.contentWindow?.postMessage({ type: 'SET_DIFFICULTY', difficulty: newDiff }, window.location.origin);
     } catch (e) {}
   };
 
@@ -462,7 +512,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
           key,
           action,
         },
-        '*'
+        window.location.origin
       );
     } catch (e) {}
 
@@ -498,7 +548,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
           type: 'REACH_DELTA',
           delta,
         },
-        '*'
+        window.location.origin
       );
     } catch (e) {}
   };
@@ -506,7 +556,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
   const renderEngine = () => {
     const commonProps = {
       key: `${game.id}-${engineKey}`,
-      isPaused,
+      isPaused: isPaused || showSettings,
       onScoreUpdate: handleScoreUpdate,
       onGameOver: handleGameOver,
       difficulty,
@@ -555,7 +605,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
       <label className="flex items-center justify-between gap-3"><span>Audio</span><button type="button" onClick={toggleSound} className={`rounded-lg px-3 py-1.5 font-semibold ${isMuted ? 'bg-white/10 text-slate-300' : 'bg-cyan-400 text-slate-950'}`}>{isMuted ? 'Muted' : 'On'}</button></label>
       <label className="block"><span className="mb-1 flex justify-between"><span>Volume</span><span className="font-mono text-cyan-300">{Math.round(volume * 100)}%</span></span><input aria-label="Theater volume" type="range" min="0" max="1" step="0.05" value={volume} onChange={(event) => handleVolumeChange(Number(event.target.value))} className="w-full accent-cyan-400" /></label>
       <label className="flex items-center justify-between"><span>Reduced motion</span><input type="checkbox" checked={reducedMotion} onChange={(event) => { const next = event.target.checked; setReducedMotion(next); try { window.localStorage.setItem(reducedMotionPreferenceKey(game.id), String(next)); } catch { /* The preference still applies for this session. */ } iframeRef.current?.contentWindow?.postMessage({ type: 'SET_ACCESSIBILITY', reducedMotion: next, gameId: game.id, colourBlindMode, performanceTier }, window.location.origin); }} /></label>
-      <label className="flex items-center justify-between"><span>Colour-blind palette</span><input type="checkbox" checked={colourBlindMode} onChange={(event) => { setColourBlindMode(event.target.checked); iframeRef.current?.contentWindow?.postMessage({ type: 'SET_ACCESSIBILITY', reducedMotion, colourBlindMode: event.target.checked, performanceTier }, '*'); }} /></label>
+      <label className="flex items-center justify-between"><span>Colour-blind palette</span><input type="checkbox" checked={colourBlindMode} onChange={(event) => { setColourBlindMode(event.target.checked); iframeRef.current?.contentWindow?.postMessage({ type: 'SET_ACCESSIBILITY', reducedMotion, colourBlindMode: event.target.checked, performanceTier }, window.location.origin); }} /></label>
       <label className="flex items-center justify-between"><span>CRT filter</span><input aria-label="CRT filter" type="checkbox" checked={displayPreferences.gameId === game.id && displayPreferences.crt} onChange={(event) => updateDisplayPreference('crt', event.target.checked)} /></label>
       <label className="flex items-center justify-between"><span>Pixel-perfect scaling</span><input aria-label="Pixel-perfect scaling" type="checkbox" checked={displayPreferences.gameId === game.id && displayPreferences.pixelPerfect} onChange={(event) => updateDisplayPreference('pixelPerfect', event.target.checked)} /></label>
       <label className="flex items-center justify-between"><span>Ambient glow</span><input aria-label="Ambient glow" type="checkbox" checked={displayPreferences.gameId === game.id && displayPreferences.ambientGlow} onChange={(event) => updateDisplayPreference('ambientGlow', event.target.checked)} /></label>
@@ -566,6 +616,10 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
   return (
     <div
       id="playable-theater-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${game.title} game theater`}
+      onKeyDown={trapFocus}
       data-game-id={game.id}
       data-game-number={game.gameNumber}
       data-touch-mode={game.touchControls?.mode || 'native'}
@@ -675,7 +729,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
             >
               <Gamepad2 className="w-4 h-4" />
             </button>}
-            <button onClick={() => setShowSettings((open) => !open)} aria-expanded={showSettings} aria-controls="theater-settings" className="p-1.5 sm:p-2 rounded-lg bg-white/5 text-slate-300" aria-label="Theater settings"><Settings2 className="h-4 w-4" /></button>
+            <button onClick={toggleSettings} aria-expanded={showSettings} aria-controls="theater-settings" className="p-1.5 sm:p-2 rounded-lg bg-white/5 text-slate-300" aria-label="Theater settings"><Settings2 className="h-4 w-4" /></button>
             <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-slate-500" aria-label={gamepadConnected ? 'Gamepad connected' : 'No gamepad connected'}><Gamepad2 className="h-3 w-3" />{gamepadConnected ? 'Ready' : 'No pad'}</span>
             <button onClick={handleShareScore} disabled={!hasLaunched || isSharingScore} className="p-1.5 sm:p-2 rounded-lg bg-cyan-500/10 text-cyan-300 disabled:opacity-40" aria-label="Share score"><Share2 className="h-4 w-4" /></button>
 
@@ -721,6 +775,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
             <button
               onClick={onClose}
               data-ui-close
+              aria-label="Close theater"
               className="p-1.5 sm:p-2 rounded-lg bg-white/5 hover:bg-red-500/20 text-slate-300 hover:text-red-400 transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
               title="Close Theater"
             >
@@ -730,7 +785,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
         </div>
 
         {showSettings && <aside id="theater-settings" aria-label="Theater settings" className="absolute right-3 top-14 z-40 w-[min(22rem,calc(100%-1.5rem))] rounded-2xl border border-white/10 bg-[#101525] p-4 shadow-2xl">
-          <div className="mb-3 flex items-center justify-between text-sm font-bold text-white"><span className="flex items-center gap-2">Theater settings <Accessibility className="h-4 w-4 text-cyan-300" /></span><button type="button" aria-label="Close theater settings" onClick={() => setShowSettings(false)} className="rounded-lg px-2 py-1 text-slate-300 hover:bg-white/10">Close</button></div>
+          <div className="mb-3 flex items-center justify-between text-sm font-bold text-white"><span className="flex items-center gap-2">Theater settings <Accessibility className="h-4 w-4 text-cyan-300" /></span><button type="button" aria-label="Close theater settings" onClick={closeSettings} className="rounded-lg px-2 py-1 text-slate-300 hover:bg-white/10">Close</button></div>
           {settingsControls}
         </aside>}
 
@@ -751,7 +806,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
         )}
 
         {/* Stage Container (Responsive height on mobile/tablet/desktop) */}
-        <div id="playable-theater-stage" inert={isPaused} className="relative flex-1 p-0 sm:p-2 md:p-3 flex flex-col items-center justify-center bg-[#05060D] overflow-hidden">
+        <div id="playable-theater-stage" inert={isPaused || showSettings} className="relative flex-1 p-0 sm:p-2 md:p-3 flex flex-col items-center justify-center bg-[#05060D] overflow-hidden">
           {!hasLaunched ? (
             <div className="relative flex h-full w-full max-w-3xl flex-col justify-end overflow-hidden rounded-2xl border border-white/10 bg-[#0d1425] p-6 sm:p-10" style={{ background: `radial-gradient(circle at 75% 25%, ${game.accentColor}55, transparent 42%), #0d1425` }}>
               <div aria-hidden="true" className="pointer-events-none absolute right-6 top-6 grid h-20 w-20 place-items-center rounded-3xl border border-white/10 bg-white/5 text-5xl shadow-xl backdrop-blur-sm sm:right-8 sm:top-8 sm:h-24 sm:w-24 sm:text-6xl" style={{ boxShadow: `0 12px 48px ${game.accentColor}25` }}>{game.icon}</div>
@@ -759,13 +814,13 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
               <h3 className="text-3xl font-black text-white sm:text-5xl">{game.title}</h3>
               <p className="mt-3 max-w-xl text-sm text-slate-300">{game.storyBlurb || game.description}</p>
               <p className="mt-5 rounded-xl border border-white/10 bg-black/20 p-3 font-mono text-xs text-slate-300">{game.controlsSummary}</p>
-              <button data-ui-open onClick={launchGame} className="mt-6 inline-flex min-h-12 w-fit items-center gap-2 rounded-xl px-5 text-sm font-black text-slate-950" style={{ backgroundColor: game.accentColor }}><Play className="h-4 w-4 fill-current" /> Play {game.title}</button>
+              <button data-ui-open data-theater-initial-focus onClick={launchGame} className="mt-6 inline-flex min-h-12 w-fit items-center gap-2 rounded-xl px-5 text-sm font-black text-slate-950" style={{ backgroundColor: game.accentColor }}><Play className="h-4 w-4 fill-current" /> Play {game.title}</button>
             </div>
           ) : viewMode === '2.5d' && game.playableEngineId ? (
             renderEngine()
           ) : game.htmlPath ? (
             <div className="w-full h-full flex-1 flex flex-col items-center justify-center">
-              <iframe ref={iframeRef} src={frameSrc()} title={game.title} className={`w-full h-full min-h-[320px] rounded-none sm:rounded-xl border-0 sm:border border-white/10 bg-black shadow-2xl ${isPaused ? 'pointer-events-none' : ''}`} inert={isPaused} allow="gamepad; fullscreen; autoplay; clipboard-write; focus-without-user-activation" tabIndex={0} onLoad={() => {
+              <iframe ref={iframeRef} src={frameSrc()} title={game.title} className={`w-full h-full min-h-[320px] rounded-none sm:rounded-xl border-0 sm:border border-white/10 bg-black shadow-2xl ${isPaused || showSettings ? 'pointer-events-none' : ''}`} inert={isPaused || showSettings} allow="gamepad; fullscreen; autoplay; clipboard-write; focus-without-user-activation" tabIndex={0} onLoad={() => {
                 try {
                   const frame = iframeRef.current;
                   if (!isPaused) { frame?.focus(); frame?.contentWindow?.focus(); }

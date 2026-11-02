@@ -9,16 +9,25 @@ import { ProfileHub } from '../components/ProfileHub';
 import { Button } from '../components/ui/Button';
 import { CardScenePreview } from '../components/CardScenePreview';
 import { Card } from '../components/ui/Card';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MetaQuest, MetaState } from '../services/metaService';
 
 type CatalogProps = React.ComponentProps<typeof GameCatalog>;
 type ProfileProps = React.ComponentProps<typeof ProfileHub>;
 
-export function HomePage({ games, stats, onLaunchGame, onExplore, catalog, telemetry, about }: {
+export function HomePage({ games, stats, onLaunchGame, onExplore, catalog, telemetry, about, scrollTarget, onScrollTargetConsumed }: {
   games: GameInfo[]; stats: PlayerStats; onLaunchGame: (game: GameInfo, startLevel?: number, seed?: number) => void; onExplore: () => void;
   catalog: CatalogProps; telemetry: React.ComponentProps<typeof TelemetryDashboard>; about: boolean;
+  scrollTarget?: string | null; onScrollTargetConsumed?: () => void;
 }) {
+  useEffect(() => {
+    if (!scrollTarget) return;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(scrollTarget)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      onScrollTargetConsumed?.();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [scrollTarget]);
   return <>
     <LauncherHome games={games} stats={stats} onLaunchGame={onLaunchGame} onExplore={onExplore} />
     <GameCatalog {...catalog} />

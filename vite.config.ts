@@ -5,6 +5,8 @@ import {readFileSync} from 'node:fs';
 import path from 'path';
 import {defineConfig, type Plugin} from 'vite';
 
+const rootDir = import.meta.dirname;
+
 const {version: packageVersion} = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 
 function buildInfoPlugin(): Plugin {
@@ -36,7 +38,7 @@ export default defineConfig(() => {
     plugins: [react(), tailwindcss(), buildInfoPlugin()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(rootDir, '.'),
       },
     },
     server: {

@@ -118,13 +118,16 @@ export const GameCatalog: React.FC<GameCatalogProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>(() => initialQuery?.get('category') || 'all');
   const [includedGameIds, setIncludedGameIds] = useState(() => new Set(initialQuery?.get('ids')?.split(',').filter(Boolean) || []));
   const [tagFilter, setTagFilter] = useState<string>(() => initialQuery?.get('tag') || 'all');
-  const [sortBy, setSortBy] = useState<'az' | 'number' | 'enhanced' | 'played' | 'difficulty'>('az');
+  const [sortBy, setSortBy] = useState<'az' | 'number' | 'enhanced' | 'played' | 'difficulty'>(() => {
+    const requested = initialQuery?.get('sort');
+    return requested === 'number' || requested === 'enhanced' || requested === 'played' || requested === 'difficulty' ? requested : 'az';
+  });
   const [playersFilter, setPlayersFilter] = useState<'all' | '1P' | '1-2P' | '1-4P'>(() => ['1P', '1-2P', '1-4P'].includes(initialQuery?.get('players') || '') ? initialQuery!.get('players') as '1P' | '1-2P' | '1-4P' : 'all');
   const [sessionFilter, setSessionFilter] = useState<'all' | 'quick' | 'short' | 'standard' | 'long'>(() => ['quick', 'short', 'standard', 'long'].includes(initialQuery?.get('len') || '') ? initialQuery!.get('len') as 'quick' | 'short' | 'standard' | 'long' : 'all');
   const [modeFilter, setModeFilter] = useState(() => initialQuery?.get('mode') || 'all');
   const [inputFilter, setInputFilter] = useState(() => initialQuery?.get('input') || '');
   const [moodFilter, setMoodFilter] = useState(() => initialQuery?.get('mood') || '');
-  const [eraFilter, setEraFilter] = useState('all');
+  const [eraFilter, setEraFilter] = useState(() => initialQuery?.get('era') || 'all');
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
@@ -152,12 +155,14 @@ export const GameCatalog: React.FC<GameCatalogProps> = ({
     if (selectedCategory !== 'all') params.set('category', selectedCategory);
     if (includedGameIds.size) params.set('ids', [...includedGameIds].join(','));
     if (moodFilter) params.set('mood', moodFilter);
+    if (eraFilter !== 'all') params.set('era', eraFilter);
+    if (sortBy !== 'az') params.set('sort', sortBy);
     if (searchQuery.trim()) params.set('q', searchQuery.trim());
     const nextHash = `#/browse${params.size ? `?${params.toString()}` : ''}`;
     if (window.location.hash !== nextHash) {
       window.history.replaceState({ ...(window.history.state || {}), apexRoute: nextHash }, '', nextHash);
     }
-  }, [modeFilter, sessionFilter, playersFilter, inputFilter, tagFilter, selectedCategory, includedGameIds, moodFilter, searchQuery]);
+  }, [modeFilter, sessionFilter, playersFilter, inputFilter, tagFilter, selectedCategory, includedGameIds, moodFilter, eraFilter, sortBy, searchQuery]);
 
   // Category counts
   const categories = useMemo(() => {
@@ -180,7 +185,7 @@ export const GameCatalog: React.FC<GameCatalogProps> = ({
 
       // Search term
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
+        const q = searchQuery.trim().toLowerCase();
         const matchesTitle = game.title.toLowerCase().includes(q);
         const matchesOf = game.of.toLowerCase().includes(q);
         const matchesCategory = game.category.toLowerCase().includes(q);
@@ -388,6 +393,7 @@ export const GameCatalog: React.FC<GameCatalogProps> = ({
             onClick={() => {
               setSearchQuery('');
               setSelectedCategory('all');
+              setIncludedGameIds(new Set());
               setTagFilter('all');
               setSortBy('az');
               setPlayersFilter('all');

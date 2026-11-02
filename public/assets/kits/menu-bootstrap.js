@@ -210,7 +210,7 @@
         if (game && typeof game.restart === 'function') game.restart(true);
         else if (global.ApexGameMenuActions && typeof global.ApexGameMenuActions.restart === 'function') global.ApexGameMenuActions.restart();
         else {
-          var restart = doc.querySelector('[data-a="restart"]') || doc.getElementById('restart') || doc.getElementById('new');
+          var restart = global.document.querySelector('[data-a="restart"]') || global.document.getElementById('restart') || global.document.getElementById('new');
           if (restart && typeof restart.click === 'function') restart.click();
         }
       },
@@ -219,7 +219,7 @@
         if (game && game.state === 'paused' && typeof game.pauseToggle === 'function') game.pauseToggle();
         else if (global.ApexGameMenuActions && typeof global.ApexGameMenuActions.resume === 'function') global.ApexGameMenuActions.resume();
         else {
-          var pause = doc.getElementById('pause') || doc.querySelector('[data-a="pause"]');
+          var pause = global.document.getElementById('pause') || global.document.querySelector('[data-a="pause"]');
           if (pause && typeof pause.click === 'function') pause.click();
         }
       }

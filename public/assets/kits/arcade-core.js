@@ -474,7 +474,7 @@
     }
 
     G.restart = (autostart) => {
-      G.score = 0; G.t = 0; G.stateT = 0; G.particles.length = 0; G.popups.length = 0;
+      G.score = 0; G.t = 0; G.stateT = 0; G.clock = 0; G.particles.length = 0; G.popups.length = 0;
       G.shakeAmt = 0; G.freezeN = 0; G.hudL = undefined; G.hudR = undefined; G.title = ''; G.sub = '';
       G.state = autostart ? 'playing' : 'ready';
       if (autostart) rep('session_start');

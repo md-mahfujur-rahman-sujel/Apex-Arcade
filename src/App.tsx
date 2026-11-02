@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AnimatePresence, LazyMotion, domAnimation, m, useReducedMotion } from 'motion/react';
 import { GAMES_DATA } from './data/gamesData';
 import { GameInfo, PlayerStats } from './types/game';
@@ -178,9 +178,30 @@ export default function App() {
   }, []);
 
   const activePlayableGame = route.type === 'play' ? GAMES_DATA.find((game) => game.id === route.id) || null : null;
-  const pageKey = route.type === 'game' || route.type === 'play' ? `${route.type}:${route.id}` : route.type;
-  const activeStartLevel = route.type === 'play' ? Math.max(1, Number(route.query.get('level')) || 1) : 1;
-  const activeStartSeed = route.type === 'play' && route.query.has('seed') ? Number(route.query.get('seed')) : undefined;
+  const pageKey = route.type === 'game' || route.type === 'play'
+    ? `${route.type}:${route.id}`
+    : route.type === 'browse'
+      ? `browse:${route.query.toString()}`
+      : route.type === 'collections'
+        ? `collections:${route.slug || ''}`
+        : route.type;
+  const requestedLevel = route.type === 'play' ? Number(route.query.get('level')) : 1;
+  const activeStartLevel = Number.isFinite(requestedLevel)
+    ? Math.min(activePlayableGame?.levelCount || 99, Math.max(1, Math.floor(requestedLevel)))
+    : 1;
+  const requestedSeed = route.type === 'play' ? Number(route.query.get('seed')) : Number.NaN;
+  const activeStartSeed = Number.isInteger(requestedSeed) ? requestedSeed : undefined;
+  const [scrollTarget, setScrollTarget] = useState<string | null>(null);
+
+  const hasMountedRoute = useRef(false);
+  useEffect(() => {
+    if (!hasMountedRoute.current) {
+      hasMountedRoute.current = true;
+      return;
+    }
+    if (route.type === 'play') return;
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [pageKey, route.type]);
   const catalogProps = { games: GAMES_DATA, stats, favorites: stats.favorites, onToggleFavorite: handleToggleFavorite, onLaunchGame: handleLaunchGame, onOpenDossier: handleOpenDossier, activeFilter, onFilterChange: setActiveFilter };
   const telemetryProps = {
     stats,
@@ -206,8 +227,8 @@ export default function App() {
   const handleSectionNavigation = (sectionId: string, filter?: string) => {
     if (filter) { setActiveTab(filter); setActiveFilter(filter === 'playable' ? 'playable' : 'all'); }
     if (route.type !== 'home') {
+      setScrollTarget(sectionId);
       navigate({ type: 'home' });
-      window.setTimeout(() => document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth' }), 0);
     } else document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth' });
   };
 
@@ -266,9 +287,10 @@ export default function App() {
             exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -4 }}
             transition={{ duration: reduceMotion ? 0 : getMotionDurationSeconds('base'), ease: motionEase }}
           >
-            {route.type === 'home' && <HomePage games={GAMES_DATA} stats={stats} onLaunchGame={handleLaunchGame} onExplore={openBrowse} catalog={catalogProps} telemetry={telemetryProps} about />}
+            {route.type === 'home' && <HomePage games={GAMES_DATA} stats={stats} onLaunchGame={handleLaunchGame} onExplore={openBrowse} catalog={catalogProps} telemetry={telemetryProps} about scrollTarget={scrollTarget} onScrollTargetConsumed={() => setScrollTarget(null)} />}
             {route.type === 'browse' && <BrowsePage catalog={{ ...catalogProps, initialQuery: route.query }} />}
             {route.type === 'game' && <GamePage game={GAMES_DATA.find((game) => game.id === route.id)} games={GAMES_DATA} stats={stats} onPlay={handleLaunchGame} onBrowse={openBrowse} />}
+            {route.type === 'play' && !activePlayableGame && <NotFoundPage title="Game not found" detail="That game ID does not match a title in this collection." onHome={showHome} />}
             {route.type === 'profile' && <ProfilePage profile={profileProps} />}
             {route.type === 'quests' && <QuestsPage meta={metaState} />}
             {route.type === 'collections' && <CollectionsPage games={GAMES_DATA} slug={route.slug} onPlay={handleLaunchGame} />}

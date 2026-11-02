@@ -16,7 +16,9 @@ const page = await context.newPage();
 const errors = [];
 await context.route(`${origin}/**`, async (route) => {
   const url = new URL(route.request().url());
-  const filePath = path.resolve(distRoot, `.${decodeURIComponent(url.pathname)}`);
+  const pathname = decodeURIComponent(url.pathname);
+  const relativePath = pathname.startsWith('/Apex-Arcade/') ? pathname.slice('/Apex-Arcade'.length) : pathname;
+  const filePath = path.resolve(distRoot, `.${relativePath}`);
   if (filePath !== distRoot && !filePath.startsWith(`${distRoot}${path.sep}`)) return route.fulfill({ status: 403, body: 'Forbidden' });
   try {
     const info = await stat(filePath);

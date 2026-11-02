@@ -104,6 +104,7 @@
     var keys = Object.keys(patch);
     for (var i = 0; i < keys.length; i++) {
       var k = keys[i];
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
       var v = patch[k];
       if (Array.isArray(v)) {
         if (Array.isArray(target[k])) {

@@ -26,6 +26,7 @@ const HOME_CATEGORIES: Array<{ id: GameInfo['category']; label: string; icon: st
 
 export const LauncherHome: React.FC<LauncherHomeProps> = ({ games, stats, onLaunchGame, onExplore }) => {
   const [heroIndex, setHeroIndex] = useState(0);
+  const [heroPaused, setHeroPaused] = useState(false);
   const heroCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const heroGames = useMemo(() => FEATURED_GAME_IDS.map((id) => games.find((game) => game.id === id)).filter((game): game is GameInfo => Boolean(game && game.playableEngineId)), [games]);
   const activeHero = heroGames[heroIndex % Math.max(1, heroGames.length)];
@@ -65,10 +66,13 @@ export const LauncherHome: React.FC<LauncherHomeProps> = ({ games, stats, onLaun
     { id: 'recommended', label: 'Recommended games', icon: '✨', accent: '#22d3ee', games: recommendedGames },
   ], [games, recommendedGames]);
   useEffect(() => {
-    if (heroGames.length < 2 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const timer = window.setInterval(() => setHeroIndex((index) => (index + 1) % heroGames.length), 7000);
+    if (heroGames.length < 2 || heroPaused || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      setHeroIndex((index) => (index + 1) % heroGames.length);
+    }, 7000);
     return () => window.clearInterval(timer);
-  }, [heroGames.length]);
+  }, [heroGames.length, heroPaused]);
 
   useEffect(() => {
     const canvas = heroCanvasRef.current;
@@ -231,7 +235,13 @@ export const LauncherHome: React.FC<LauncherHomeProps> = ({ games, stats, onLaun
         </div>
       </section>
 
-      {activeHero && <Card className="grid grid-cols-1 rounded-3xl border border-white/10 bg-surface shadow-card lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+      {activeHero && <Card
+        className="grid grid-cols-1 rounded-3xl border border-white/10 bg-surface shadow-card lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]"
+        onMouseEnter={() => setHeroPaused(true)}
+        onMouseLeave={() => setHeroPaused(false)}
+        onFocusCapture={() => setHeroPaused(true)}
+        onBlurCapture={(event) => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setHeroPaused(false); }}
+      >
         <div className="pointer-events-none absolute inset-0 opacity-30" style={{ background: `radial-gradient(ellipse at 80% 30%, ${activeHero.accentColor}30, transparent 50%)` }} />
         <div className="relative z-10 flex min-w-0 flex-col justify-center p-6 sm:p-9 lg:p-12">
           <div className="mb-4 flex items-center gap-2 text-[10px] font-mono uppercase tracking-[.2em] text-accent"><Sparkles className="h-3.5 w-3.5" /> Apex Arcade · {games.length} games</div>

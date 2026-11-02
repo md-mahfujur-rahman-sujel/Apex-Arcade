@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { GameInfo } from '../types/game';
 import { CardScenePreview } from './CardScenePreview';
 import { X, Play, Award, Zap, Gamepad2, Calendar, User, Monitor, Images } from 'lucide-react';
@@ -22,6 +22,8 @@ export const GameDossierModal: React.FC<GameDossierModalProps> = ({
 }) => {
   const [capturedStills, setCapturedStills] = useState<string[]>([]);
   const [startLevel, setStartLevel] = useState(1);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const captureStill = useCallback((still: string) => {
     setCapturedStills((current) => current.length >= 3 ? current : [...current, still]);
   }, []);
@@ -29,6 +31,41 @@ export const GameDossierModal: React.FC<GameDossierModalProps> = ({
     setCapturedStills([]);
     setStartLevel(1);
   }, [game?.id]);
+  useEffect(() => {
+    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = requestAnimationFrame(() => {
+      dialogRef.current?.querySelector<HTMLElement>('[data-dossier-initial-focus]')?.focus({ preventScroll: true });
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      previouslyFocusedRef.current?.focus?.({ preventScroll: true });
+    };
+  }, []);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+      event.preventDefault();
+      onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+  const trapFocus = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab' || !dialogRef.current) return;
+    const items = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+      .filter((element) => element.offsetParent !== null);
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || !dialogRef.current.contains(active))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (active === last || !dialogRef.current.contains(active))) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
   if (!game) return null;
 
   const maxStartLevel = Math.max(1, Math.min(game.levelCount || 1, Math.floor(levelProgress) + 1));
@@ -41,6 +78,11 @@ export const GameDossierModal: React.FC<GameDossierModalProps> = ({
       onClick={onClose}
     >
       <Card
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dossier-title"
+        onKeyDown={trapFocus}
         className="my-8 w-full max-w-2xl overflow-hidden rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
@@ -49,6 +91,7 @@ export const GameDossierModal: React.FC<GameDossierModalProps> = ({
           <CardScenePreview game={game} isHovered captureFrames onCapture={captureStill} containerClassName="!h-full" />
           <button
             data-ui-close
+            data-dossier-initial-focus
             onClick={onClose}
             aria-label="Close Modal"
             className="absolute right-4 top-4 grid min-h-11 min-w-11 place-items-center rounded-full border border-line bg-surface-2 text-fg-muted shadow-pop transition-colors hover:bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-stage"
@@ -63,7 +106,7 @@ export const GameDossierModal: React.FC<GameDossierModalProps> = ({
             <div className="mb-1 flex items-center gap-2 font-mono text-xs text-fg-muted">
               <span>{game.era}</span><span aria-hidden="true">·</span><span>{game.year}</span>
             </div>
-            <h2 className="text-2xl font-extrabold tracking-tight text-fg md:text-3xl">{game.title}</h2>
+            <h2 id="dossier-title" className="text-2xl font-extrabold tracking-tight text-fg md:text-3xl">{game.title}</h2>
           </div>
           {(game.playableEngineId || game.htmlPath) && <Button onClick={() => { onClose(); onLaunchGame(game, startLevel); }} className="text-xs"><Play className="h-4 w-4 fill-current" />Play Game</Button>}
         </div>
