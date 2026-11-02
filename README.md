@@ -2,6 +2,8 @@
 
 A browser arcade with 50 games across arcade, board, sports, cards, and puzzle categories. The React launcher includes game previews, local play history, favorites, a playable theater, score-card sharing, and game deep links.
 
+**Play it live: [https://md-mahfujur-rahman-sujel.github.io/Apex-Arcade/](https://md-mahfujur-rahman-sujel.github.io/Apex-Arcade/)**
+
 ## Run locally
 
 Requirements: Node.js and npm.
