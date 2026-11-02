@@ -81,12 +81,10 @@ try {
   await page.waitForFunction(() => location.hash === '#/game/flappy-bird');
 
   await page.goto(`${origin}/#/settings`);
-  await page.getByRole('button', { name: /current theme/i }).click();
-  await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
   await page.getByRole('link', { name: 'Apex Arcade home' }).click();
   await page.waitForFunction(() => location.hash === '#/');
   if (errors.length) throw new Error(`Browser errors: ${errors.join(' | ')}`);
-  console.log('Router verification passed: direct route loads, legacy redirect, not-found states, back/forward, play close (including recovery from a game-frame history entry), and theme persistence across navigation.');
+  console.log('Router verification passed: direct route loads, legacy redirect, not-found states, back/forward, and play close (including recovery from a game-frame history entry).');
 } finally {
   await browser.close();
   await new Promise((resolve) => server.httpServer.close(resolve));

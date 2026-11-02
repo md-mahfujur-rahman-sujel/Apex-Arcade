@@ -26,37 +26,12 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>('all');
   const [isMuted, setIsMuted] = useState<boolean>(audio.isMuted());
   const [waitingServiceWorker, setWaitingServiceWorker] = useState<ServiceWorker | null>(null);
-  const [systemPrefersLight, setSystemPrefersLight] = useState<boolean>(() =>
-    window.matchMedia('(prefers-color-scheme: light)').matches,
-  );
-  const isLightTheme = preferences.theme === 'light' || (preferences.theme === 'system' && systemPrefersLight);
-
-  useEffect(() => {
-    const media = window.matchMedia('(prefers-color-scheme: light)');
-    const syncSystemPreference = (event: MediaQueryListEvent) => setSystemPrefersLight(event.matches);
-    setSystemPrefersLight(media.matches);
-    media.addEventListener('change', syncSystemPreference);
-    return () => media.removeEventListener('change', syncSystemPreference);
-  }, []);
-
-  useEffect(() => {
-    const theme = isLightTheme ? 'light' : 'dark';
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.style.colorScheme = theme;
-    const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-    if (themeColor) themeColor.content = isLightTheme ? '#f2f1ed' : '#08090e';
-  }, [isLightTheme]);
 
   useEffect(() => {
     audio.setVolume(preferences.sfxVolume);
     document.documentElement.dataset.colourBlind = preferences.colourBlindPalette;
     document.documentElement.dataset.particleLevel = preferences.particleLevel;
   }, [preferences]);
-
-  const handleCycleTheme = () => {
-    const theme = preferences.theme === 'system' ? 'light' : preferences.theme === 'light' ? 'dark' : 'system';
-    setPreferences(saveAppPreferences({ ...preferences, theme }));
-  };
 
   // Reload stats from localStorage
   const refreshStats = useCallback(() => {
@@ -272,9 +247,6 @@ export default function App() {
         }}
         isMuted={isMuted}
         onToggleMute={handleToggleMute}
-        isLightTheme={isLightTheme}
-        themePreference={preferences.theme}
-        onToggleTheme={handleCycleTheme}
       />
 
       <main className="flex-1">

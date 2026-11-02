@@ -34,15 +34,15 @@ try {
   await page.goto('http://127.0.0.1:4173/#/settings');
   await page.locator('[data-settings-page]').waitFor({ state: 'visible' });
 
-  await page.locator('[data-settings-page] select').nth(0).selectOption('dark');
-  await page.locator('[data-settings-page] select').nth(1).selectOption('deutan');
+  assert.equal(await page.getByLabel('Theme').count(), 0);
+  await page.locator('[data-settings-page] select').nth(0).selectOption('deutan');
   await page.getByLabel('Reduce motion').check();
-  await page.locator('[data-settings-page] select').nth(2).selectOption('lite');
+  await page.locator('[data-settings-page] select').nth(1).selectOption('lite');
   await page.locator('[data-settings-page] input[type=range]').nth(0).fill('0.35');
   await page.locator('[data-settings-page] input[type=range]').nth(1).fill('0.6');
   await page.getByLabel('CRT effect').check();
   const prefs = await page.evaluate(() => JSON.parse(localStorage.getItem('apex:preferences:v1')));
-  assert.equal(prefs.theme, 'dark');
+  assert.equal('theme' in prefs, false);
   assert.equal(prefs.colourBlindPalette, 'deutan');
   assert.equal(prefs.reducedMotion, true);
   assert.equal(prefs.particleLevel, 'lite');
@@ -51,8 +51,8 @@ try {
   assert.equal(prefs.displayModes.crt, true);
   await page.reload();
   await page.locator('[data-settings-page]').waitFor({ state: 'visible' });
-  assert.equal(await page.locator('[data-settings-page] select').nth(0).inputValue(), 'dark');
-  assert.equal(await page.locator('[data-settings-page] select').nth(1).inputValue(), 'deutan');
+  assert.equal(await page.locator('[data-settings-page] select').nth(0).inputValue(), 'deutan');
+  assert.equal(await page.locator('[data-settings-page] select').nth(1).inputValue(), 'lite');
   assert.equal(await page.locator('[data-settings-page] input[type=range]').nth(0).inputValue(), '0.35');
 
   await page.goto('http://127.0.0.1:4173/#/quests');
@@ -87,7 +87,7 @@ try {
     buffer: Buffer.from(JSON.stringify(importBundle)),
   });
   await page.getByRole('status').getByText('Save imported.').waitFor({ state: 'visible' });
-  assert.equal(await page.locator('[data-settings-page] select').nth(1).inputValue(), 'tritan');
+  assert.equal(await page.locator('[data-settings-page] select').nth(0).inputValue(), 'tritan');
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('apex_arcade_stats_v2')).totalPlayCount), 4);
   assert.ok(await page.evaluate(() => localStorage.getItem('apex:save:test-game')));
 
@@ -95,7 +95,7 @@ try {
   await page.getByRole('button', { name: 'Reset progress' }).click();
   assert.equal(await page.evaluate(() => localStorage.getItem('apex:meta')), null);
   assert.equal(await page.evaluate(() => localStorage.getItem('apex:save:test-game')), null);
-  assert.equal(await page.locator('[data-settings-page] select').nth(1).inputValue(), 'tritan');
+  assert.equal(await page.locator('[data-settings-page] select').nth(0).inputValue(), 'tritan');
 
   await context.close();
   console.log('PASS Settings persist and profile export, import, and progress reset work in the production UI.');

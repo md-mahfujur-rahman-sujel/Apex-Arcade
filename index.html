@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,25 +8,8 @@
     <meta name="theme-color" content="#08090e" />
     <script src="./assets/kits/meta-config.js"></script>
     <script src="./assets/kits/meta-kit.js"></script>
-    <script>
-      (() => {
-        let preference = 'system';
-        try {
-          const stored = localStorage.getItem('apex-arcade-theme');
-          if (stored === 'light' || stored === 'dark' || stored === 'system') preference = stored;
-        } catch { /* Use the system setting when storage is unavailable. */ }
-
-        const systemPrefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
-        const theme = preference === 'system' ? (systemPrefersLight ? 'light' : 'dark') : preference;
-        const root = document.documentElement;
-        root.dataset.theme = theme;
-        root.style.colorScheme = theme;
-        document.querySelector('meta[name="theme-color"]').content = theme === 'light' ? '#f2f1ed' : '#08090e';
-      })();
-    </script>
     <style>
       ::selection { background-color: #06b6d4; color: #000; }
-      html[data-theme='light'] ::selection { background-color: #0e7490; color: #f8fafc; }
     </style>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./apex-icon.svg" type="image/svg+xml" />

@@ -2,6 +2,8 @@
 
 Version 1.0 | 22 Oct 2026 | Scope: website shell in `src/` only (not the games)
 
+> **Superseded 2 Nov 2026.** The app is dark-only: the theme preference, toggle, head bootstrap, and light palette were removed. This document is kept as a historical record of the light-theme work.
+
 This PRD comes from a read of the source code and one screenshot of the home page. Nothing was run in a browser. Items marked **CHECK** must be confirmed in the running app before you rely on them.
 
 ---

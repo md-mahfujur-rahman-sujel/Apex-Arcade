@@ -117,7 +117,7 @@ export const LauncherHome: React.FC<LauncherHomeProps> = ({ games, stats, onLaun
         (ctx as CanvasRenderingContext2D & { reset?: () => void }).reset?.();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        // Self-contained dark stage: scenes are authored for a dark backdrop, so the hero looks the same in every page theme.
+        // Scenes are authored for a dark backdrop, so the hero paints its own stage.
         ctx.fillStyle = '#0b1020';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.strokeStyle = 'rgba(148,163,184,.07)';
@@ -264,7 +264,7 @@ export const LauncherHome: React.FC<LauncherHomeProps> = ({ games, stats, onLaun
         </div>
         <ScreenBezel data-hero-stage className="min-w-0 min-h-[210px] border-t border-white/5 lg:min-h-[350px] lg:border-l lg:border-t-0">
           <canvas ref={heroCanvasRef} aria-hidden="true" className="absolute inset-0 h-full w-full object-cover" />
-          {/* The dark stage is painted on the canvas itself, so no theme-dependent overlay is needed. */}
+          {/* The dark stage is painted on the canvas itself, so no overlay is needed. */}
           <div data-hero-badge className="absolute bottom-4 left-4 rounded-full border border-line bg-card/90 px-3 py-1.5 text-xs text-fg backdrop-blur">{activeHero.icon} {activeHero.of}</div>
         </ScreenBezel>
       </Card>}

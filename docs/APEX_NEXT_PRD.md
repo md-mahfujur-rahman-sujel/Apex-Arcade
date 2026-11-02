@@ -56,7 +56,7 @@ Project root: `C:\Users\Mahfujur Rahman\Apex-Arcade` (Windows). Write shell comm
 | Page | `App.tsx` renders one scrolling page: `Navbar`, `LauncherHome`, `GameCatalog`, `TelemetryDashboard`, `AboutAnthology`, `ProfileHub`, `Footer`. There is no router. |
 | Modals | `GameDossierModal` (z-60) and `PlayableTheaterModal` (z-70), both animated with `motion`. |
 | Deep link | `#game=<id>` opens the theater (read on load and on `hashchange`). Closing the theater clears the hash. This MUST keep working after routing is added. |
-| Theme | Key `apex-arcade-theme` holds `system`, `light` or `dark`. `<html data-theme>` and `color-scheme` are set; the `theme-color` meta is `#f2f1ed` (light) or `#08090e` (dark). |
+| Theme | Dark only. `<html>` is statically `data-theme="dark"` without a bootstrap script, preference key, or toggle; the `theme-color` meta is `#08090e`. |
 | UI sounds | `src/services/audioSynthesizer.ts` (`audio`) plays hover, click, open and close sounds, and handles mute. |
 | Game data | `src/data/gamesData.ts` exports `GAMES_DATA: GameInfo[]`. |
 | Types | `src/types/game.ts` defines `GameInfo`, `PlayerStats`, `GameSessionScore`, `ApexEventType`, `ApexEventMessage`, `DifficultySetting`, `PlayableEngineId`. |
@@ -72,7 +72,6 @@ Project root: `C:\Users\Mahfujur Rahman\Apex-Arcade` (Windows). Write shell comm
 | Key | Owner | Contents |
 | --- | --- | --- |
 | `apex_arcade_stats_v1` and `apex_arcade_stats_v2` | `storageService.ts` | `PlayerStats`. Every save writes BOTH keys. v2 is read first; v1 is migrated if v2 is missing. |
-| `apex-arcade-theme` | `App.tsx` | Theme preference. |
 | `apex:save:<gameId>` | `save-kit.js` | Per-game schema v3 (see 5.4); v2 values migrate with a one-time raw backup. |
 | `arcade-hi-<cfg.id>` | `arcade-core.js` | Legacy high score. `save-kit` migrates it and deletes it, but `arcade-core` writes it again on every save. |
 | `arcade-muted`, `apex:mute` | `arcade-core.js`, `save-kit.js` | Legacy mute flags. |
@@ -160,7 +159,7 @@ Add new fields and functions beside the existing ones. Never rename or remove a 
 | `#/profile`, `#/quests`, `#/collections/:slug?`, `#/settings` | Pages | |
 | `#game=<id>` (old) | Redirect | Keep working: rewrite with `replaceState` to `#/play/<id>`. |
 
-Back and forward MUST work. Closing the theater returns to the previous route, or to `#/` if the player arrived by deep link. The theme preference MUST survive navigation. Keep the in-page `scrollIntoView` anchors working until the pages replace them.
+Back and forward MUST work. Closing the theater returns to the previous route, or to `#/` if the player arrived by deep link. Keep the in-page `scrollIntoView` anchors working until the pages replace them.
 
 ### 5.2 `GameInfo` additions (`src/types/game.ts`)
 

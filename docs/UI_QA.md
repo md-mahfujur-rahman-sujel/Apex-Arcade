@@ -1,5 +1,7 @@
 # UI baseline and QA record
 
+> **Status 2 Nov 2026:** the app is dark-only. Entries below that mention a light theme or theme control are historical records; current capture and test scripts generate dark-only artifacts.
+
 ## T0 baseline capture
 
 At T0, Playwright had not yet been approved for this project, so the original baseline procedure uses manual Chrome DevTools captures. Keep the screenshots local under `docs/ui-baseline/`; that folder is reserved for the baseline and is not checked into source control unless the owner wants the image files committed.
@@ -22,7 +24,7 @@ At T0, Playwright had not yet been approved for this project, so the original ba
 
 ## Automated checks
 
-- `node scripts/contrast-check.mjs` calculates WCAG relative luminance contrast for the declared semantic text and accent pairs from `docs/LIGHT_UI_PRD.md` §4.1. Normal text uses 4.5:1; large text and accent/UI marks use 3:1. `--fg-subtle` is decorative-only and is checked at 3:1 on the dark stage.
+- `node scripts/contrast-check.mjs` calculates WCAG relative luminance contrast for the dark semantic text and accent pairs declared in `src/index.css`. Normal text uses 4.5:1; large text and accent/UI marks use 3:1. `--fg-subtle` is decorative-only and is checked at 3:1 on the dark stage.
 - Pair selection follows the intended semantic uses: body and muted text on page surfaces, readable labels on the dark stage, accent labels on page surfaces, and text on primary buttons. It does not claim that every possible token combination is a valid design pairing.
 
 ## Follow-up QA matrix

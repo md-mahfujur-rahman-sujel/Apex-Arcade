@@ -1,4 +1,4 @@
-const CACHE_NAME = 'apex-arcade-v22';
+const CACHE_NAME = 'apex-arcade-v23';
 const BASE_PATH = new URL('.', self.location.href).pathname;
 const GAME_FILES = [
   '01-flappy-bird/index.html', '02-pong/index.html', '03-snake/index.html', '04-space-invaders/index.html',

@@ -147,7 +147,7 @@ export function UtilityPage({ kind, onHome }: { kind: 'quests' | 'collections' |
   const Icon = kind === 'settings' ? Settings : BookOpen;
   return <main className="mx-auto flex min-h-[70vh] w-full max-w-4xl flex-col items-start justify-center px-4 py-16 sm:px-6 lg:px-8">
     <Icon className="h-8 w-8 text-accent" /><h1 className="mt-5 text-4xl font-black text-fg">{heading}</h1>
-    <p className="mt-3 max-w-xl text-fg-muted">This destination is ready for its next feature pass. Your profile, games, and theme remain available.</p>
+    <p className="mt-3 max-w-xl text-fg-muted">This destination is ready for its next feature pass. Your profile and games remain available.</p>
     <Button variant="secondary" className="mt-7" onClick={onHome}>Return home <ArrowRight className="ml-2 h-4 w-4" /></Button>
   </main>;
 }

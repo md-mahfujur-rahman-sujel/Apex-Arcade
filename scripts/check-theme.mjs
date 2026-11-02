@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
-// Guard against reintroducing page-wide light-theme class rewrites and
-// hard-coded page-surface colors. Dark game engines and the isolated theater
-// are intentionally excluded under docs/LIGHT_UI_PRD.md §7.
+// Guard against reintroducing light-theme selectors and hard-coded page-surface
+// colors. Dark game engines and the isolated theater are intentionally excluded.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,11 +11,8 @@ const stylesheetPath = join(root, 'src/index.css');
 const stylesheet = readFileSync(stylesheetPath, 'utf8');
 const failures = [];
 
-if (/html\[data-theme=['"]light['"]\]\s+\[class(?:[*~^$|])?=/.test(stylesheet)) {
-  failures.push('src/index.css contains a light-theme class-name override selector.');
-}
-if (/html\[data-theme=['"]light['"]\]\s+button\.bg-/.test(stylesheet)) {
-  failures.push('src/index.css contains a light-theme utility-button override selector.');
+if (/data-theme=['"]light['"]/.test(stylesheet)) {
+  failures.push('src/index.css still contains a light-theme selector.');
 }
 
 const allowedThemeIndependentFiles = new Set(['PlayableTheaterModal.tsx', 'TheaterPauseOverlay.tsx']);
@@ -44,5 +40,5 @@ if (failures.length) {
   for (const failure of failures) console.error(`- ${failure}`);
   process.exitCode = 1;
 } else {
-  console.log('Theme checks passed: legacy light selectors are absent and component surfaces use tokens.');
+  console.log('Theme checks passed: light selectors are absent and component surfaces use tokens.');
 }

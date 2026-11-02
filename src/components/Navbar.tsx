@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Volume2, VolumeX, Sparkles, Menu, X, Gamepad2, Activity, BookOpen, Layers, UserRound, Sun, Moon } from 'lucide-react';
+import { Volume2, VolumeX, Sparkles, Menu, X, Gamepad2, Activity, BookOpen, Layers, UserRound } from 'lucide-react';
 import { GAMES_DATA } from '../data/gamesData';
 
 interface NavbarProps {
@@ -10,9 +10,6 @@ interface NavbarProps {
   onTabChange: (tab: string) => void;
   isMuted: boolean;
   onToggleMute: () => void;
-  isLightTheme: boolean;
-  themePreference: 'system' | 'light' | 'dark';
-  onToggleTheme: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -22,17 +19,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   onTabChange,
   isMuted,
   onToggleMute,
-  isLightTheme,
-  themePreference,
-  onToggleTheme,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
-  const nextThemePreference = themePreference === 'system' ? 'light' : themePreference === 'light' ? 'dark' : 'system';
-  const themeLabel = (preference: 'system' | 'light' | 'dark') =>
-    preference[0].toUpperCase() + preference.slice(1);
 
   useEffect(() => {
     const updateScrollState = () => setIsScrolled(window.scrollY > 8);
@@ -140,16 +131,6 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <button
-            onClick={onToggleTheme}
-            aria-label={`Current theme: ${themeLabel(themePreference)}. Switch to ${themeLabel(nextThemePreference)} theme`}
-            aria-pressed={isLightTheme}
-            title={`Theme: ${themeLabel(themePreference)} (currently ${isLightTheme ? 'light' : 'dark'}). Switch to ${themeLabel(nextThemePreference)}`}
-            className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-xl border border-line bg-surface-2 p-2 text-fg-muted transition-colors hover:border-line-strong hover:bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg sm:p-2.5"
-          >
-            {isLightTheme ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4 text-amber-300" />}
-          </button>
-
-          <button
             onClick={onQuickPlay}
             data-ui-open
             className="flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-xl bg-accent px-3 py-2 text-xs font-semibold text-accent-fg shadow-md transition-colors hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg sm:px-4"
@@ -190,7 +171,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             type="button"
             aria-label="Close navigation menu"
             onClick={() => setMobileMenuOpen(false)}
-            className={`fixed inset-0 z-40 backdrop-blur-[2px] xl:hidden ${isLightTheme ? 'bg-slate-900/45' : 'bg-black/60'}`}
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] xl:hidden"
           />
           <nav
             ref={drawerRef}

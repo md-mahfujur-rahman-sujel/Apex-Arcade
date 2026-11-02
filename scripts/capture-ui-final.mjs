@@ -30,16 +30,12 @@ if (!existsSync(chromePath)) {
 await mkdir(outputDir, { recursive: true });
 const browser = await chromium.launch({ headless: true, executablePath: chromePath });
 
-async function newThemePage(theme, viewport) {
+async function newPage(viewport) {
   const context = await browser.newContext({
     viewport,
     deviceScaleFactor: 1,
-    colorScheme: theme,
     reducedMotion: 'reduce',
   });
-  await context.addInitScript((preference) => {
-    localStorage.setItem('apex-arcade-theme', preference);
-  }, theme);
   const page = await context.newPage();
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
   await page.locator('[data-catalog-card]').first().waitFor({ timeout: 30000 });
@@ -136,9 +132,7 @@ async function revealPage(page) {
 
 async function savePage(page, filename) {
   const theme = await page.evaluate(() => document.documentElement.dataset.theme);
-  if (theme !== filename.split('-')[0]) {
-    throw new Error(`${filename}: expected theme ${filename.split('-')[0]}, got ${theme}`);
-  }
+  if (theme !== 'dark') throw new Error(`${filename}: expected dark theme, got ${theme}`);
   const overflow = await page.evaluate(() => ({
     viewport: document.documentElement.clientWidth,
     document: document.documentElement.scrollWidth,
@@ -161,13 +155,11 @@ async function savePage(page, filename) {
 }
 
 try {
-  for (const theme of ['dark', 'light']) {
-    for (const viewport of viewports) {
-      const { context, page } = await newThemePage(theme, viewport);
-      await revealPage(page);
-      await savePage(page, `${theme}-${viewport.name}-full.png`);
-      await context.close();
-    }
+  for (const viewport of viewports) {
+    const { context, page } = await newPage(viewport);
+    await revealPage(page);
+    await savePage(page, `dark-${viewport.name}-full.png`);
+    await context.close();
   }
 } finally {
   await browser.close();
