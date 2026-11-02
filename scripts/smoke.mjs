@@ -463,11 +463,16 @@ async function testGame(game, viewport, browserContext) {
 
     await page.locator('#playable-theater-modal button[aria-label="Theater settings"]').click({ timeout: 1000 });
     let arcadeTick = null;
-    if (isArcade) arcadeTick = await frame.evaluate(() => {
-      const gameState = window.Arcade.test.G;
-      if (gameState.state !== 'playing') gameState.restart(true);
-      return gameState.t;
-    });
+    if (isArcade) {
+      // The settings overlay pauses through postMessage; let it land before
+      // restarting so a late pause cannot stop the lite-tier check.
+      await frame.waitForFunction(() => ['paused', 'over'].includes(window.Arcade?.test?.G?.state), null, { timeout: 1000 }).catch(() => {});
+      arcadeTick = await frame.evaluate(() => {
+        const gameState = window.Arcade.test.G;
+        if (gameState.state !== 'playing') gameState.restart(true);
+        return gameState.t;
+      });
+    }
     await page.locator('#theater-settings select').selectOption('lite', { timeout: 1000 });
     try {
       if (isArcade) await frame.evaluate(() => { const game = window.Arcade.test.G; if (game.state === 'paused') game.pauseToggle(); });
@@ -480,7 +485,14 @@ async function testGame(game, viewport, browserContext) {
         : await frame.locator('#bk-main > *, #board, #bd').first().isVisible().catch(() => false);
       result.lite = stillRunning ? ok('SET_PERF_TIER lite applied and game surface remains active') : fail('Game surface stopped after SET_PERF_TIER lite');
     } catch {
-      result.lite = fail('SET_PERF_TIER lite did not reach Perf.tier');
+      let state = '';
+      try {
+        state = await frame.evaluate(() => JSON.stringify({
+          tier: window.Perf?.tier ?? null,
+          state: window.Arcade?.test?.G?.state ?? null,
+        }));
+      } catch { /* The frame may be gone; keep the plain failure. */ }
+      result.lite = fail(`SET_PERF_TIER lite did not reach Perf.tier${state ? ` (${state})` : ''}`);
     }
 
     try {
