@@ -564,7 +564,24 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
 
     switch (game.playableEngineId) {
       case 'cyber-flap':
-        return <CyberFlapEngine {...commonProps} />;
+        return (
+          <CyberFlapEngine
+            {...commonProps}
+            seed={startSeed}
+            highScore={highScore}
+            onLevelComplete={(level) => {
+              recordApexLevelProgress(game.id, level);
+              onStatsUpdated();
+            }}
+            onRestart={() => {
+              sessionEndedRef.current = false;
+              sessionStartRef.current = Date.now();
+              sessionBestRef.current = highScoreRef.current;
+              sessionNewBestRef.current = false;
+              setCurrentScore(0);
+            }}
+          />
+        );
       case 'holo-pong':
         return <HoloPongEngine {...commonProps} />;
       case 'quantum-snake':
