@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="../../../apex-icon.svg" type="image/svg+xml">
 <title>Ember Serpent</title>
 </head>
 <body>
@@ -26,36 +27,120 @@
      "ember"   — lava-forged obsidian board, glowing fire serpent, ember trail, flame bite.
      "classic" — the original green serpent on the dark garden board. */
 const A = Arcade;
+const GAME_ID = 'ember-serpent';
 const COLS = 25, ROWS = 16, C = 28, OX = 10, OY = 46, W = 720, H = 520, PER_LEVEL = 6, MAX_LEVEL = 10;
 const DIRS = { ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] };
 const SKIN_KEY = 'ember-serpent-skin';
+const COMBO_WINDOW = 200;
+const MODE_INFO = {
+  classic: { label: 'CLASSIC', fixedWrap: false },
+  gate: { label: 'SERPENT GATE', fixedWrap: true },
+  gauntlet: { label: 'MOLTEN GAUNTLET', fixedWrap: false },
+  daily: { label: 'DAILY EMBER', fixedWrap: true },
+};
+const LOOKS = {
+  ember: { outline: '#3b0d06', headA: '#fdba74', headB: '#ea580c', bodyA: '#fb923c', bodyB: '#b91c1c', belly: '253,230,138', core: '253,224,71', horn: '#7c2d12', eye: '#fde047', pupil: '#1c0a05', aura: 'rgba(251,146,60,.16)', flameA: '253,186,116', flameB: '254,240,138', trail: ['#fb923c', '#fbbf24', '#f87171'], sparkA: '251,146,60', sparkB: '253,224,71', flash: '253,230,138' },
+  solar: { outline: '#3f2a05', headA: '#fef3c7', headB: '#f59e0b', bodyA: '#fbbf24', bodyB: '#b45309', belly: '255,247,205', core: '255,236,150', horn: '#78350f', eye: '#fff7ed', pupil: '#2a1703', aura: 'rgba(251,191,36,.18)', flameA: '253,230,138', flameB: '255,255,235', trail: ['#fbbf24', '#fde68a', '#f97316'], sparkA: '251,191,36', sparkB: '254,240,138', flash: '253,230,138' },
+  venom: { outline: '#052e22', headA: '#a7f3d0', headB: '#059669', bodyA: '#34d399', bodyB: '#065f46', belly: '190,255,220', core: '167,243,208', horn: '#064e3b', eye: '#d9f99d', pupil: '#04231a', aura: 'rgba(52,211,153,.16)', flameA: '110,231,183', flameB: '209,250,229', trail: ['#34d399', '#a7f3d0', '#22d3ee'], sparkA: '52,211,153', sparkB: '167,243,208', flash: '167,243,208' },
+  frost: { outline: '#0b2440', headA: '#bae6fd', headB: '#0284c7', bodyA: '#38bdf8', bodyB: '#1e40af', belly: '219,234,254', core: '224,242,254', horn: '#0c2d48', eye: '#e0f2fe', pupil: '#061a2e', aura: 'rgba(56,189,248,.18)', flameA: '125,211,252', flameB: '224,242,254', trail: ['#38bdf8', '#a5f3fc', '#818cf8'], sparkA: '56,189,248', sparkB: '165,243,252', flash: '186,230,253' },
+};
+const PALETTES = { 'ember-serpent:solar-palette': LOOKS.solar, 'ember-serpent:venom-palette': LOOKS.venom, 'ember-serpent:frost-palette': LOOKS.frost };
+let look = LOOKS.ember;
 let cur, prev, dir, queue, grow, tickT, interval, food, bonus, rocks, level, eaten, wrap, flick, dead;
 let eatFlash = 0, flash = 0;
 let skin = 'ember';
-try { const s = localStorage.getItem(SKIN_KEY); if (s === 'classic' || s === 'ember') skin = s; } catch (e) { /* storage blocked: stay on the default skin */ }
+let activeMode = 'classic', endless = false, dailySeed = 0, rng = Math.random, lastInitMode = null, lastInitSeed = null;
+let combo = 0, comboT = 0, runEaten = 0, gems = 0, trailBoost = false, speedScale = 1, shakeScale = 1;
+let preferredWrap = false;
+try {
+  const storedSkin = localStorage.getItem(SKIN_KEY); if (storedSkin === 'classic' || storedSkin === 'ember') skin = storedSkin;
+  const saved = window.Save && Save.load ? Save.load(GAME_ID) : {};
+  preferredWrap = !!(saved.settings && saved.settings.wrap);
+} catch (e) { /* storage blocked: stay on the defaults */ }
 function setSkin(G, s) {
   skin = s; try { localStorage.setItem(SKIN_KEY, s); } catch (e) { /* ignore */ }
   A.sfx('select'); G.popup(W / 2, 70, 'Skin: ' + (s === 'ember' ? 'Ember (fire serpent)' : 'Classic (green serpent)'), '#fde68a', 18);
+}
+
+function makeRng(seed) {
+  if (!seed) return Math.random;
+  let a = seed >>> 0;
+  return function () {
+    a += 0x6d2b79f5;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function readSeed() {
+  try {
+    const raw = new URLSearchParams(location.search).get('seed');
+    const value = Number(raw);
+    return raw !== null && raw !== '' && Number.isFinite(value) ? Math.floor(value) : 0;
+  } catch (e) { return 0; }
+}
+function todaySeed() {
+  const d = new Date(), stamp = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  let x = stamp ^ 0x5f3759df;
+  for (const ch of GAME_ID) x = Math.imul(x ^ ch.charCodeAt(0), 16777619);
+  return x >>> 0 || 1;
+}
+function seedFor(modeId) { return modeId === 'daily' ? todaySeed() : readSeed(); }
+const rnd = (a, b) => a + rng() * (b - a);
+const rndi = (a, b) => Math.floor(a + rng() * (b - a + 1));
+function comboMult() { return 1 + Math.min(9, combo) * 0.15; }
+function bumpCombo() {
+  combo = Math.min(9, combo + 1);
+  comboT = COMBO_WINDOW;
+  if (combo >= 5) unlock('combo-five');
+}
+function unlock(id) {
+  const saved = Save.load(GAME_ID);
+  if ((Array.isArray(saved.achievements) ? saved.achievements : []).includes(id)) return;
+  Save.update(GAME_ID, { achievements: [id] });
+  if (window.Apex && Apex.unlockAchievement) Apex.unlockAchievement(id, GAME_ID);
+  if (window.UI && UI.toast) UI.toast(id.replace(/-/g, ' '), { color: '#fb923c' });
+}
+function persistProgress(G, lvl) {
+  const saved = Save.load(GAME_ID);
+  const best = Math.max(Number((saved.stats || {}).bestLevel) || 0, lvl);
+  const patch = { stats: { bestLevel: best } };
+  if (lvl > Number(saved.level || 0)) patch.level = lvl;
+  Save.update(GAME_ID, patch);
+  if (window.Apex && Apex.report) Apex.report({ gameId: GAME_ID, type: 'level_complete', level: lvl, score: G.score, mode: activeMode });
+}
+function hudText() {
+  const lv = endless ? 'LV ' + level : 'LV ' + level + '/' + MAX_LEVEL;
+  return lv + ' · ' + eaten + '/' + PER_LEVEL + ' · COMBO ' + (combo > 0 ? '×' + comboMult().toFixed(1) : '—');
+}
+function modeLabel() {
+  const info = MODE_INFO[activeMode] || MODE_INFO.classic;
+  if (activeMode === 'daily') return info.label + ' · seed ' + String(dailySeed).slice(-5);
+  if (activeMode === 'gauntlet') return info.label + ' · endless';
+  if (activeMode === 'gate') return info.label + ' · always wraps';
+  return info.label + ' · ' + (wrap ? 'wrap' : 'solid walls');
 }
 
 const px = (x) => OX + (x + 0.5) * C, py = (y) => OY + (y + 0.5) * C;
 const occupied = (x, y) => cur.some((s) => s.x === x && s.y === y) || rocks.some((r) => r.x === x && r.y === y) ||
   (food && food.x === x && food.y === y) || (bonus && bonus.x === x && bonus.y === y);
 function freeCell() {
-  for (let i = 0; i < 400; i++) { const x = A.randi(0, COLS - 1), y = A.randi(0, ROWS - 1); if (!occupied(x, y)) return { x, y }; }
+  for (let i = 0; i < 400; i++) { const x = rndi(0, COLS - 1), y = rndi(0, ROWS - 1); if (!occupied(x, y)) return { x, y }; }
   for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (!occupied(x, y)) return { x, y }; // crowded board: scan for any free cell
   return null;
 }
 function speedFor(l) { return Math.max(4, 10 - Math.floor((l - 1) * 0.7)); }
+function tickInterval(l) { return Math.max(3, Math.round(speedFor(l) / speedScale)); }
 function buildRocks() {
   rocks = [];
-  const n = Math.min(26, (level - 1) * 3), h = cur[0];
+  const n = Math.min(endless ? 40 : 26, (level - 1) * 3), h = cur[0];
   for (let i = 0; i < n; i++) {
     for (let k = 0; k < 60; k++) {
-      const x = A.randi(0, COLS - 1), y = A.randi(0, ROWS - 1);
+      const x = rndi(0, COLS - 1), y = rndi(0, ROWS - 1);
       let ok = !occupied(x, y) && Math.abs(x - h.x) + Math.abs(y - h.y) > 5;
       for (let s = 1; s <= 6 && ok; s++) if (x === h.x + dir[0] * s && y === h.y + dir[1] * s) ok = false;
-      if (ok) { rocks.push({ x, y, v: A.randi(0, 2) }); break; }
+      if (ok) { rocks.push({ x, y, v: rndi(0, 2) }); break; }
     }
   }
 }
@@ -98,26 +183,45 @@ function boardSprite() {
 function init(G) {
   cur = [{ x: 12, y: 8 }, { x: 11, y: 8 }, { x: 10, y: 8 }, { x: 9, y: 8 }];
   prev = cur.map((s) => ({ ...s }));
-  dir = [1, 0]; queue = []; grow = 0; tickT = 0; level = 1; eaten = 0; interval = speedFor(1);
+  dir = [1, 0]; queue = []; grow = 0; tickT = 0; level = 1; eaten = 0; interval = tickInterval(1);
   rocks = []; bonus = null; food = null; flick = 0; dead = false; eatFlash = 0; flash = 0;
-  if (wrap === undefined) wrap = false;
+  endless = activeMode === 'gauntlet';
+  combo = 0; comboT = 0; runEaten = 0; gems = 0;
+  wrap = activeMode === 'gate' ? true : activeMode === 'daily' ? false : preferredWrap;
+  lastInitMode = activeMode;
+  lastInitSeed = dailySeed;
   food = freeCell();
+  if (G) { G.hudL = hudText(); G.hudR = 'SCORE 0 · BEST ' + Math.max(G.hi || 0, 0); }
 }
 
 function levelUp(G) {
-  if (level >= MAX_LEVEL) { G.addScore(500); return G.win('Serpent Supreme!', 'You cleared all ' + MAX_LEVEL + ' levels'); }
-  level++; eaten = 0; interval = speedFor(level);
+  if (!endless && level >= MAX_LEVEL) {
+    G.addScore(500);
+    persistProgress(G, MAX_LEVEL);
+    if (activeMode === 'classic') unlock('serpent-supreme');
+    if (activeMode === 'daily') unlock('daily-ember');
+    return G.win('Serpent Supreme!', 'You cleared all ' + MAX_LEVEL + ' levels');
+  }
+  level++; eaten = 0; interval = tickInterval(level);
   buildRocks();
+  persistProgress(G, level);
+  if (level >= 5) unlock('rockfall');
+  if (endless && level >= 10) unlock('gauntlet-ten');
   A.sfx('power'); G.shake(5); flash = 1;
   G.popup(W / 2, H / 2 - 20, 'LEVEL ' + level, '#fde68a', 34);
   G.ring(px(cur[0].x), py(cur[0].y), '#fde68a', 110, 34);
-  if (skin === 'ember') G.ring(px(cur[0].x), py(cur[0].y), '#fb923c', 70, 24);
+  if (skin === 'ember') G.ring(px(cur[0].x), py(cur[0].y), look.bodyA, 70, 24);
 }
 
 function die(G) {
   dead = true; A.sfx('hurt'); A.sfx('boom'); G.shake(14); G.freeze(8);
-  for (const s of cur) G.burst(px(s.x), py(s.y), 4, { color: ['#fb923c', '#fbbf24', '#f87171'], speed: 4, glow: true, life: 36, grav: 0.05 });
-  G.over('Burned Out', 'Level ' + level + ' · length ' + cur.length);
+  for (const s of cur) G.burst(px(s.x), py(s.y), 4, { color: look.trail, speed: 4, glow: true, life: 36, grav: 0.05 });
+  if (activeMode === 'daily') {
+    const saved = Save.load(GAME_ID);
+    Save.update(GAME_ID, { stats: { dailyBest: Math.max(Number((saved.stats || {}).dailyBest) || 0, G.score) } });
+    unlock('daily-ember');
+  }
+  G.over('Burned Out', modeLabel() + ' · level ' + level + ' · length ' + cur.length);
 }
 
 function tick(G) {
@@ -132,25 +236,34 @@ function tick(G) {
   if (grow > 0) grow--; else cur.pop();
   prev = cur.map((s, i) => (old[i] ? old[i] : { ...s }));
   const hx = px(nx), hy = py(ny);
-  if (skin === 'ember') { const tl = cur[cur.length - 1]; G.burst(px(tl.x), py(tl.y), 1, { color: ['#fb923c', '#fbbf24', '#f87171'], speed: 0.9, min: 0.2, glow: true, life: 26, size: 2, grav: -0.03 }); }
+  if (skin === 'ember') {
+    const tl = cur[cur.length - 1];
+    const trailCount = trailBoost ? 2 : 1;
+    G.burst(px(tl.x), py(tl.y), trailCount, { color: look.trail, speed: 0.9, min: 0.2, glow: true, life: 26, size: 2, grav: -0.03 });
+  }
   if (food && nx === food.x && ny === food.y) {
-    const pts = Math.round(10 * level * (wrap ? 1 : 1.5));
-    G.addScore(pts); grow++; eaten++; A.sfx('eat');
-    G.popup(hx, hy - 14, '+' + pts, '#fecaca', 16);
+    const mult = comboMult();
+    const pts = Math.round(10 * level * (wrap ? 1 : 1.5) * mult);
+    G.addScore(pts); grow++; eaten++; runEaten++; bumpCombo(); A.sfx('eat');
+    G.popup(hx, hy - 14, '+' + pts + (combo > 1 ? '  ×' + mult.toFixed(1) : ''), '#fecaca', 16);
     if (skin === 'ember') {
       eatFlash = 1; Fx.squash.punch('head', { sx: 1.28, sy: 0.82 });
       G.burst(hx, hy, 14, { color: ['#34d399', '#a7f3d0', '#fff'], speed: 3.5, glow: true, life: 26 });
       G.ring(hx, hy, '#34d399', 44, 18);
     } else G.burst(hx, hy, 14, { color: ['#f87171', '#fca5a5', '#fff'], speed: 3.5, glow: true, life: 26 });
+    if (runEaten === 1) unlock('first-bite');
+    if (runEaten >= 10) unlock('ten-catch');
     food = freeCell();
     if (!food) return G.win('Board Cleared!', 'The serpent fills the whole board');
     if (eaten % 5 === 0 && !bonus) { const b = freeCell(); if (b) { bonus = { ...b, t: 540 }; A.sfx('select'); } }
     if (eaten >= PER_LEVEL) levelUp(G);
   } else if (bonus && nx === bonus.x && ny === bonus.y) {
-    const pts = 50 * level;
-    G.addScore(pts); grow += 2; A.sfx('gem'); A.sfx('coin');
+    const mult = comboMult();
+    const pts = Math.round(50 * level * mult);
+    G.addScore(pts); grow += 2; gems++; bumpCombo(); A.sfx('gem'); A.sfx('coin');
+    if (gems >= 3) unlock('gem-collector');
     if (skin === 'ember') { eatFlash = 1; Fx.squash.punch('head', { sx: 1.32, sy: 0.78 }); }
-    G.popup(hx, hy - 14, 'BONUS +' + pts, '#fde68a', 18);
+    G.popup(hx, hy - 14, 'BONUS +' + pts + (combo > 1 ? '  ×' + mult.toFixed(1) : ''), '#fde68a', 18);
     G.burst(hx, hy, 24, { color: ['#fde68a', '#fbbf24', '#fff'], speed: 4.5, glow: true, life: 34 });
     G.ring(hx, hy, '#fde68a', 70); bonus = null;
   }
@@ -165,18 +278,42 @@ function update(G) {
       if (queue.length < 3 && !(d[0] === -last[0] && d[1] === -last[1]) && !(d[0] === last[0] && d[1] === last[1])) { queue.push(d); A.sfx('tick'); }
     }
   }
-  if (A.hit('KeyT')) { wrap = !wrap; A.sfx('select'); G.popup(W / 2, 70, wrap ? 'Wrap-around ON' : 'Solid walls (+50% score)', '#a5f3fc', 18); }
+  if (A.hit('KeyT')) {
+    const info = MODE_INFO[activeMode] || MODE_INFO.classic;
+    if (info.fixedWrap) {
+      A.sfx('blip');
+      G.popup(W / 2, 70, activeMode === 'gate' ? 'Serpent Gate always wraps' : 'Daily Ember keeps solid walls', '#a5f3fc', 16);
+    } else {
+      wrap = !wrap; preferredWrap = wrap;
+      try { Save.update(GAME_ID, { settings: { wrap } }); } catch (e) { /* ignore */ }
+      A.sfx('select'); G.popup(W / 2, 70, wrap ? 'Wrap-around ON' : 'Solid walls (+50% score)', '#a5f3fc', 18);
+    }
+  }
   if (A.hit('KeyK')) setSkin(G, skin === 'ember' ? 'classic' : 'ember');
   flick++;
+  if (comboT > 0 && --comboT === 0) combo = 0;
   if (bonus && --bonus.t <= 0) bonus = null;
   if (++tickT >= interval) { tickT = 0; tick(G); }
-  G.hudL = 'LV ' + level + ' · ' + eaten + '/' + PER_LEVEL + ' · ' + (wrap ? 'WRAP' : 'WALLS') + ' · SCORE ' + G.score;
+  if (activeMode === 'gate' && G.score >= 500) unlock('gate-runner');
+  G.hudL = hudText();
+  G.hudR = 'SCORE ' + G.score + ' · BEST ' + Math.max(G.hi || 0, G.score);
 }
 
 function seg(c, p0, p1, f) {
   let dx = p1.x - p0.x, dy = p1.y - p0.y;
   if (Math.abs(dx) > 1.5 || Math.abs(dy) > 1.5) { dx = 0; dy = 0; f = 1; } // wrapped: snap
   return { x: px(p0.x + dx * f), y: py(p0.y + dy * f) };
+}
+
+function drawCombo(c, G) {
+  if (G.state !== 'playing' || combo <= 0) return;
+  const hx = px(cur[0].x), hy = py(cur[0].y), k = Math.max(0, comboT / COMBO_WINDOW);
+  c.save();
+  c.globalAlpha = 0.55 + 0.35 * Math.min(1, combo / 5);
+  A.glowText(c, '×' + comboMult().toFixed(1), hx, hy - 27, 15, '#fde68a', 'center', 8);
+  c.strokeStyle = 'rgba(253,230,138,.75)'; c.lineWidth = 2;
+  c.beginPath(); c.arc(hx, hy, 19, -Math.PI / 2, -Math.PI / 2 + A.TAU * k); c.stroke();
+  c.restore();
 }
 
 /* ================= CLASSIC SKIN (the original look) ================= */
@@ -235,9 +372,10 @@ function drawClassic(G, c) {
     c.fillStyle = '#052e16'; c.beginPath(); c.arc(8.5, s * 6, 2, 0, A.TAU); c.fill();
   }
   c.restore();
+  drawCombo(c, G);
   A.vignette(c, W, H, 0.4);
   G.drawFX(c);
-  A.text(c, 'T: wrap/walls · K: skin (Classic) · food ×' + (wrap ? '1' : '1.5'), W / 2, H - 8, 12, '#8b93b3', 'center', '600');
+  A.text(c, modeLabel() + ' · K: skin (Classic) · T: ' + ((MODE_INFO[activeMode] || MODE_INFO.classic).fixedWrap ? 'walls fixed' : wrap ? 'solid walls' : 'wrap') + ' · food ×' + (wrap ? '1' : '1.5'), W / 2, H - 8, 12, '#8b93b3', 'center', '600');
 }
 
 /* ================= EMBER SKIN ================= */
@@ -292,7 +430,7 @@ function drawEmber(G, c) {
     for (let i = n - 1; i >= 0; i--) {
       const p = pts[i], k = i / Math.max(1, n - 1);
       const rad = 12.5 - k * 4 + (pass === 0 ? 2 : 0);
-      const col = pass === 0 ? '#3b0d06' : A.mix('#fb923c', '#b91c1c', k);
+      const col = pass === 0 ? look.outline : A.mix(look.bodyA, look.bodyB, k);
       if (i < n - 1) {
         const q = pts[i + 1];
         if (Math.hypot(p.x - q.x, p.y - q.y) < C * 1.4) {
@@ -305,32 +443,32 @@ function drawEmber(G, c) {
   }
   for (let i = n - 1; i >= 1; i--) {
     const p = pts[i], k = i / Math.max(1, n - 1), rad = 12.5 - k * 4;
-    c.fillStyle = 'rgba(253,230,138,.18)'; c.beginPath(); c.arc(p.x - 2.5, p.y - 4, rad * 0.45, 0, A.TAU); c.fill();
-    if (i % 2 === 0) { c.strokeStyle = 'rgba(60,10,5,.45)'; c.lineWidth = 1.5; c.beginPath(); c.arc(p.x, p.y, rad * 0.62, 0, A.TAU); c.stroke(); }
+    c.fillStyle = 'rgba(' + look.belly + ',.18)'; c.beginPath(); c.arc(p.x - 2.5, p.y - 4, rad * 0.45, 0, A.TAU); c.fill();
+    if (i % 2 === 0) { c.strokeStyle = A.alpha(look.outline, 0.45); c.lineWidth = 1.5; c.beginPath(); c.arc(p.x, p.y, rad * 0.62, 0, A.TAU); c.stroke(); }
     const hp = 0.22 + 0.26 * Math.sin(tt * 0.15 - i * 0.6);
-    c.fillStyle = 'rgba(253,224,71,' + hp.toFixed(2) + ')'; c.beginPath(); c.arc(p.x, p.y, rad * 0.24, 0, A.TAU); c.fill();
+    c.fillStyle = 'rgba(' + look.core + ',' + hp.toFixed(2) + ')'; c.beginPath(); c.arc(p.x, p.y, rad * 0.24, 0, A.TAU); c.fill();
   }
   const h = pts[0], ang = Math.atan2(dir[1], dir[0]), hs = Fx.squash.get('head');
-  Fx.glow(c, h.x, h.y, 34 + eatFlash * 10, 'rgba(251,146,60,.16)');
+  Fx.glow(c, h.x, h.y, 34 + eatFlash * 10, look.aura);
   c.save(); c.translate(h.x, h.y); c.rotate(ang); c.scale(hs.sx, hs.sy);
-  c.fillStyle = '#7c2d12';
+  c.fillStyle = look.horn;
   for (const s of [-1, 1]) { c.beginPath(); c.moveTo(-3, s * 8); c.lineTo(-15, s * 14); c.lineTo(-1, s * 3); c.closePath(); c.fill(); }
-  const hg = c.createRadialGradient(4, -4, 2, 2, 0, 16); hg.addColorStop(0, '#fdba74'); hg.addColorStop(1, '#ea580c');
+  const hg = c.createRadialGradient(4, -4, 2, 2, 0, 16); hg.addColorStop(0, look.headA); hg.addColorStop(1, look.headB);
   c.fillStyle = hg; c.beginPath(); c.ellipse(2, 0, 15, 12.5, 0, 0, A.TAU); c.fill();
-  c.strokeStyle = '#3b0d06'; c.lineWidth = 2; c.beginPath(); c.ellipse(2, 0, 15, 12.5, 0, 0, A.TAU); c.stroke();
-  c.fillStyle = '#3b0d06'; for (const s of [-1, 1]) { c.beginPath(); c.arc(13, s * 3, 1.3, 0, A.TAU); c.fill(); }
+  c.strokeStyle = look.outline; c.lineWidth = 2; c.beginPath(); c.ellipse(2, 0, 15, 12.5, 0, 0, A.TAU); c.stroke();
+  c.fillStyle = look.outline; for (const s of [-1, 1]) { c.beginPath(); c.arc(13, s * 3, 1.3, 0, A.TAU); c.fill(); }
   if (Math.floor(tt / 22) % 3 === 0 && eatFlash < 0.2) { c.strokeStyle = '#f43f5e'; c.lineWidth = 2; c.beginPath(); c.moveTo(16, 0); c.lineTo(23, 0); c.moveTo(23, 0); c.lineTo(27, -3); c.moveTo(23, 0); c.lineTo(27, 3); c.stroke(); }
   if (eatFlash > 0.08) {
     c.save(); c.globalCompositeOperation = 'lighter';
-    c.fillStyle = 'rgba(253,186,116,' + (eatFlash * 0.6).toFixed(2) + ')';
+    c.fillStyle = 'rgba(' + look.flameA + ',' + (eatFlash * 0.6).toFixed(2) + ')';
     c.beginPath(); c.moveTo(15, -5); c.lineTo(15 + eatFlash * 24, 0); c.lineTo(15, 5); c.closePath(); c.fill();
-    c.fillStyle = 'rgba(254,240,138,' + (eatFlash * 0.7).toFixed(2) + ')';
+    c.fillStyle = 'rgba(' + look.flameB + ',' + (eatFlash * 0.7).toFixed(2) + ')';
     c.beginPath(); c.moveTo(15, -2.5); c.lineTo(15 + eatFlash * 13, 0); c.lineTo(15, 2.5); c.closePath(); c.fill(); c.restore();
   }
   for (const s of [-1, 1]) {
-    c.save(); c.shadowColor = '#fde047'; c.shadowBlur = 5;
-    c.fillStyle = '#fde047'; c.beginPath(); c.arc(7, s * 6, 3.8, 0, A.TAU); c.fill(); c.restore();
-    c.fillStyle = '#1c0a05'; c.beginPath(); c.ellipse(8, s * 6, 1, 2.8, 0, 0, A.TAU); c.fill();
+    c.save(); c.shadowColor = look.eye; c.shadowBlur = 5;
+    c.fillStyle = look.eye; c.beginPath(); c.arc(7, s * 6, 3.8, 0, A.TAU); c.fill(); c.restore();
+    c.fillStyle = look.pupil; c.beginPath(); c.ellipse(8, s * 6, 1, 2.8, 0, 0, A.TAU); c.fill();
   }
   c.restore();
   c.save(); c.globalCompositeOperation = 'lighter';
@@ -338,25 +476,99 @@ function drawEmber(G, c) {
     const v = 0.18 + A.hash(i, 4) * 0.5, s = 0.9 + A.hash(i, 6) * 1.8;
     const y = (((A.hash(i, 2) * (H + 20)) - tt * v) % (H + 20) + (H + 20)) % (H + 20) - 10;
     const x = A.hash(i, 1) * W + Math.sin(tt * 0.02 + i) * 8;
-    c.fillStyle = 'rgba(' + (i % 3 ? '251,146,60' : '253,224,71') + ',' + (0.15 + 0.3 * Math.abs(Math.sin(tt * 0.04 + i))).toFixed(2) + ')';
+    c.fillStyle = 'rgba(' + (i % 3 ? look.sparkA : look.sparkB) + ',' + (0.15 + 0.3 * Math.abs(Math.sin(tt * 0.04 + i))).toFixed(2) + ')';
     c.fillRect(x, y, s, s);
   }
   c.restore();
-  if (flash > 0.02) { c.fillStyle = 'rgba(253,230,138,' + (flash * 0.16).toFixed(2) + ')'; c.fillRect(0, 0, W, H); }
+  if (flash > 0.02) { c.fillStyle = 'rgba(' + look.flash + ',' + (flash * 0.16).toFixed(2) + ')'; c.fillRect(0, 0, W, H); }
   if (G.state === 'over') { c.fillStyle = 'rgba(127,29,29,' + Math.min(0.3, G.stateT / 90).toFixed(2) + ')'; c.fillRect(0, 0, W, H); }
+  drawCombo(c, G);
   Fx.bloom(c, W, H, 0.45);
   Fx.vignette(c, W, H, 0.4);
   G.drawFX(c);
-  A.text(c, 'T: wrap/walls · K: skin (Ember) · food ×' + (wrap ? '1' : '1.5'), W / 2, H - 8, 12, '#8b93b3', 'center', '600');
+  A.text(c, modeLabel() + ' · K: skin (Ember) · T: ' + ((MODE_INFO[activeMode] || MODE_INFO.classic).fixedWrap ? 'walls fixed' : wrap ? 'solid walls' : 'wrap') + ' · food ×' + (wrap ? '1' : '1.5'), W / 2, H - 8, 12, '#8b93b3', 'center', '600');
 }
 
 function draw(G, c) { if (skin === 'classic') drawClassic(G, c); else drawEmber(G, c); }
 
 const emberSerpentGame = Arcade.game({
-  id: 'ember-serpent', title: 'Ember Serpent', subtitle: 'Eat, grow, survive ten levels', color: '#fb923c',
-  help: 'Arrow keys or WASD steer (you can queue turns). Eat fruit; golden gems are timed bonuses. Rocks appear each level. T toggles wrap-around vs solid walls (walls score +50%). K switches between the Ember and Classic skins (remembered). P pauses, M mutes.',
-  w: W, h: H, touchL: [['◀', 'ArrowLeft'], ['▲', 'ArrowUp'], ['🎨', 'KeyK']], touchR: [['▼', 'ArrowDown'], ['▶', 'ArrowRight']], init, update, draw,
+  id: GAME_ID, title: 'Ember Serpent', subtitle: 'Eat, grow, survive ten levels', color: '#fb923c',
+  help: 'Arrow keys or WASD steer (you can queue turns). Eat fruit quickly to build a combo multiplier; golden gems are timed bonuses worth much more. Rocks appear each level. Ember Classic runs ten levels with solid walls (+50% score); Serpent Gate wraps around every edge; Molten Gauntlet is endless; Daily Ember uses a seeded board shared for today. T toggles wrap-around where the mode allows it, K switches skins. P pauses, M mutes.',
+  w: W, h: H, touchL: [['◀', 'ArrowLeft'], ['▲', 'ArrowUp'], ['🎨', 'KeyK']], touchR: [['▼', 'ArrowDown'], ['▶', 'ArrowRight'], ['↺', 'KeyT']], init, update, draw,
 });
+const emberSerpentShake = emberSerpentGame.shake.bind(emberSerpentGame);
+emberSerpentGame.shake = (amount) => emberSerpentShake(amount * shakeScale);
+
+function applyMode(id) {
+  activeMode = id || 'classic';
+  dailySeed = seedFor(activeMode);
+  rng = makeRng(dailySeed);
+  if (emberSerpentGame && (lastInitMode !== activeMode || lastInitSeed !== dailySeed)) emberSerpentGame.restart(false);
+  return true;
+}
+function applySetting(key, value) {
+  if (key === 'difficulty') {
+    speedScale = value === 'easy' ? 0.85 : value === 'hard' ? 1.25 : 1;
+    if (typeof level === 'number') interval = tickInterval(level);
+  } else if (key === 'shake') shakeScale = Math.max(0, Math.min(1, Number(value)));
+}
+function applyCosmetic(slot, id) {
+  if (slot === 'skin') {
+    skin = /classic/.test(id) ? 'classic' : 'ember';
+    try { localStorage.setItem(SKIN_KEY, skin); } catch (e) { /* ignore */ }
+  } else if (slot === 'palette') look = PALETTES[id] || LOOKS.ember;
+  else if (slot === 'trail') trailBoost = /ember-trail/.test(id);
+}
+
+let emberSerpentUIConfig = null;
+if (window.UI) {
+  emberSerpentUIConfig = {
+    id: GAME_ID, title: 'Ember Serpent', subtitle: 'Follow the fire through the cavern.', accent: '#fb923c',
+    modes: [
+      { id: 'classic', name: 'Ember Classic', blurb: 'Ten levels · rocks · +50% on solid walls', seasonTargets: [300, 900, 1800] },
+      { id: 'gate', name: 'Serpent Gate', blurb: 'Wrap-around board · one continuous run', seasonTargets: [400, 1000, 2000] },
+      { id: 'gauntlet', name: 'Molten Gauntlet', blurb: 'Endless levels · until the cavern wins', lockedHint: 'Reach level 5 to unlock', requires: { stat: 'bestLevel', gte: 5 }, seasonTargets: [300, 800, 1600] },
+      { id: 'daily', name: 'Daily Ember', blurb: "Today's seeded board for everyone", seeded: true, seasonTargets: [400, 1000, 2000] },
+    ],
+    settings: [
+      { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
+      { key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 },
+    ],
+    achievements: [
+      { id: 'first-bite', name: 'First Bite', desc: 'Eat your first fruit.', rarity: 'common' },
+      { id: 'ten-catch', name: 'Ten Catch', desc: 'Eat ten fruits in one run.', rarity: 'rare' },
+      { id: 'combo-five', name: 'Kindled', desc: 'Reach a ×1.75 combo.', rarity: 'rare' },
+      { id: 'rockfall', name: 'Rockfall', desc: 'Reach level 5.', rarity: 'common' },
+      { id: 'serpent-supreme', name: 'Serpent Supreme', desc: 'Clear all ten levels in Ember Classic.', rarity: 'legendary' },
+      { id: 'gauntlet-ten', name: 'Molten Heart', desc: 'Reach level 10 in the Molten Gauntlet.', rarity: 'epic' },
+      { id: 'daily-ember', name: 'Daily Ember', desc: 'Finish a Daily Ember run.', rarity: 'rare' },
+      { id: 'gem-collector', name: 'Gem Collector', desc: 'Collect three golden gems in one run.', rarity: 'rare' },
+      { id: 'gate-runner', name: 'Gate Runner', desc: 'Score 500 in Serpent Gate.', rarity: 'rare' },
+    ],
+    tutorial: { type: 'guided', steps: [
+      { text: 'Steer with the arrow keys or WASD. Turns queue up, so plan the next corner.', hold: 'ArrowLeft' },
+      { text: 'Eat fruit quickly to build a combo; the multiplier fades if you take too long.', hold: 'ArrowUp' },
+      { text: 'Golden gems are timed and worth far more than fruit.', hold: 'ArrowDown' },
+      { text: 'Rocks appear as levels rise. Press T to wrap edges where the mode allows it.', hold: 'ArrowRight' },
+    ] },
+    chapter: 'EMBER CAVERNS · 10 LEVELS', levels: Array.from({ length: MAX_LEVEL }, () => ({})),
+    hooks: {
+      applyMode,
+      applySetting,
+      applyCosmetic,
+      getResult: () => {
+        const saved = Save.load(GAME_ID);
+        return {
+          score: emberSerpentGame.score,
+          win: emberSerpentGame.state === 'won',
+          mode: activeMode,
+          stats: { best: emberSerpentGame.hi, bestLevel: Number((saved.stats || {}).bestLevel) || 0, dailyBest: Number((saved.stats || {}).dailyBest) || 0 },
+        };
+      },
+    },
+  };
+  emberSerpentGame.ui = UI.mountGame(emberSerpentGame, emberSerpentUIConfig);
+}
 
 function emberMenuScene(c, frame) {
   const w = frame.width, h = frame.height, motion = !frame.static && !frame.reducedMotion;
@@ -398,8 +610,8 @@ function emberMenuScene(c, frame) {
 }
 
 const emberSerpentMenu = Menu.mount({
-  gameId: 'ember-serpent', title: 'Ember Serpent', tagline: 'Follow the fire. Grow through the cavern.',
-  archetype: 'banner', items: ['play', 'options', 'about', 'exit'],
+  gameId: GAME_ID, title: 'Ember Serpent', tagline: 'Follow the fire. Grow through the cavern.',
+  archetype: 'banner', items: ['play', 'modes', 'customize', 'options', 'about', 'stats', 'exit'],
   theme: {
     frame: 'basalt-arch', button: 'molten-facet',
     palette: { bg: '#120b13', panel: 'rgba(30,17,23,0.84)', accent: '#fb923c', button: '#f6bd75', buttonText: '#32150f', text: '#fff4e8', danger: '#ef4444' },
@@ -410,6 +622,7 @@ const emberSerpentMenu = Menu.mount({
   },
   options: { difficulty: 'normal' },
   onSettingChange: function (key, value) {
+    if (emberSerpentUIConfig && emberSerpentUIConfig.hooks.applySetting) emberSerpentUIConfig.hooks.applySetting(key, value);
     if (key === 'difficulty') A.difficulty = value;
     if (key === 'sfxVol') A.sfxVolume = Math.max(0, Math.min(1, Number(value) || 0));
   },
@@ -417,12 +630,54 @@ const emberSerpentMenu = Menu.mount({
   onRestart: function () { emberSerpentGame.restart(true); },
   onResume: function () { if (emberSerpentGame.state === 'paused') emberSerpentGame.pauseToggle(); },
   screens: {
+    modes: function (view) {
+      const doc = view.panel.ownerDocument;
+      const heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Choose a run'; view.panel.appendChild(heading);
+      const copy = doc.createElement('p'); copy.className = 'apex-menu-tagline'; copy.textContent = 'Your selection is saved for next time.'; view.panel.appendChild(copy);
+      const saved = Save.load(GAME_ID);
+      (emberSerpentUIConfig ? emberSerpentUIConfig.modes : []).forEach(function (mode) {
+        const required = mode.requires, locked = !!(required && !(Number(saved.stats && saved.stats[required.stat]) >= Number(required.gte || 1)));
+        const button = doc.createElement('button'); button.type = 'button'; button.className = 'apex-menu-action';
+        button.textContent = (emberSerpentGame.ui && emberSerpentGame.ui.getMode() === mode.id ? '✓  ' : '') + mode.name + ' · ' + mode.blurb + (locked ? ' · ' + mode.lockedHint : '');
+        button.disabled = locked;
+        if (!locked && emberSerpentGame.ui) button.addEventListener('click', function () { emberSerpentGame.ui.setMode(mode.id); view.refresh(); });
+        view.panel.appendChild(button);
+      });
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    },
+    customize: function (view) {
+      const doc = view.panel.ownerDocument, meta = window.Meta;
+      const heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Customize'; view.panel.appendChild(heading);
+      const wallet = meta && meta.read ? meta.read().sparks : 0;
+      const balance = doc.createElement('p'); balance.className = 'apex-menu-tagline'; balance.textContent = 'Sparks: ' + wallet + ' · Owned items are saved on this device.'; view.panel.appendChild(balance);
+      (meta && meta.getCosmetics ? meta.getCosmetics(GAME_ID) : []).forEach(function (item) {
+        const button = doc.createElement('button'); button.type = 'button'; button.className = 'apex-menu-action';
+        button.textContent = item.name + ' · ' + (item.equipped ? 'Equipped' : item.owned ? 'Equip' : item.cost + ' Sparks');
+        button.disabled = item.equipped || (!item.owned && wallet < item.cost);
+        button.addEventListener('click', function () {
+          const result = item.owned ? meta.equipCosmetic(GAME_ID, item.id) : meta.purchaseCosmetic(GAME_ID, item.id);
+          if (result && result.ok && item.owned) applyCosmetic(item.slot, item.id);
+          view.refresh();
+        });
+        view.panel.appendChild(button);
+      });
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    },
+    stats: function (view) {
+      const doc = view.panel.ownerDocument, save = Save.load(GAME_ID);
+      const heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Serpent records'; view.panel.appendChild(heading);
+      const result = doc.createElement('p'); result.className = 'apex-menu-tagline'; result.textContent = 'Best score: ' + emberSerpentGame.hi + ' · Runs played: ' + ((save.stats && save.stats.plays) || 0); view.panel.appendChild(result);
+      const progress = doc.createElement('p'); progress.className = 'apex-menu-tagline'; progress.textContent = 'Best level: ' + (Number((save.stats || {}).bestLevel) || 0) + ' of ' + MAX_LEVEL + ' · Daily best: ' + (Number((save.stats || {}).dailyBest) || 0); view.panel.appendChild(progress);
+      const earned = doc.createElement('p'); earned.className = 'apex-menu-caption'; earned.textContent = 'Achievements earned: ' + ((save.achievements || []).length) + ' of ' + ((emberSerpentUIConfig && emberSerpentUIConfig.achievements.length) || 0); view.panel.appendChild(earned);
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    },
     about: function (view) {
       const doc = view.panel.ownerDocument;
       const heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Into the ember caverns'; view.panel.appendChild(heading);
-      const story = doc.createElement('p'); story.className = 'apex-menu-tagline'; story.textContent = 'Eat fruit to grow, collect timed golden gems, and climb through ten increasingly dangerous levels.'; view.panel.appendChild(story);
-      const controls = doc.createElement('p'); controls.className = 'apex-menu-tagline'; controls.textContent = 'Steer with Arrow keys or WASD. Queue one safe turn. T switches walls or wrap; K changes the serpent skin. P pauses, M mutes.'; view.panel.appendChild(controls);
-      const note = doc.createElement('p'); note.className = 'apex-menu-caption'; note.textContent = 'Solid walls award a 50% food bonus. The Classic skin changes the look only.'; view.panel.appendChild(note);
+      const story = doc.createElement('p'); story.className = 'apex-menu-tagline'; story.textContent = 'Eat fruit to grow, collect timed golden gems, and climb through ten increasingly dangerous levels. Chain fruit quickly to heat up a combo multiplier.'; view.panel.appendChild(story);
+      const controls = doc.createElement('p'); controls.className = 'apex-menu-tagline'; controls.textContent = 'Steer with Arrow keys or WASD. Turns queue up. T switches walls or wrap where the mode allows it; K changes the serpent skin. P pauses, M mutes.'; view.panel.appendChild(controls);
+      const modes = doc.createElement('p'); modes.className = 'apex-menu-tagline'; modes.textContent = 'Serpent Gate always wraps. Molten Gauntlet never ends and unlocks at level 5. Daily Ember plays the same seeded board for everyone today.'; view.panel.appendChild(modes);
+      const note = doc.createElement('p'); note.className = 'apex-menu-caption'; note.textContent = 'Solid walls award a 50% food bonus. The Classic skin and palettes change the look only.'; view.panel.appendChild(note);
       const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
     }
   }
