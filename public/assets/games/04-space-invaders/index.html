@@ -1,14 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="../../../apex-icon.svg" type="image/svg+xml">
 <title>Hivefall Defense</title>
 <script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
 </head>
 <body>
-
 <script src="../../kits/perf-kit.js"></script>
 <script src="../../kits/save-kit.js"></script>
 <script src="../../kits/meta-config.js"></script>
@@ -17,11 +16,56 @@
 <script src="../../kits/score-bridge.js"></script>
 <script src="../../kits/ui-kit.js"></script>
 <script>
-/* Hivefall Defense — fixed-shooter: stop the descending hive swarm before it lands. */
+/* Hivefall Defense — fixed shooter. Ten waves, combo chains, overdrive bursts,
+   saucer supply pods, an endless ladder, a seeded daily uplink, and a hive queen boss. */
 const A = Arcade;
 const W = 640, H = 520, COLS = 10, ROWS = 5, SX = 46, SY = 36, AW = 30, AH = 24, PY = 474, MAX_WAVE = 10;
-const SCW = 14, SCH = 10, CELL = 4, SHY = 396;
-let ship, fleet, shields, pBul, eBul, saucer, saucerT, wave, lives, inv, stepT, frame, alive, waveT, nextLife, stars, deadT, fireCd;
+const SCW = 14, SCH = 10, CELL = 4, SHY = 396, QUEEN_HP = 220;
+const MODE_LABEL = { classic: 'CLASSIC', 'iron-line': 'IRON LINE', endless: 'ENDLESS SWARM', daily: 'DAILY UPLINK', queen: 'HIVE QUEEN' };
+const PALETTES = {
+  'hivefall:ion-belt': { body: '#60a5fa', accent: '#2563eb', glow: '#bfdbfe', bullet: '#fde68a' },
+  'hivefall:solar-flare': { body: '#fbbf24', accent: '#ea580c', glow: '#fef3c7', bullet: '#fff7cc' },
+  'hivefall:jade-swarm': { body: '#34d399', accent: '#0f766e', glow: '#a7f3d0', bullet: '#fef08a' },
+  'hivefall:void-violet': { body: '#a78bfa', accent: '#6d28d9', glow: '#ddd6fe', bullet: '#f0abfc' },
+};
+const THEMES = {
+  'hivefall:nebula-rift': { sky: ['#05030f', '#0b1030', '#1a1347'], floor: ['#1b2a5c', '#0a0f26'], rim: 'rgba(103,232,249,.25)' },
+  'hivefall:eclipse-belt': { sky: ['#0a030f', '#220a2b', '#38103a'], floor: ['#3a123a', '#120414'], rim: 'rgba(244,114,182,.3)' },
+  'hivefall:aurora-drift': { sky: ['#020c10', '#062028', '#0a3a40'], floor: ['#0d4a4a', '#041418'], rim: 'rgba(52,211,153,.3)' },
+};
+const POD_TYPES = {
+  rapid: { color: '#38bdf8', label: 'R' },
+  repair: { color: '#34d399', label: 'H' },
+  charge: { color: '#fbbf24', label: 'C' },
+  life: { color: '#f472b6', label: '+' },
+};
+
+let ship, fleet, shields, pBul, eBul, saucer, saucerT, wave, lives, inv, stepT, frame, alive, waveT, nextLife, stars, fireCd;
+let activeMode = 'classic', dailySeed = 0, rngState = 1, difficulty = 'normal', shakeScale = 1;
+let combo = 0, comboT = 0, overdrive = 0, overdriveT = 0, rapidT = 0, pods = [], podsCollected = 0, saucersKilled = 0, damageThisWave = false;
+let queen = null, lastInitMode = null, hiveGame = null;
+let shipPalette = PALETTES['hivefall:ion-belt'], trailColor = '#fde68a', arenaTheme = 'hivefall:nebula-rift';
+
+function random01() {
+  if (!dailySeed) return Math.random();
+  rngState ^= rngState << 13; rngState ^= rngState >>> 17; rngState ^= rngState << 5;
+  return (rngState >>> 0) / 4294967296;
+}
+function randomRange(min, max) { return min + random01() * (max - min); }
+function pickSeeded(list) { return list[Math.min(list.length - 1, Math.floor(random01() * list.length))]; }
+function readSeed() {
+  const value = Number(new URLSearchParams(window.location.search).get('seed'));
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+function seedFor(modeId) { return modeId === 'daily' ? todaySeed() : readSeed(); }
+function todaySeed() {
+  const d = new Date(), stamp = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  let x = stamp ^ 0x7f4a7c15; for (const ch of 'hivefall') x = Math.imul(x ^ ch.charCodeAt(0), 16777619);
+  return x >>> 0 || 1;
+}
+function comboMult() { return 1 + Math.min(4, Math.floor(combo / 5)); }
+function modeLives() { return activeMode === 'iron-line' ? 1 : 3; }
+function isBossMode() { return activeMode === 'queen'; }
 
 function makeShield(x) {
   const cells = new Uint8Array(SCW * SCH);
@@ -35,14 +79,24 @@ function makeShield(x) {
   return { x, cells };
 }
 function buildWave() {
+  pBul = []; eBul = []; pods = []; stepT = 0; waveT = 100; saucer = null; saucerT = Math.floor(randomRange(500, 900));
+  damageThisWave = false;
+  shields = [0, 1, 2, 3].map((i) => makeShield(66 + i * 140));
+  if (isBossMode()) {
+    fleet = { x: W / 2, y: 126, dir: 1, a: [] };
+    queen = { x: W / 2, y: 126, hp: QUEEN_HP, maxHp: QUEEN_HP, dir: 1, phase: 1, hit: 0, fireT: 80, fanT: 190, t: 0 };
+    return;
+  }
+  queen = null;
   fleet = { x: 62, y: 84 + Math.min(5, wave - 1) * 14, dir: 1, a: [] };
   for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) fleet.a.push({ r, c, live: true, hit: 0 });
-  shields = [0, 1, 2, 3].map((i) => makeShield(66 + i * 140));
-  pBul = []; eBul = []; stepT = 0; waveT = 100; saucer = null; saucerT = A.randi(500, 900);
 }
 function init(G) {
-  ship = { x: W / 2, vx: 0 }; wave = 1; lives = 3; inv = 0; frame = 0; nextLife = 1500; deadT = 0; fireCd = 0;
+  dailySeed = seedFor(activeMode); rngState = dailySeed || 1;
+  ship = { x: W / 2, vx: 0 }; wave = 1; lives = modeLives(); inv = 0; frame = 0; nextLife = 1500; fireCd = 0;
+  combo = 0; comboT = 0; overdrive = 0; overdriveT = 0; rapidT = 0; podsCollected = 0; saucersKilled = 0;
   stars = A.makeStars(70, W, H);
+  lastInitMode = activeMode;
   buildWave();
 }
 const fx = (a) => fleet.x + a.c * SX, fy = (a) => fleet.y + a.r * SY;
@@ -53,7 +107,7 @@ function eraseAt(sh, wx, wy, rad) {
   for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++) {
     const x = cx + dx, y = cy + dy;
     if (x < 0 || y < 0 || x >= SCW || y >= SCH || dx * dx + dy * dy > rad * rad + 1) continue;
-    if (Math.random() > 0.78 && Math.abs(dx) + Math.abs(dy) > 1) continue;
+    if (random01() > 0.78 && Math.abs(dx) + Math.abs(dy) > 1) continue;
     sh.cells[y * SCW + x] = 0;
   }
 }
@@ -69,82 +123,235 @@ function shieldHit(b, rad) {
   return false;
 }
 
-function killAlien(G, a, pts) {
+function unlock(id) {
+  const saved = Save.load('hivefall');
+  if ((Array.isArray(saved.achievements) ? saved.achievements : []).includes(id)) return;
+  Save.update('hivefall', { achievements: [id] });
+  if (window.Apex && Apex.unlockAchievement) Apex.unlockAchievement(id, 'hivefall');
+  UI.toast(id.replace(/-/g, ' '), { color: '#818cf8' });
+}
+function recordBestWave(value) {
+  const stats = Save.load('hivefall').stats || {};
+  const best = Math.max(Number(stats.bestWave) || 0, value);
+  if (best !== (Number(stats.bestWave) || 0)) Save.update('hivefall', { stats: { bestWave: best } });
+}
+function reportWave(G, level) {
+  if (window.Apex && Apex.report) Apex.report({ gameId: 'hivefall', type: 'level_complete', level, score: G.score, mode: activeMode });
+}
+function finishRun(G, title, sub) {
+  if (activeMode === 'daily') {
+    const stats = Save.load('hivefall').stats || {};
+    Save.update('hivefall', { stats: { dailyBest: Math.max(Number(stats.dailyBest) || 0, G.score) } });
+  }
+  recordBestWave(wave);
+  G.over(title, sub + ' · ' + MODE_LABEL[activeMode]);
+}
+function clearStats(G) {
+  const stats = Save.load('hivefall').stats || {};
+  const patch = { bestWave: Math.max(Number(stats.bestWave) || 0, MAX_WAVE) };
+  if (activeMode === 'classic') { patch.classicClears = (Number(stats.classicClears) || 0) + 1; unlock('hive-clear'); }
+  if (activeMode === 'iron-line') { patch.ironClears = (Number(stats.ironClears) || 0) + 1; unlock('iron-line'); }
+  if (activeMode === 'daily') { patch.dailyBest = Math.max(Number(stats.dailyBest) || 0, G.score); unlock('daily-uplink'); }
+  Save.update('hivefall', { stats: patch });
+}
+function winRun(G) {
+  clearStats(G);
+  if (activeMode === 'iron-line') return G.win('Iron Line Held!', 'Ten waves on a single life · Score ' + G.score);
+  if (activeMode === 'daily') return G.win('Daily Uplink Complete', 'Seeded swarm cleared · Score ' + G.score);
+  return G.win('Hive Destroyed!', 'All ' + MAX_WAVE + ' waves cleared · Score ' + G.score);
+}
+function killQueen(G) {
+  const stats = Save.load('hivefall').stats || {};
+  Save.update('hivefall', { stats: { queenKills: (Number(stats.queenKills) || 0) + 1, bestWave: Math.max(Number(stats.bestWave) || 0, MAX_WAVE) } });
+  unlock('queen-slayer');
+  G.addScore(2000); A.sfx('explode'); G.shake(20); G.freeze(8);
+  G.burst(queen.x, queen.y, 70, { color: ['#f472b6', '#e879f9', '#fff'], speed: 7, glow: true, life: 52 });
+  G.ring(queen.x, queen.y, '#f472b6', 120); G.ring(queen.x, queen.y, '#fff', 70, 16);
+  queen = null;
+  G.win('Hive Queen Slain!', 'Command node destroyed · Score ' + G.score);
+}
+function hitQueen(G, dmg) {
+  if (!queen || queen.hp <= 0) return;
+  queen.hp = Math.max(0, queen.hp - dmg);
+  queen.hit = 6;
+  overdrive = Math.min(100, overdrive + 2);
+  G.addScore(10 * comboMult());
+  if (queen.hp <= 0) killQueen(G);
+}
+
+function spawnPod(x, y) {
+  const type = pickSeeded(['rapid', 'repair', 'charge', 'life']);
+  pods.push({ x, y, vy: 1.6, type, t: 0 });
+}
+function collectPod(G, pod) {
+  podsCollected++;
+  const info = POD_TYPES[pod.type];
+  A.sfx('power'); G.freeze(2); G.shake(4);
+  G.burst(pod.x, pod.y, 22, { color: [info.color, '#fff'], speed: 4.5, glow: true, life: 30 });
+  G.ring(pod.x, pod.y, info.color, 54);
+  if (pod.type === 'rapid') { rapidT = 480; G.popup(pod.x, pod.y - 22, 'RAPID FIRE', info.color, 16); }
+  else if (pod.type === 'repair') { shields = [0, 1, 2, 3].map((i) => makeShield(66 + i * 140)); G.popup(pod.x, pod.y - 22, 'BUNKERS REPAIRED', info.color, 16); }
+  else if (pod.type === 'charge') { overdrive = Math.min(100, overdrive + 50); G.popup(pod.x, pod.y - 22, 'CHARGE +50', info.color, 16); }
+  else { lives = Math.min(6, lives + 1); G.popup(pod.x, pod.y - 22, 'SPARE LIFE', info.color, 16); }
+  if (podsCollected >= 5) unlock('pod-runner');
+}
+function killSaucer(G) {
+  const pts = pickSeeded([50, 100, 150, 300]);
+  G.addScore(pts); A.sfx('power'); G.shake(6);
+  G.burst(saucer.x, 66, 36, { color: ['#fde68a', '#f472b6', '#fff'], speed: 5, glow: true, life: 40 });
+  G.ring(saucer.x, 66, '#fde68a', 80); G.popup(saucer.x, 50, 'SUPPLY +' + pts, '#fde68a', 18);
+  saucersKilled++;
+  if (saucersKilled >= 3) unlock('saucer-hunter');
+  spawnPod(saucer.x, 66);
+  saucer = null;
+}
+
+function killAlien(G, a, base) {
   a.live = false;
+  combo++; comboT = 150;
+  const mult = comboMult(), pts = Math.round(base * mult);
+  G.addScore(pts);
+  overdrive = Math.min(100, overdrive + 7);
+  unlock('first-blood');
+  if (combo >= 10) unlock('combo-ten');
   const x = fx(a) + AW / 2, y = fy(a) + AH / 2, col = ['#e879f9', '#fbbf24', '#34d399'][[0, 1, 1, 2, 2][a.r]];
-  G.addScore(pts); A.sfx('explode'); G.freeze(1);
+  A.sfx('explode'); G.freeze(1);
   G.burst(x, y, 16, { color: [col, '#fff'], speed: 4, glow: true, life: 28, grav: 0.04 });
   G.ring(x, y, col, 34, 18);
-  G.popup(x, y - 10, '+' + pts, '#fff', 14);
+  G.popup(x, y - 10, '+' + pts + (mult > 1 ? ' ×' + mult : ''), '#fff', 14);
   if (G.score >= nextLife) { nextLife += 1500; lives++; A.sfx('heal'); G.popup(W / 2, 200, '1UP', '#4ade80', 28); }
 }
 function hurtPlayer(G) {
   if (inv > 0) return;
-  lives--; A.sfx('boom'); G.shake(14); G.freeze(10);
-  G.burst(ship.x, PY, 40, { color: ['#60a5fa', '#fff', '#f87171'], speed: 6, glow: true, life: 44, grav: 0.06 });
-  G.ring(ship.x, PY, '#60a5fa', 90, 30);
+  lives--; damageThisWave = true; A.sfx('boom'); G.shake(14 * shakeScale); G.freeze(10);
+  G.burst(ship.x, PY, 40, { color: [shipPalette.body, '#fff', '#f87171'], speed: 6, glow: true, life: 44, grav: 0.06 });
+  G.ring(ship.x, PY, shipPalette.body, 90, 30);
   eBul = []; inv = 130;
-  if (lives <= 0) return G.over('Defenders Down', 'Reached wave ' + wave);
+  if (lives <= 0) { finishRun(G, 'Defenders Down', 'Reached wave ' + wave); return; }
   ship.x = W / 2;
+}
+
+function updateQueen(G) {
+  queen.t++;
+  queen.x += queen.dir * 1.5;
+  if (queen.x < 110) { queen.x = 110; queen.dir = 1; }
+  else if (queen.x > W - 110) { queen.x = W - 110; queen.dir = -1; }
+  queen.phase = queen.hp <= QUEEN_HP * 0.5 ? 2 : 1;
+  if (--queen.fireT <= 0) {
+    for (const off of [-42, 0, 42]) {
+      const dx = ship.x - (queen.x + off), dy = PY - (queen.y + 40), len = Math.hypot(dx, dy) || 1, sp = queen.phase === 2 ? 3.6 : 3;
+      eBul.push({ x: queen.x + off, y: queen.y + 40, x0: 0, vx: dx / len * sp, vy: dy / len * sp, kind: 'q', t: 0 });
+    }
+    queen.fireT = queen.phase === 2 ? 46 : 72;
+    A.sfx('laser');
+  }
+  if (--queen.fanT <= 0) {
+    const n = queen.phase === 2 ? 7 : 5;
+    for (let i = 0; i < n; i++) {
+      const angle = -0.5 + (i / (n - 1)) * 1;
+      eBul.push({ x: queen.x, y: queen.y + 42, x0: 0, vx: Math.sin(angle) * 3.4, vy: Math.cos(angle) * 3.4, kind: 'q', t: 0 });
+    }
+    queen.fanT = queen.phase === 2 ? 120 : 180;
+    A.sfx('laser');
+  }
 }
 
 function update(G) {
   frame++;
   if (inv > 0) inv--;
+  if (comboT > 0 && --comboT === 0) combo = 0;
+  if (overdriveT > 0) overdriveT--;
+  if (rapidT > 0) rapidT--;
+  if (queen && queen.hit > 0) queen.hit--;
   // player
   const ax = A.axisX();
   ship.vx = A.approach(ship.vx, ax * 4.2, 0.7); ship.x = A.clamp(ship.x + ship.vx, 24, W - 24);
   if (fireCd > 0) fireCd--;
-  if (A.held('Space') && fireCd === 0 && pBul.length < 2 && waveT < 90) {
-    pBul.push({ x: ship.x, y: PY - 18, vy: -9 }); fireCd = 16; A.sfx('shoot');
-    G.burst(ship.x, PY - 16, 4, { color: '#fde68a', speed: 2, glow: true, life: 10, angle: -Math.PI / 2, spread: 0.7 });
+  if (A.hit('KeyK')) {
+    if (overdriveT > 0) UI.toast('Overdrive already active.', { color: '#fbbf24' });
+    else if (overdrive >= 100) {
+      overdriveT = 360; overdrive = 0; unlock('overdrive');
+      A.sfx('power'); G.shake(8 * shakeScale); G.ring(ship.x, PY, '#fbbf24', 90, 30);
+      G.popup(ship.x, PY - 36, 'OVERDRIVE', '#fbbf24', 22);
+    }
+  }
+  if (A.held('Space') && fireCd === 0 && waveT < 90) {
+    const cap = overdriveT > 0 ? 8 : rapidT > 0 ? 5 : 2;
+    if (pBul.length < cap) {
+      if (overdriveT > 0) {
+        for (const vx of [-2.2, 0, 2.2]) pBul.push({ x: ship.x, y: PY - 18, vx, vy: -10 });
+        fireCd = 9;
+      } else {
+        pBul.push({ x: ship.x, y: PY - 18, vx: 0, vy: rapidT > 0 ? -10.5 : -9 });
+        fireCd = rapidT > 0 ? 7 : 16;
+      }
+      A.sfx('shoot');
+      G.burst(ship.x, PY - 16, 4, { color: shipPalette.bullet, speed: 2, glow: true, life: 10, angle: -Math.PI / 2, spread: 0.7 });
+    }
   }
   for (let i = pBul.length - 1; i >= 0; i--) {
-    const b = pBul[i]; b.y += b.vy; let gone = b.y < 40;
+    const b = pBul[i]; b.x += b.vx; b.y += b.vy;
+    let gone = b.y < 40 || b.x < 0 || b.x > W;
     if (!gone && shieldHit(b, 1)) gone = true;
-    if (!gone && saucer && b.x > saucer.x - 22 && b.x < saucer.x + 22 && b.y < 82 && b.y > 52) {
-      const pts = A.pick([50, 100, 150, 300]); G.addScore(pts); A.sfx('power'); G.shake(6);
-      G.burst(saucer.x, 66, 36, { color: ['#fde68a', '#f472b6', '#fff'], speed: 5, glow: true, life: 40 });
-      G.ring(saucer.x, 66, '#fde68a', 80); G.popup(saucer.x, 50, 'UFO +' + pts, '#fde68a', 20); saucer = null; gone = true;
-    }
+    if (!gone && saucer && b.x > saucer.x - 22 && b.x < saucer.x + 22 && b.y < 82 && b.y > 52) { killSaucer(G); gone = true; }
+    if (!gone && queen && Math.abs(b.x - queen.x) < 52 && b.y > queen.y - 46 && b.y < queen.y + 48) { hitQueen(G, 2); gone = true; }
     if (!gone) for (const a of fleet.a) {
-      if (a.live && b.x > fx(a) - 3 && b.x < fx(a) + AW + 3 && b.y > fy(a) - 4 && b.y < fy(a) + AH + 4) { killAlien(G, a, [30, 20, 20, 10, 10][a.r] * (1 + Math.floor((wave - 1) / 3))); gone = true; break; }
+      if (a.live && b.x > fx(a) - 3 && b.x < fx(a) + AW + 3 && b.y > fy(a) - 4 && b.y < fy(a) + AH + 4) {
+        killAlien(G, a, [30, 20, 20, 10, 10][a.r] * (1 + Math.floor((wave - 1) / 3)));
+        gone = true; break;
+      }
     }
     if (gone) pBul.splice(i, 1);
   }
+  if (G.state !== 'playing') return;
   // wave intro / clear
   if (waveT > 0) { waveT--; return; }
-  alive = liveList();
-  if (!alive.length) {
-    if (wave >= MAX_WAVE) { G.addScore(1000); return G.win('Hive Destroyed!', 'All ' + MAX_WAVE + ' waves cleared'); }
-    G.addScore(100 * wave); wave++; A.sfx('power'); buildWave();
-    G.popup(W / 2, H / 2, 'WAVE ' + wave, '#67e8f9', 34); return;
-  }
-  // fleet step
-  const interval = Math.max(4, Math.round(alive.length * 0.85 * Math.pow(0.93, wave - 1)));
-  if (++stepT >= interval) {
-    stepT = 0; frame = frame; fleet.frame = !fleet.frame;
-    const minX = Math.min(...alive.map((a) => fx(a))), maxX = Math.max(...alive.map((a) => fx(a))) + AW;
-    if ((fleet.dir > 0 && maxX + 10 > W - 14) || (fleet.dir < 0 && minX - 10 < 14)) { fleet.dir *= -1; fleet.y += 16; A.tone(70, 0.1, 'sawtooth', 0.05); }
-    else fleet.x += fleet.dir * 10;
-    A.tone(fleet.frame ? 98 : 82, 0.07, 'square', 0.045);
-    for (const a of alive) for (const sh of shields) if (fx(a) + AW > sh.x && fx(a) < sh.x + SCW * CELL && fy(a) + AH > SHY) for (let k = 0; k < 4; k++) eraseAt(sh, fx(a) + AW / 2, SHY + k * 8 + 2, 3);
-    if (Math.max(...alive.map((a) => fy(a))) + AH > PY - 14) { G.shake(14); return G.over('Hive Landed', 'The swarm reached the ground at wave ' + wave); }
-  }
-  // enemy fire (bottom-most in a random column)
-  const cap = Math.min(6, 2 + wave), chance = 0.012 + wave * 0.003;
-  if (eBul.length < cap && Math.random() < chance) {
-    const col = A.randi(0, COLS - 1), shooters = alive.filter((a) => a.c === col);
-    if (shooters.length) {
-      const a = shooters.reduce((m, s) => (s.r > m.r ? s : m));
-      const kind = wave >= 4 && Math.random() < 0.2 ? 'f' : Math.random() < 0.4 ? 'z' : 's';
-      eBul.push({ x: fx(a) + AW / 2, x0: fx(a) + AW / 2, y: fy(a) + AH, vy: kind === 'f' ? 6 : kind === 'z' ? 2.6 : 3.2, kind, t: 0 });
-      A.sfx('laser');
+  if (queen) {
+    updateQueen(G);
+  } else {
+    alive = liveList();
+    if (!alive.length) {
+      const cleared = wave;
+      G.addScore(100 * cleared);
+      reportWave(G, cleared);
+      if (cleared === 1 && !damageThisWave) unlock('untouched');
+      if (!isBossMode() && activeMode !== 'endless' && cleared >= MAX_WAVE) { winRun(G); return; }
+      wave++;
+      Save.update('hivefall', { level: Math.min(MAX_WAVE, wave) });
+      recordBestWave(wave);
+      A.sfx('power'); buildWave();
+      G.popup(W / 2, H / 2, 'WAVE ' + wave, '#67e8f9', 34); return;
+    }
+    // fleet step
+    const interval = Math.max(4, Math.round(alive.length * 0.85 * Math.pow(0.93, Math.min(wave - 1, 15))));
+    if (++stepT >= interval) {
+      stepT = 0; fleet.frame = !fleet.frame;
+      const minX = Math.min(...alive.map((a) => fx(a))), maxX = Math.max(...alive.map((a) => fx(a))) + AW;
+      if ((fleet.dir > 0 && maxX + 10 > W - 14) || (fleet.dir < 0 && minX - 10 < 14)) { fleet.dir *= -1; fleet.y += 16; A.tone(70, 0.1, 'sawtooth', 0.05); }
+      else fleet.x += fleet.dir * 10;
+      A.tone(fleet.frame ? 98 : 82, 0.07, 'square', 0.045);
+      for (const a of alive) for (const sh of shields) if (fx(a) + AW > sh.x && fx(a) < sh.x + SCW * CELL && fy(a) + AH > SHY) for (let k = 0; k < 4; k++) eraseAt(sh, fx(a) + AW / 2, SHY + k * 8 + 2, 3);
+      if (Math.max(...alive.map((a) => fy(a))) + AH > PY - 14) { G.shake(14); finishRun(G, 'Hive Landed', 'The swarm reached the ground at wave ' + wave); return; }
+    }
+    // enemy fire (bottom-most in a random column)
+    const cap = Math.min(6, 2 + wave);
+    const chance = (0.012 + wave * 0.003) * (difficulty === 'easy' ? 0.6 : difficulty === 'hard' ? 1.35 : 1);
+    if (eBul.length < cap && random01() < chance) {
+      const col = Math.min(COLS - 1, Math.floor(random01() * COLS)), shooters = alive.filter((a) => a.c === col);
+      if (shooters.length) {
+        const a = shooters.reduce((m, s) => (s.r > m.r ? s : m));
+        const kind = wave >= 4 && random01() < 0.2 ? 'f' : random01() < 0.4 ? 'z' : 's';
+        eBul.push({ x: fx(a) + AW / 2, x0: fx(a) + AW / 2, y: fy(a) + AH, vx: 0, vy: kind === 'f' ? 6 : kind === 'z' ? 2.6 : 3.2, kind, t: 0 });
+        A.sfx('laser');
+      }
     }
   }
+  if (G.state !== 'playing') return;
   for (let i = eBul.length - 1; i >= 0; i--) {
-    const b = eBul[i]; b.t++; b.y += b.vy; if (b.kind === 'z') b.x = b.x0 + Math.sin(b.t * 0.22) * 14;
-    let gone = b.y > H;
+    const b = eBul[i]; b.t++; b.y += b.vy;
+    if (b.kind === 'z') b.x = b.x0 + Math.sin(b.t * 0.22) * 14;
+    else if (b.vx) b.x += b.vx;
+    let gone = b.y > H || b.x < -20 || b.x > W + 20;
     if (!gone && shieldHit(b, b.kind === 'f' ? 3 : 2)) { gone = true; G.burst(b.x, b.y, 6, { color: '#86efac', speed: 2, life: 14 }); A.sfx('hit'); }
     if (!gone && Math.abs(b.x - ship.x) < 18 && b.y > PY - 12 && b.y < PY + 12) { gone = true; hurtPlayer(G); }
     for (const p of pBul) if (!gone && Math.abs(p.x - b.x) < 6 && Math.abs(p.y - b.y) < 10) { gone = true; p.y = -50; G.burst(b.x, b.y, 6, { color: '#fff', speed: 2.5, glow: true, life: 14 }); }
@@ -153,7 +360,13 @@ function update(G) {
   }
   // saucer
   if (saucer) { saucer.x += saucer.dir * 2; if (saucer.x < -40 || saucer.x > W + 40) saucer = null; else if (frame % 14 === 0) A.tone(640 + Math.sin(frame * 0.2) * 120, 0.1, 'sine', 0.03); }
-  else if (--saucerT <= 0 && alive.length > 6) { const d = Math.random() < 0.5 ? 1 : -1; saucer = { x: d > 0 ? -30 : W + 30, dir: d }; saucerT = A.randi(900, 1500); }
+  else if (!queen && --saucerT <= 0 && alive && alive.length > 6) { const d = random01() < 0.5 ? 1 : -1; saucer = { x: d > 0 ? -30 : W + 30, dir: d }; saucerT = Math.floor(randomRange(900, 1500)); }
+  // supply pods
+  for (let i = pods.length - 1; i >= 0; i--) {
+    const p = pods[i]; p.t++; p.y += p.vy; p.x += Math.sin(p.t * 0.08) * 0.5;
+    if (p.y > PY + 36) { pods.splice(i, 1); continue; }
+    if (Math.abs(p.x - ship.x) < 26 && p.y > PY - 28 && p.y < PY + 24) { collectPod(G, p); pods.splice(i, 1); }
+  }
 }
 
 function drawAlien(c, a, t, f) {
@@ -162,14 +375,14 @@ function drawAlien(c, a, t, f) {
   A.shadow(c, x + 4, y + 16, 12, 3, 0.25);
   c.save(); c.translate(x, y); c.shadowColor = col; c.shadowBlur = 10;
   c.fillStyle = col; c.strokeStyle = col; c.lineWidth = 3; c.lineCap = 'round';
-  if (type === 0) { // jelly: dome with tendrils
+  if (type === 0) {
     c.beginPath(); c.arc(0, -2, 11, Math.PI, 0); c.lineTo(11, 6); c.lineTo(-11, 6); c.fill();
     for (let i = -2; i <= 2; i++) { c.beginPath(); c.moveTo(i * 5, 6); c.quadraticCurveTo(i * 5 + s * 4, 11, i * 5, 14); c.stroke(); }
-  } else if (type === 1) { // wasp: hex body with wings
+  } else if (type === 1) {
     c.beginPath(); c.moveTo(-9, -2); c.lineTo(-4, -9); c.lineTo(4, -9); c.lineTo(9, -2); c.lineTo(4, 7); c.lineTo(-4, 7); c.closePath(); c.fill();
     c.globalAlpha = 0.7; c.beginPath(); c.moveTo(-9, -4); c.lineTo(-18, s > 0 ? -12 : 2); c.lineTo(-8, 2); c.fill();
     c.beginPath(); c.moveTo(9, -4); c.lineTo(18, s > 0 ? -12 : 2); c.lineTo(8, 2); c.fill(); c.globalAlpha = 1;
-  } else { // drone: flat diamond pod with legs
+  } else {
     c.beginPath(); c.moveTo(-14, 2); c.lineTo(0, -9); c.lineTo(14, 2); c.lineTo(0, 9); c.closePath(); c.fill();
     c.beginPath(); c.moveTo(-8, 7); c.lineTo(-12 + s * 3, 14); c.moveTo(8, 7); c.lineTo(12 - s * 3, 14); c.stroke();
   }
@@ -178,14 +391,54 @@ function drawAlien(c, a, t, f) {
   c.restore();
 }
 
+function drawQueen(c, t) {
+  if (!queen) return;
+  const x = queen.x, y = queen.y, pulse = 1 + Math.sin(t * 0.08) * 0.05;
+  c.save(); c.translate(x, y); c.shadowColor = '#f472b6'; c.shadowBlur = queen.hit > 0 ? 34 : 20;
+  c.fillStyle = '#7e22ce';
+  c.beginPath(); c.ellipse(-38, -8, 30, 16, -0.4, 0, A.TAU); c.fill();
+  c.beginPath(); c.ellipse(38, -8, 30, 16, 0.4, 0, A.TAU); c.fill();
+  c.fillStyle = '#a21caf';
+  c.beginPath(); c.ellipse(0, 4, 44 * pulse, 28 * pulse, 0, 0, A.TAU); c.fill();
+  c.fillStyle = queen.hit > 0 ? '#fff' : '#e879f9';
+  c.beginPath(); c.ellipse(0, -4, 26, 20, 0, 0, A.TAU); c.fill();
+  c.fillStyle = '#4c1d95';
+  c.beginPath(); c.moveTo(-16, -20); c.lineTo(-8, -38); c.lineTo(0, -22); c.lineTo(8, -38); c.lineTo(16, -20); c.closePath(); c.fill();
+  c.shadowBlur = 0;
+  c.fillStyle = '#1e1b4b'; c.fillRect(-13, -8, 8, 8); c.fillRect(5, -8, 8, 8);
+  c.fillStyle = '#fdf2f8'; c.fillRect(-11, -6, 4, 4); c.fillRect(7, -6, 4, 4);
+  c.strokeStyle = '#f0abfc'; c.lineWidth = 3; c.lineCap = 'round';
+  for (let i = -2; i <= 2; i++) { c.beginPath(); c.moveTo(i * 15, 28); c.lineTo(i * 21, 42); c.stroke(); }
+  c.restore();
+  const barW = 220, ratio = queen.hp / queen.maxHp;
+  c.fillStyle = 'rgba(5,7,15,.7)'; c.fillRect(W / 2 - barW / 2, 60, barW, 11);
+  c.fillStyle = queen.phase === 2 ? '#f43f5e' : '#f472b6';
+  c.fillRect(W / 2 - barW / 2, 60, barW * ratio, 11);
+  A.text(c, 'HIVE QUEEN · PHASE ' + queen.phase, W / 2, 52, 12, '#f9a8d4', 'center', '800', A.MONO);
+}
+
+function drawPod(c, p, t) {
+  const info = POD_TYPES[p.type], pulse = 1 + Math.sin(t * 0.18 + p.t * 0.2) * 0.14;
+  c.save(); c.translate(p.x, p.y); c.rotate(t * 0.02);
+  c.strokeStyle = info.color; c.fillStyle = A.alpha(info.color, 0.2); c.lineWidth = 2;
+  c.shadowColor = info.color; c.shadowBlur = 14;
+  c.beginPath();
+  for (let i = 0; i < 4; i++) {
+    const a = i * Math.PI / 2, px = Math.cos(a) * 13 * pulse, py = Math.sin(a) * 13 * pulse;
+    if (i) c.lineTo(px, py); else c.moveTo(px, py);
+  }
+  c.closePath(); c.fill(); c.stroke();
+  c.restore();
+  A.text(c, info.label, p.x, p.y + 4, 12, '#fff', 'center', '800', A.MONO);
+}
+
 function draw(G, c) {
-  const t = G.clock;
-  A.sky(c, W, H, ['#05030f', '#0b1030', '#1a1347']);
+  const t = G.clock, theme = THEMES[arenaTheme] || THEMES['hivefall:nebula-rift'];
+  A.sky(c, W, H, theme.sky);
   A.drawStars(c, stars, t, W, H, 0.15, '#c7d2fe');
-  // planet horizon
-  c.save(); c.fillStyle = A.vgrad(c, 470, H, ['#1b2a5c', '#0a0f26']);
+  c.save(); c.fillStyle = A.vgrad(c, 470, H, theme.floor);
   c.beginPath(); c.ellipse(W / 2, H + 380, 760, 420, 0, 0, A.TAU); c.fill();
-  c.strokeStyle = 'rgba(103,232,249,.25)'; c.lineWidth = 3; c.beginPath(); c.ellipse(W / 2, H + 380, 760, 420, 0, Math.PI * 1.15, Math.PI * 1.85); c.stroke(); c.restore();
+  c.strokeStyle = theme.rim; c.lineWidth = 3; c.beginPath(); c.ellipse(W / 2, H + 380, 760, 420, 0, Math.PI * 1.15, Math.PI * 1.85); c.stroke(); c.restore();
   A.grid3d(c, W, H, 494, t, 'rgba(99,102,241,.22)');
   // shields
   for (const sh of shields) for (let r = 0; r < SCH; r++) for (let q = 0; q < SCW; q++) if (sh.cells[r * SCW + q]) {
@@ -193,9 +446,8 @@ function draw(G, c) {
     c.fillStyle = top ? '#86efac' : A.mix('#22c55e', '#14532d', r / SCH);
     c.fillRect(sh.x + q * CELL, SHY + r * CELL, CELL, CELL);
   }
-  // fleet
   for (const a of fleet.a) if (a.live) drawAlien(c, a, t, fleet.frame);
-  // saucer
+  drawQueen(c, t);
   if (saucer) {
     c.save(); c.translate(saucer.x, 66); c.shadowColor = '#f472b6'; c.shadowBlur = 16;
     c.fillStyle = '#f472b6'; c.beginPath(); c.ellipse(0, 3, 22, 8, 0, 0, A.TAU); c.fill();
@@ -203,39 +455,108 @@ function draw(G, c) {
     for (let i = -2; i <= 2; i++) { c.fillStyle = (Math.floor(t / 6) + i) % 2 ? '#fde68a' : '#fff'; c.fillRect(i * 8 - 1.5, 2, 3, 3); }
     c.restore();
   }
-  // bullets
+  for (const p of pods) drawPod(c, p, t);
   c.save(); c.globalCompositeOperation = 'lighter';
-  for (const b of pBul) { c.fillStyle = '#fde68a'; c.shadowColor = '#fde68a'; c.shadowBlur = 12; c.fillRect(b.x - 2, b.y - 8, 4, 16); }
+  for (const b of pBul) { c.fillStyle = shipPalette.bullet; c.shadowColor = shipPalette.bullet; c.shadowBlur = 12; c.fillRect(b.x - 2, b.y - 8, 4, 16); }
   for (const b of eBul) {
-    const col = b.kind === 'f' ? '#f87171' : b.kind === 'z' ? '#c084fc' : '#4ade80';
+    const col = b.kind === 'f' ? '#f87171' : b.kind === 'z' ? '#c084fc' : b.kind === 'q' ? '#fb7185' : '#4ade80';
     c.fillStyle = col; c.shadowColor = col; c.shadowBlur = 12;
-    if (b.kind === 'z') { c.beginPath(); c.arc(b.x, b.y, 4, 0, A.TAU); c.fill(); } else c.fillRect(b.x - (b.kind === 'f' ? 1.5 : 2), b.y - 7, b.kind === 'f' ? 3 : 4, b.kind === 'f' ? 18 : 14);
+    if (b.kind === 'z' || b.kind === 'q') { c.beginPath(); c.arc(b.x, b.y, b.kind === 'q' ? 5 : 4, 0, A.TAU); c.fill(); }
+    else c.fillRect(b.x - (b.kind === 'f' ? 1.5 : 2), b.y - 7, b.kind === 'f' ? 3 : 4, b.kind === 'f' ? 18 : 14);
   }
   c.restore();
-  // ship
   if (!(inv > 0 && Math.floor(t / 5) % 2 === 0) && G.state !== 'over') {
-    const x = ship.x, y = PY;
+    const x = ship.x, y = PY, pal = shipPalette;
+    if (overdriveT > 0) {
+      c.save(); c.strokeStyle = A.alpha('#fbbf24', 0.35 + 0.25 * Math.sin(t * 0.3)); c.lineWidth = 2;
+      c.beginPath(); c.arc(x, y, 31 + Math.sin(t * 0.2) * 3, 0, A.TAU); c.stroke(); c.restore();
+    }
     A.shadow(c, x + 4, y + 16, 22, 5, 0.35);
     c.save(); c.translate(x, y);
-    c.fillStyle = '#60a5fa'; c.beginPath(); c.moveTo(0, -18); c.lineTo(-20, 12); c.lineTo(0, 6); c.closePath(); c.fill();
-    c.fillStyle = '#2563eb'; c.beginPath(); c.moveTo(0, -18); c.lineTo(20, 12); c.lineTo(0, 6); c.closePath(); c.fill();
-    c.fillStyle = '#bfdbfe'; c.beginPath(); c.ellipse(0, -2, 4, 7, 0, 0, A.TAU); c.fill();
+    c.fillStyle = A.alpha(trailColor, 0.5);
+    for (let i = 1; i <= 3; i++) { c.beginPath(); c.moveTo(-4, 9); c.lineTo(0, 15 + i * 4 + Math.sin(t * 1.3 + i) * 2); c.lineTo(4, 9); c.fill(); }
+    c.fillStyle = pal.body; c.beginPath(); c.moveTo(0, -18); c.lineTo(-20, 12); c.lineTo(0, 6); c.closePath(); c.fill();
+    c.fillStyle = pal.accent; c.beginPath(); c.moveTo(0, -18); c.lineTo(20, 12); c.lineTo(0, 6); c.closePath(); c.fill();
+    c.fillStyle = pal.glow; c.beginPath(); c.ellipse(0, -2, 4, 7, 0, 0, A.TAU); c.fill();
     c.globalCompositeOperation = 'lighter'; c.fillStyle = 'rgba(251,191,36,' + (0.6 + Math.sin(t) * 0.3) + ')';
     c.beginPath(); c.moveTo(-4, 8); c.lineTo(0, 16 + Math.sin(t * 1.3) * 3); c.lineTo(4, 8); c.fill();
     c.restore();
   }
-  // lives
-  for (let i = 0; i < lives - 1; i++) { c.fillStyle = '#60a5fa'; c.beginPath(); c.moveTo(W - 20 - i * 20, 502); c.lineTo(W - 30 - i * 20, 514); c.lineTo(W - 10 - i * 20, 514); c.fill(); }
-  if (waveT > 0 && G.state === 'playing') A.glowText(c, 'WAVE ' + wave, W / 2, 250, 38, '#67e8f9', 'center', 18);
+  if (waveT > 0 && G.state === 'playing') A.glowText(c, isBossMode() ? 'HIVE QUEEN' : 'WAVE ' + wave, W / 2, 250, 38, '#67e8f9', 'center', 18);
+  // overdrive meter
+  const oc = overdriveT > 0 ? overdriveT / 360 : overdrive / 100, ocColor = overdriveT > 0 ? '#fde68a' : overdrive >= 100 ? '#fbbf24' : '#818cf8';
+  A.text(c, 'OVERDRIVE' + (overdrive >= 100 && overdriveT <= 0 ? ' · K READY' : ''), 16, 502, 10, ocColor, 'left', '800', A.MONO);
+  c.fillStyle = 'rgba(255,255,255,.12)'; c.fillRect(16, 508, 120, 7);
+  c.fillStyle = ocColor; c.fillRect(16, 508, 120 * A.clamp(oc, 0, 1), 7);
+  if (combo > 1 && comboT > 0) A.text(c, 'COMBO ×' + comboMult() + ' · ' + combo, W / 2, 512, 13, '#fde68a', 'center', '800', A.MONO);
   A.vignette(c, W, H, 0.35);
   G.drawFX(c);
-  G.hudL = 'SCORE ' + G.score + '  ·  WAVE ' + wave + '  ·  LIVES ' + lives;
+  G.hudL = 'SCORE ' + G.score + ' · ' + (isBossMode() ? 'QUEEN' : 'WAVE ' + wave) + ' · LIVES ' + lives;
+  G.hudR = MODE_LABEL[activeMode] + ' · BEST ' + G.hi;
 }
 
-Arcade.game({
-  id: 'hivefall', title: 'Hivefall Defense', subtitle: 'Hold the line against ten waves', color: '#818cf8',
-  help: '←/→ or A/D move, hold Space to fire (two shots at a time). Bunkers erode from both sides. Shoot the passing saucer for bonus points. Extra life every 1500 points. P pauses, M mutes.',
-  w: W, h: H, touchL: [['◀', 'ArrowLeft'], ['▶', 'ArrowRight']], touchR: [['●', 'Space']], init, update, draw,
+const hivefallGame = Arcade.game({
+  id: 'hivefall', title: 'Hivefall Defense', subtitle: 'Hold the line against the swarm', color: '#818cf8',
+  help: '←/→ or A/D move, hold Space to fire. Chain kills to raise the combo multiplier. Saucers drop supply pods; catch them for rapid fire, bunkers, charge, or a life. Fill the meter and press K for a spread barrage. P pauses, M mutes.',
+  w: W, h: H, touchL: [['◀', 'ArrowLeft'], ['▶', 'ArrowRight']], touchR: [['●', 'Space'], ['⚡', 'KeyK']], init, update, draw,
+});
+hiveGame = hivefallGame;
+const hiveOriginalShake = hivefallGame.shake.bind(hivefallGame);
+hivefallGame.shake = (amount) => hiveOriginalShake(amount * shakeScale);
+
+function applyMode(id) {
+  activeMode = id || 'classic';
+  if (hivefallGame && lastInitMode !== activeMode) hivefallGame.restart(false);
+}
+function applySetting(key, value) {
+  if (key === 'difficulty') difficulty = value;
+  else if (key === 'shake') shakeScale = Math.max(0, Math.min(1, Number(value)));
+  else if (key === 'particles' && window.Perf && Perf.setTier) Perf.setTier(value);
+}
+function applyCosmetic(slot, id) {
+  if (slot === 'palette' && PALETTES[id]) shipPalette = PALETTES[id];
+  else if (slot === 'trail') trailColor = id === 'hivefall:comet-trail' ? '#fb923c' : '#fde68a';
+  else if (slot === 'theme' && THEMES[id]) arenaTheme = id;
+}
+hivefallGame.ui = UI.mountGame(hivefallGame, {
+  id: 'hivefall', title: 'Hivefall Defense', subtitle: 'Hold the line. Break the swarm.', accent: '#818cf8',
+  modes: [
+    { id: 'classic', name: 'Hivefall Classic', blurb: 'Ten waves · three lives', seasonTargets: [400, 1200, 2600] },
+    { id: 'iron-line', name: 'Iron Line', blurb: 'Ten waves · one life', lockedHint: 'Clear wave 10 to unlock', requires: { stat: 'bestWave', gte: 10 }, seasonTargets: [700, 1800, 3600] },
+    { id: 'endless', name: 'Endless Swarm', blurb: 'No last wave · chase the record', seasonTargets: [900, 2200, 4200] },
+    { id: 'daily', name: 'Daily Uplink', blurb: 'A seeded swarm shared for today', seeded: true, seasonTargets: [600, 1500, 3000] },
+    { id: 'queen', name: 'Hive Queen', blurb: 'Break the 220-HP command node', lockedHint: 'Clear wave 10 to unlock', requires: { stat: 'bestWave', gte: 10 }, seasonTargets: [1200, 2600, 4800] },
+  ],
+  settings: [
+    { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
+    { key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 },
+    { key: 'particles', label: 'Particles', type: 'select', options: ['lite', 'standard', 'ultra'], default: 'standard' },
+  ],
+  achievements: [
+    { id: 'first-blood', name: 'First Blood', desc: 'Destroy your first invader.', rarity: 'common' },
+    { id: 'untouched', name: 'Untouched', desc: 'Clear wave 1 without losing a life.', rarity: 'rare' },
+    { id: 'saucer-hunter', name: 'Saucer Hunter', desc: 'Destroy three supply saucers in one run.', rarity: 'rare' },
+    { id: 'combo-ten', name: 'Chain Reaction', desc: 'Reach a ten-kill combo.', rarity: 'epic' },
+    { id: 'overdrive', name: 'Overdrive', desc: 'Unleash a full overdrive barrage.', rarity: 'rare' },
+    { id: 'pod-runner', name: 'Pod Runner', desc: 'Collect five supply pods in one run.', rarity: 'rare' },
+    { id: 'hive-clear', name: 'Hive Breaker', desc: 'Clear all ten waves of Hivefall Classic.', rarity: 'legendary' },
+    { id: 'iron-line', name: 'Iron Line', desc: 'Clear ten waves on a single life.', rarity: 'legendary' },
+    { id: 'daily-uplink', name: 'Daily Uplink', desc: 'Complete a seeded Daily Uplink.', rarity: 'rare' },
+    { id: 'queen-slayer', name: 'Queen Slayer', desc: 'Destroy the Hive Queen.', rarity: 'legendary' },
+  ],
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Move with ←/→. Hold Space to fire; two shots can be airborne at once.', hold: 'ArrowRight' },
+    { text: 'Chain kills without a pause to raise the multiplier. Every five kills adds +1.', hold: 'Space' },
+    { text: 'Saucer kills drop supply pods. Catch them for rapid fire, bunker repair, charge, or a spare life.', hold: 'ArrowLeft' },
+    { text: 'Fill the overdrive meter, then press K for a six-second spread barrage.', hold: 'KeyK' },
+  ] },
+  chapter: 'HIVE ASSAULT · 10 WAVES', levels: [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}],
+  hooks: {
+    applyMode,
+    applySetting,
+    applyCosmetic,
+    getResult: () => ({ score: hivefallGame.score, win: hivefallGame.state === 'won', mode: activeMode, bestWave: Number((Save.load('hivefall').stats || {}).bestWave) || 0 }),
+  },
 });
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
