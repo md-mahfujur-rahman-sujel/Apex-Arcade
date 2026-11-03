@@ -635,7 +635,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
       case 'iso-tetris':
         return <IsoTetrisEngine {...commonProps} />;
       case 'pac-maze':
-        return <PacMazeEngine {...commonProps} />;
+        return <PacMazeEngine {...commonProps} seed={startSeed} />;
       case 'sonic-speedway':
         return <SonicSpeedwayEngine {...commonProps} />;
       case 'street-brawler':

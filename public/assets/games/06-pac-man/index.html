@@ -19,8 +19,7 @@
 <script>
 /* Glow Beetle — neon maze chase. A beetle gathers energy seeds while four patrol drones hunt it,
    each with its own targeting habit. Scatter/chase waves, glow cores, tunnels, bonus gems, lives, levels. */
-(function () {
-  const A = Arcade;
+const A = Arcade;
   const T = 24, COLS = 21, ROWS = 23, OX = 8, OY = 46, TUN = 10;
   const MAP = [
     '#####################',
@@ -47,6 +46,9 @@
     '#...................#',
     '#####################',
   ];
+  const FORCED_SEED = (() => { try { return Number(new URLSearchParams(location.search).get('seed')) || 0; } catch (e) { return 0; } })();
+  const NIGHTFALL_MAZES = 8;
+  const MODE_LABEL = { classic: 'CLASSIC', campaign: 'CAMPAIGN', daily: 'DAILY', 'last-light': 'LAST LIGHT', nightfall: 'NIGHTFALL' };
   const DIRS = [[0, -1], [-1, 0], [0, 1], [1, 0]];
   const PAL = [210, 150, 280, 25, 335, 190];
   const GEMS = [['#fb7185', 100], ['#fbbf24', 300], ['#34d399', 500], ['#60a5fa', 700], ['#c084fc', 1000], ['#f8fafc', 2000]];
@@ -56,11 +58,18 @@
     { name: 'flank', col: '#2dd4bf', corner: [19, 25], rel: 420 },
     { name: 'drift', col: '#fbbf24', corner: [1, 25], rel: 700 },
   ];
+  const SHADE = { name: 'shade', col: '#f472b6', corner: [10, -2], rel: 820 };
   let M, mazeCv, pl, gh, seeds, eaten, lives, level, ph, phT, modeIdx, modeT, frT, combo, gem, nextLife, tog, flashT;
-  let activeMode = 'classic', difficulty = 'normal', campaignStage = 1, sectorLives = 3, dailySeed = 0, rngState = 0;
+  let activeMode = 'classic', difficulty = 'normal', campaignStage = 1, sectorLives = 3, dailySeed = 0, rngState = 0, runSeed = 0, lastInitMode = null;
   let beetleColor = '#84cc16', effectColor = '#67e8f9', wallHue = null, mazeBackground = '#060818', shakeScale = 1;
 
-  function award(points) { Arcade.G.addScore(Math.round(points * (activeMode === 'last-light' ? 1.25 : difficulty === 'hard' ? 1.25 : 1))); }
+  function award(points) {
+    let mult = 1;
+    if (activeMode === 'last-light') mult *= 1.25;
+    if (activeMode === 'nightfall') mult *= 1.5;
+    if (difficulty === 'hard') mult *= 1.25;
+    Arcade.G.addScore(Math.round(points * mult));
+  }
   function unlock(id) {
     const saved = Save.load('glow-beetle');
     if ((Array.isArray(saved.achievements) ? saved.achievements : []).includes(id)) return;
@@ -74,9 +83,34 @@
     return hash >>> 0 || 1;
   }
   function seededPick(items) {
-    if (activeMode !== 'daily') return A.pick(items);
+    if (!runSeed) return A.pick(items);
     rngState ^= rngState << 13; rngState ^= rngState >>> 17; rngState ^= rngState << 5;
     return items[(rngState >>> 0) % items.length];
+  }
+  function reportLevel(G, cleared) {
+    if (window.Apex && Apex.report) Apex.report({ gameId: 'glow-beetle', type: 'level_complete', level: cleared, score: G.score, mode: activeMode });
+  }
+  function noteLevel() {
+    const stats = Save.load('glow-beetle').stats || {};
+    if ((Number(stats.bestLevel) || 0) >= level) return;
+    Save.update('glow-beetle', { stats: { bestLevel: level } });
+  }
+  function recordRun(G, cleared) {
+    const saved = Save.load('glow-beetle');
+    const stats = saved.stats || {};
+    const patch = {
+      bestScore: Math.max(Number(stats.bestScore) || 0, G.score),
+      bestLevel: Math.max(Number(stats.bestLevel) || 0, level),
+      runs: (Number(stats.runs) || 0) + 1,
+    };
+    if (activeMode === 'daily') patch.dailyBest = Math.max(Number(stats.dailyBest) || 0, G.score);
+    if (activeMode === 'nightfall') patch.nightfallClears = (Number(stats.nightfallClears) || 0) + (cleared ? 1 : 0);
+    const extra = {};
+    if (activeMode === 'daily') {
+      const d = new Date(), day = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      extra.daily = { day: day, best: Math.max(G.score, Number(saved.daily && saved.daily.best) || 0) };
+    }
+    Save.update('glow-beetle', Object.assign({ stats: patch }, extra));
   }
 
   const wrapx = (x) => (x < 0 ? COLS - 1 : x >= COLS ? 0 : x);
@@ -122,12 +156,13 @@
   }
   function resetActors() {
     pl = { cx: 10, cy: 15, dx: 0, dy: 0, p: 0, want: [-1, 0], face: Math.PI, mouth: 0 };
-    gh = DRONES.map((d, i) => ({ ...d, cx: i === 0 ? 10 : 9 + (i - 1), cy: i === 0 ? 7 : 10, dx: i === 0 ? -1 : 0, dy: 0, p: 0, state: i === 0 ? 'out' : 'house', fr: false, rev: false, bob: i * 1.7 }));
+    const roster = activeMode === 'nightfall' ? DRONES.concat([SHADE]) : DRONES;
+    gh = roster.map((d, i) => ({ ...d, cx: i === 0 ? 10 : i === 4 ? 10 : 9 + (i - 1), cy: i === 0 ? 7 : i === 4 ? 9 : 10, dx: i === 0 ? -1 : 0, dy: 0, p: 0, state: i === 0 ? 'out' : 'house', fr: false, rev: false, bob: i * 1.7 }));
     modeIdx = 0; modeT = 0; frT = 0; combo = 0; ph = 'intro'; phT = 110;
   }
   function startLevel() { loadSeeds(); buildMaze(); resetActors(); }
 
-  const gSpeed = () => Math.min(0.125, 0.092 + level * 0.005) * (difficulty === 'easy' ? 0.8 : difficulty === 'hard' ? 1.35 : 1) * (activeMode === 'last-light' ? 1.1 : 1);
+  const gSpeed = () => Math.min(0.125, 0.092 + level * 0.005) * (difficulty === 'easy' ? 0.8 : difficulty === 'hard' ? 1.35 : 1) * (activeMode === 'last-light' ? 1.1 : activeMode === 'nightfall' ? 1.16 : 1);
   const schedule = () => [Math.max(160, (difficulty === 'hard' ? 360 : 460) - level * 40), 1200, Math.max(160, 460 - level * 40), 1200, 300, 1200, 300, 1e9];
   const chasing = () => modeIdx % 2 === 1;
 
@@ -157,7 +192,7 @@
     if (ch === '.') { award(10); A.tone((tog = !tog) ? 260 : 340, 0.05, 'triangle', 0.045); G.burst(sx, sy, 2, { color: '#fde68a', speed: 1.2, life: 12, size: 2 }); }
     else {
       unlock('core-charge'); award(50); A.sfx('power'); G.ring(sx, sy, effectColor, 90); G.shake(3 * shakeScale);
-      frT = Math.max(100, 440 - level * 55); combo = 0;
+      frT = Math.round(Math.max(70, 440 - level * 55) * (activeMode === 'nightfall' ? 0.7 : 1)); combo = 0;
       for (const g of gh) if (g.state !== 'eyes') { g.fr = true; if (g.state !== 'house') g.rev = true; }
     }
     if (eaten === 60 || eaten === 150) { const q = GEMS[Math.min(level - 1, GEMS.length - 1)]; gem = { col: q[0], pts: q[1], life: 660 }; }
@@ -175,6 +210,7 @@
     if (g.name === 'dart') return [px, py];
     if (g.name === 'lurk') return [px + ax * 4, py + ay * 4];
     if (g.name === 'flank') { const r = gh[0], vx = px + ax * 2, vy = py + ay * 2; return [r.cx + (vx - r.cx) * 2, r.cy + (vy - r.cy) * 2]; }
+    if (g.name === 'shade') { const m = gh[gh.length - 1], vx = px + ax * 2, vy = py + ay * 2; return [m.cx + (vx - m.cx) * 2, m.cy + (vy - m.cy) * 2]; }
     return Math.hypot(g.cx - px, g.cy - py) > 8 ? [px, py] : g.corner;
   }
   function gChoose(g) {
@@ -195,7 +231,8 @@
     if (g.state === 'house') {
       g.bob += 0.12;
       const t = g.rel / (1 + (level - 1) * 0.25);
-      if (G.t > t && (eaten >= (g.name === 'flank' ? 25 : g.name === 'drift' ? 45 : 0) || G.t > 1500)) { g.state = 'leave'; g.dx = 0; g.dy = 0; g.p = 0; }
+      const gate = g.name === 'flank' ? 25 : g.name === 'drift' ? 45 : g.name === 'shade' ? 70 : 0;
+      if (G.t > t && (eaten >= gate || G.t > 1500)) { g.state = 'leave'; g.dx = 0; g.dy = 0; g.p = 0; }
       return;
     }
     let sp = gSpeed();
@@ -264,10 +301,14 @@
     touchL: [['◀', 'ArrowLeft'], ['▲', 'ArrowUp']], touchR: [['▼', 'ArrowDown'], ['▶', 'ArrowRight']],
     init(G) {
       const saved = Save.load('glow-beetle');
-      level = 1; lives = activeMode === 'last-light' ? 1 : 3; nextLife = 10000; tog = false; flashT = 0;
+      lives = activeMode === 'last-light' ? 1 : activeMode === 'nightfall' ? 2 : 3;
+      nextLife = 10000; tog = false; flashT = 0;
       campaignStage = activeMode === 'campaign' ? Math.max(1, Math.min(5, Number(saved.stats && saved.stats.glowBeetleStage) || 1)) : 1;
       level = campaignStage; sectorLives = lives;
-      dailySeed = activeMode === 'daily' ? seedForToday() : 0; rngState = dailySeed || 1;
+      noteLevel();
+      dailySeed = activeMode === 'daily' ? seedForToday() : 0;
+      runSeed = rngState = dailySeed || FORCED_SEED || (((Math.random() * 4294967296) >>> 0) || 1);
+      lastInitMode = activeMode;
       startLevel();
     },
     update(G) {
@@ -275,23 +316,38 @@
       if (A.hit('ArrowUp', 'KeyW')) w = DIRS[0]; else if (A.hit('ArrowLeft', 'KeyA')) w = DIRS[1]; else if (A.hit('ArrowDown', 'KeyS')) w = DIRS[2]; else if (A.hit('ArrowRight', 'KeyD')) w = DIRS[3];
       else if (A.held('ArrowUp', 'KeyW')) w = DIRS[0]; else if (A.held('ArrowLeft', 'KeyA')) w = DIRS[1]; else if (A.held('ArrowDown', 'KeyS')) w = DIRS[2]; else if (A.held('ArrowRight', 'KeyD')) w = DIRS[3];
       if (w) pl.want = w;
-      G.hudR = 'LV ' + level + '  ♥' + lives;
+      G.hudL = 'SCORE ' + G.score + ' · LV ' + level + ' · ♥' + lives;
+      G.hudR = MODE_LABEL[activeMode] + ' · BEST ' + G.hi;
       if (ph === 'intro') { if (--phT <= 0) ph = 'run'; return; }
-      if (ph === 'dying') { if (--phT <= 0) { if (lives <= 0) G.over('Caught!', 'Reached level ' + level); else resetActors(); } return; }
+      if (ph === 'dying') { if (--phT <= 0) { if (lives <= 0) { recordRun(G, false); G.over('Caught!', 'Reached level ' + level + ' · ' + MODE_LABEL[activeMode]); } else resetActors(); } return; }
       if (ph === 'clear') {
         flashT++;
         if (--phT <= 0) {
+          reportLevel(G, level);
           if (lives >= sectorLives) unlock('clean-sector');
-          if (activeMode === 'daily') { unlock('daily-glow'); const d = new Date(), day = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); const old = Save.load('glow-beetle'); Save.update('glow-beetle', { daily: { day: day, best: Math.max(G.score, Number(old.daily && old.daily.best) || 0) } }); G.win('Daily Circuit complete!', 'Seed ' + dailySeed + ' · score ' + G.score); }
-          else if (activeMode === 'last-light') { unlock('last-light'); G.win('Last Light clear!', 'One life · score ' + G.score); }
-          else if (activeMode === 'campaign') {
-            if (campaignStage >= 5) { unlock('beetle-legend'); Save.update('glow-beetle', { stats: { glowBeetleStage: 1 } }); G.win('Sector Campaign complete!', 'All five sectors illuminated'); }
-            else { campaignStage++; level = campaignStage; sectorLives = lives; Save.update('glow-beetle', { stats: { glowBeetleStage: campaignStage } }); startLevel(); G.popup(260, OY + 11.5 * T, 'SECTOR ' + campaignStage, '#a3e635', 26); }
-          } else { level++; if (level >= 5) unlock('deep-descent'); startLevel(); G.popup(260, OY + 11.5 * T, 'LEVEL ' + level, '#a3e635', 26); }
+          if (activeMode === 'daily') {
+            unlock('daily-glow'); recordRun(G, true);
+            G.win('Daily Circuit complete!', 'Seed ' + dailySeed + ' · score ' + G.score);
+          } else if (activeMode === 'last-light') {
+            unlock('last-light'); recordRun(G, true);
+            G.win('Last Light clear!', 'One life · score ' + G.score);
+          } else if (activeMode === 'campaign') {
+            if (campaignStage >= 5) { unlock('beetle-legend'); recordRun(G, true); Save.update('glow-beetle', { stats: { glowBeetleStage: 1 } }); G.win('Sector Campaign complete!', 'All five sectors illuminated · score ' + G.score); }
+            else { campaignStage++; level = campaignStage; noteLevel(); sectorLives = lives; Save.update('glow-beetle', { stats: { glowBeetleStage: campaignStage } }); startLevel(); G.popup(260, OY + 11.5 * T, 'SECTOR ' + campaignStage, '#a3e635', 26); }
+          } else if (activeMode === 'nightfall') {
+            if (level >= NIGHTFALL_MAZES) { unlock('nightfall'); recordRun(G, true); G.win('Nightfall complete!', 'Eight dark mazes held · score ' + G.score); }
+            else { level++; noteLevel(); startLevel(); G.popup(260, OY + 11.5 * T, 'NIGHT ' + level, '#f472b6', 26); }
+          } else {
+            level++;
+            noteLevel();
+            if (level >= 5) unlock('deep-descent');
+            if (level >= 10) unlock('maze-ten');
+            startLevel(); G.popup(260, OY + 11.5 * T, 'LEVEL ' + level, '#a3e635', 26);
+          }
         }
         return;
       }
-      if (activeMode !== 'last-light' && G.score >= nextLife) { lives++; nextLife += 10000; A.sfx('power'); G.popup(260, OY + 11.5 * T, '1UP!', '#a3e635', 24); }
+      if (activeMode !== 'last-light' && activeMode !== 'nightfall' && G.score >= nextLife) { lives++; nextLife += 10000; A.sfx('power'); G.popup(260, OY + 11.5 * T, '1UP!', '#a3e635', 24); }
       // waves
       if (frT > 0) { if (--frT === 0) { for (const g of gh) g.fr = false; combo = 0; } }
       else { const s = schedule(); if (++modeT >= s[modeIdx]) { modeIdx = Math.min(modeIdx + 1, s.length - 1); modeT = 0; for (const g of gh) if (g.state === 'out') g.rev = true; } }
@@ -353,6 +409,7 @@
       { id: 'campaign', name: 'Sector Campaign', blurb: 'Clear five saved sectors while carrying your remaining lives forward.', seasonTargets: [3500, 8000, 16000] },
       { id: 'daily', name: 'Daily Circuit', blurb: 'A deterministic patrol pattern for today. Retries share the same seed.', seeded: true, seasonTargets: [2000, 5000, 10000] },
       { id: 'last-light', name: 'Last Light', blurb: 'One life, faster patrols, and a 1.25× score bonus.', seasonTargets: [3000, 7500, 15000] },
+      { id: 'nightfall', name: 'Nightfall', blurb: 'Two lives, five hunters, shorter cores, and 1.5× score across eight dark mazes.', lockedHint: 'Reach level 5 to unlock', requires: { stat: 'bestLevel', gte: 5 }, seasonTargets: [4000, 9000, 18000] },
     ],
     settings: [
       { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
@@ -367,6 +424,8 @@
       { id: 'combo-four', name: 'Combo Four', desc: 'Tag four drones in a power window.', rarity: 'epic' },
       { id: 'clean-sector', name: 'Clean Sector', desc: 'Clear a sector without losing a life.', rarity: 'rare' },
       { id: 'deep-descent', name: 'Deep Descent', desc: 'Reach level five.', rarity: 'rare' },
+      { id: 'maze-ten', name: 'Maze Runner', desc: 'Reach level ten.', rarity: 'rare' },
+      { id: 'nightfall', name: 'Nightfall', desc: 'Complete all eight Nightfall mazes.', rarity: 'epic' },
       { id: 'daily-glow', name: 'Daily Glow', desc: 'Finish a Daily Circuit.', rarity: 'rare' },
       { id: 'last-light', name: 'Last Light', desc: 'Clear a sector in Last Light.', rarity: 'epic' },
       { id: 'beetle-legend', name: 'Beetle Legend', desc: 'Complete the Sector Campaign.', rarity: 'legendary' },
@@ -376,8 +435,12 @@
       { text: 'Eat a glowing core to turn the patrol drones vulnerable.', hold: 'ArrowUp' },
       { text: 'Use the side tunnels to cross the maze and gather every seed.', hold: 'ArrowRight' },
     ] },
+    chapter: 'NEON MAZE · 10 LEVELS', levels: Array.from({ length: 10 }, () => ({})),
     hooks: {
-      applyMode: (mode) => { activeMode = mode; },
+      applyMode: (mode) => {
+        activeMode = mode || 'classic';
+        if (glowBeetleGame && lastInitMode !== activeMode) glowBeetleGame.restart(false);
+      },
       applySetting: (key, value) => {
         if (key === 'difficulty') difficulty = value;
         if (key === 'shake') shakeScale = Number(value);
@@ -393,7 +456,6 @@
       getResult: () => ({ score: glowBeetleGame.score, win: glowBeetleGame.state === 'won', mode: activeMode, level: level }),
     },
   });
-})();
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

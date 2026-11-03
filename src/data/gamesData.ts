@@ -132,10 +132,10 @@ const BASE_GAMES_DATA: GameInfo[] = [
     developer: 'Namco (Toru Iwatani)',
     originalPlatform: 'Arcade Coin-Op',
     tagline: 'The iconic dot-gobbling cultural phenomenon.',
-    description: 'Navigate neon corridors consuming seeds while hunting drones close in. Grab power seeds to turn the tables.',
+    description: 'Steer a glowing beetle through ten neon mazes, hoovering seeds while four patrol drones hunt with darting, ambushing, flanking, and drifting habits. Glow cores flip the hunt, side tunnels wrap, bonus gems pay out, and five modes add a saved sector campaign, a seeded daily circuit, a one-life run, and a five-drone Nightfall.',
     legacy: 'Inaugurated character licensing and video game pop culture.',
-    controlsSummary: 'Arrow keys or WASD to steer (turns can be pre-queued).',
-    keys: 'Arrows / WASD — steer',
+    controlsSummary: 'Arrow keys or WASD to steer (turns can be pre-queued). Eat every seed, grab glow cores to stun the drones, and use the side tunnels to cross the maze.',
+    keys: 'Arrows / WASD — steer · P — pause · M — mute',
     accentColor: '#84CC16',
     icon: '🪲',
     difficulty: 'Medium',
@@ -1144,7 +1144,7 @@ type CompleteLauncherMetadata = Required<Pick<GameInfo,
 
 const TIER_S_NUMBERS = new Set([1, 5, 6, 7, 12, 16, 21, 49]);
 const TIER_A_NUMBERS = new Set([2, 3, 4, 8, 9, 10, 11, 13, 14, 15, 17, 18, 19, 20, 25, 37, 40, 43, 44, 50]);
-const DAILY_SEED_GAME_NUMBERS = new Set([4, 5, 43, 44, 50]);
+const DAILY_SEED_GAME_NUMBERS = new Set([4, 5, 6, 43, 44, 50]);
 const MOODS_BY_CATEGORY: Record<GameInfo['category'], string[]> = {
   arcade: ['Adrenaline rush', '5-minute fun'],
   board: ['With friends', 'Timeless classics'],
@@ -1229,6 +1229,7 @@ const launcherOverrides: Partial<Record<string, Partial<CompleteLauncherMetadata
   snake: { sessionMinutes: 8, modes: ['Ember Classic', 'Serpent Gate', 'Molten Gauntlet', 'Daily Ember'], levelCount: 10 },
   'space-invaders': { sessionMinutes: 10, modes: ['Hivefall Classic', 'Iron Line', 'Endless Swarm', 'Daily Uplink', 'Hive Queen'], levelCount: 10 },
   tetris: { sessionMinutes: 12, modes: ['Marathon', '40-Line Sprint', 'Prism Circuit', 'Daily Prism', 'Ultra Prism'], levelCount: 15 },
+  'pac-man': { sessionMinutes: 10, modes: ['Classic Maze', 'Sector Campaign', 'Daily Circuit', 'Last Light', 'Nightfall'], levelCount: 10 },
   'street-fighter-ii': { players: '1-2P', sessionMinutes: 8, modes: ['Arcade Ladder', 'Local Versus', 'Training'], levelCount: 8 },
   'chrono-trigger': { sessionMinutes: 30, modes: ['Story Quest', 'Boss Rush', 'Practice'], levelCount: 12 },
   'castlevania-sotn': { sessionMinutes: 25, modes: ['Story Quest', 'Boss Rush', 'Practice'], levelCount: 14 },
