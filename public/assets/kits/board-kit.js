@@ -4,9 +4,14 @@
   'use strict';
   const B = (window.Board = {});
 
-  /* on-screen error report: any JS error shows up here without crashing the page */
+  /* on-screen error report for this page's own scripts; extensions inject main-world
+     scripts into game frames and their failures must not cover the game */
   window.addEventListener('error', (e) => {
     try {
+      const src = e.filename || '';
+      let srcOrigin = '';
+      if (src) { try { srcOrigin = new URL(src, window.location.href).origin; } catch (err) {} }
+      if (srcOrigin && srcOrigin !== window.location.origin) return;
       let b = document.getElementById('board-err') || document.getElementById('arc-err');
       if (!b) {
         b = document.createElement('pre');

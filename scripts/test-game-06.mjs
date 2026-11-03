@@ -452,6 +452,23 @@ try {
   }));
   assert.equal(chrome.shell, false, 'the game shell no longer renders a button bar or controls box');
   assert.equal(chrome.menuToolbar, 'none', 'no control toolbar covers a live run');
+
+  const reporter = await page.evaluate(() => {
+    const panel = () => document.getElementById('arc-err')?.textContent || null;
+    window.dispatchEvent(new ErrorEvent('error', {
+      message: 'args[2]?.includes is not a function',
+      filename: 'chrome-extension://test-extension/content/popups-script.js',
+      lineno: 68,
+    }));
+    const foreign = panel();
+    window.dispatchEvent(new ErrorEvent('error', { message: 'reporter self test', filename: location.href, lineno: 1 }));
+    const local = panel();
+    document.getElementById('arc-err')?.remove();
+    return { foreign, local };
+  });
+  assert.equal(reporter.foreign, null, 'extension-injected script errors stay out of the game view');
+  assert.match(reporter.local, /reporter self test/, 'the on-screen reporter still surfaces this page\'s own errors');
+
   await page.screenshot({ path: path.join(tmpdir(), 'game-06-gameplay.png') });
   await context.close();
 

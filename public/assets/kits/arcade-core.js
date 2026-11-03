@@ -11,9 +11,14 @@
       return window.parent !== window && new URLSearchParams(window.location.search || '').get('embed') === 'theater';
     } catch (error) { return false; }
   })();
-  /* on-screen error report: open any game in a browser and any JS error shows up here */
+  /* on-screen error report for this page's own scripts; extensions inject main-world
+     scripts into game frames and their failures must not cover the game */
   window.addEventListener('error', (e) => {
     try {
+      const src = e.filename || '';
+      let srcOrigin = '';
+      if (src) { try { srcOrigin = new URL(src, window.location.href).origin; } catch (err) {} }
+      if (srcOrigin && srcOrigin !== window.location.origin) return;
       let b = document.getElementById('arc-err');
       if (!b) { b = document.createElement('pre'); b.id = 'arc-err'; b.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;max-height:30vh;overflow:auto;margin:0;padding:10px 12px;background:#450a0a;color:#fecaca;border:1px solid #f87171;border-radius:8px;font:12px/1.4 ui-monospace,Consolas,monospace;z-index:99999;white-space:pre-wrap'; document.documentElement.appendChild(b); }
       b.textContent += (e.message || 'Error') + (e.filename ? '\n  at ' + e.filename.split('/').pop() + ':' + e.lineno : '') + '\n';
