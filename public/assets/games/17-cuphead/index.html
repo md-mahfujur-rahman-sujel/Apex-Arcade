@@ -18,38 +18,149 @@
 <script src="../../kits/ui-kit.js"></script>
 <script>
 /* Stormcap Showdown — a one-on-one boss duel in an old-time cartoon style: shoot, dash, and parry the pink
-   shots to charge your super against Mama Thundercloud's three phases. Graded S-C at the end. */
-const A = Arcade, W = 800, H = 480, GY = 410, TAU = Math.PI * 2;
+   shots to charge your super against Mama Thundercloud's three phases. Five modes, records, achievements,
+   cosmetics, and a S–C grade at the end. */
+const A = Arcade, W = 800, H = 480, GY = 410, TAU = Math.PI * 2, GAME_ID = 'stormcap-showdown';
 const JUMP = ['Space', 'ArrowUp', 'KeyW', 'KeyZ'], SHOOT = ['KeyX', 'KeyJ'], DASH = ['ShiftLeft', 'ShiftRight', 'KeyL'], SUPER = ['KeyC', 'KeyK'];
 const PLAT = [{ x: 130, y: 318, w: 130 }, { x: 400, y: 300, w: 130 }];
-let P, bul, foe, bolts, B, intro, hits, parries, time, meter, banner, bannerT, hold;
+const MODES = { story: 'SHOWDOWN', 'no-hit': 'NO-HIT DUEL', 'parry-rush': 'PARRY RUSH', daily: 'DAILY SQUALL', gauntlet: 'THUNDER GAUNTLET' };
+const THEMES = {
+  inkwell: ['#6b7fa8', '#b9c6dc', '#f1e6c9'],
+  storm: ['#33415c', '#7186a6', '#c9c1ab'],
+  sunset: ['#7a4a63', '#c08a8a', '#f0d0a0'],
+};
+const GRADE_ORDER = ['C', 'B', 'A', 'S'];
+let P, bul, foe, bolts, B, intro, hits, parries, time, meter, banner, bannerT;
+let activeMode = 'story', difficulty = 'normal', theme = 'inkwell', shakeScale = 1;
+let skinColor = '#ef4444', shotColor = '#ffffff', parryColor = '#f9a8d4';
+let round = 1, rounds = 1, totalTime = 0, runEnded = false, runStarted = 0, startBest = 0, runSeed = 0, dailyTarget = 0;
+let usedSuper = false, lastGrade = 'C', lastInitMode = null;
+
+function stats() {
+  try { return (window.Save && Save.load(GAME_ID)) || {}; } catch (e) { return {}; }
+}
+function dailySeed() {
+  if (window.Meta && Meta.getDailySeed) return Meta.getDailySeed(GAME_ID);
+  const d = new Date(), key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + GAME_ID;
+  let hash = 2166136261;
+  for (let i = 0; i < key.length; i++) { hash ^= key.charCodeAt(i); hash = Math.imul(hash, 16777619); }
+  return hash >>> 0;
+}
+function unlock(id) {
+  const saved = stats();
+  if ((Array.isArray(saved.achievements) ? saved.achievements : []).includes(id)) return;
+  if (window.Save && Save.update) Save.update(GAME_ID, { achievements: [id] });
+  if (window.Apex && Apex.unlockAchievement) Apex.unlockAchievement(id, GAME_ID);
+  if (window.UI && UI.toast) UI.toast('Achievement unlocked', { color: '#fde047' });
+}
+function bossHpFor(r) {
+  if (activeMode === 'gauntlet') return 240 + r * 60;
+  return activeMode === 'parry-rush' ? 300 : 360;
+}
+function makeBoss() {
+  const max = bossHpFor(round);
+  return { x: 630, y: 190, w: 220, h: 170, hp: max, max: max, phase: 1, t: 0, hurt: 0, charge: 0, cx: 630, dead: 0, ct: 0 };
+}
 
 function init(G) {
   P = { x: 120, y: GY - 44, w: 24, h: 44, vx: 0, vy: 0, face: 1, ground: true, hp: 3, inv: 0, dash: 0, dcd: 0, cd: 0, coy: 0, jb: 0, sq: 0, walk: 0, sup: 0, shotT: 0 };
-  bul = []; foe = []; bolts = []; hits = 0; parries = 0; time = 0; meter = 0; intro = 160; banner = ''; bannerT = 0; hold = 0;
-  B = { x: 630, y: 190, w: 220, h: 170, hp: 360, max: 360, phase: 1, t: 0, hurt: 0, charge: 0, cx: 630, dead: 0 };
+  bul = []; foe = []; bolts = []; hits = 0; parries = 0; time = 0; meter = 0; intro = 160; banner = ''; bannerT = 0;
+  round = 1; rounds = activeMode === 'gauntlet' ? 3 : 1; totalTime = 0; runEnded = false; runStarted = Date.now();
+  usedSuper = false; lastGrade = 'C'; lastInitMode = activeMode;
+  startBest = Number((stats().stats || {}).bestScore) || 0;
+  runSeed = activeMode === 'daily' ? dailySeed() : 0;
+  dailyTarget = 90 + (runSeed % 61);
+  G.scoreMultiplier = { 'no-hit': 1.5, 'parry-rush': 1.2, gauntlet: 1.4 }[activeMode] || 1;
+  B = makeBoss();
 }
 const say = (t) => { banner = t; bannerT = 100; };
-function damage(G, n) {
+
+function recordRun(G, won, sec, grade) {
+  if (runEnded) return;
+  runEnded = true;
+  const save = stats(), st = Object.assign({}, save.stats || {});
+  const prevBest = startBest;
+  const prevGrade = String(st.bestGrade || '');
+  st.runs = (Number(st.runs) || 0) + 1;
+  st.seconds = (Number(st.seconds) || 0) + Math.max(0, Math.round(sec));
+  st.hits = (Number(st.hits) || 0) + hits;
+  st.parries = (Number(st.parries) || 0) + parries;
+  st.highestRound = Math.max(Number(st.highestRound) || 0, round);
+  st.lastMode = activeMode;
+  if (G.score > prevBest) st.bestScore = G.score;
+  if (won) {
+    const key = { story: 'storyCompletions', 'no-hit': 'noHitCompletions', 'parry-rush': 'parryCompletions', daily: 'dailyCompletions', gauntlet: 'gauntletCompletions' }[activeMode];
+    if (key) st[key] = (Number(st[key]) || 0) + 1;
+    if (activeMode === 'daily') st.dailyBest = Math.max(Number(st.dailyBest) || 0, G.score);
+    if (!prevGrade || GRADE_ORDER.indexOf(grade) > GRADE_ORDER.indexOf(prevGrade)) st.bestGrade = grade;
+    if (st.bestTimeSec == null || Math.round(sec) < Number(st.bestTimeSec)) st.bestTimeSec = Math.round(sec);
+  }
+  if (window.Save && Save.update) Save.update(GAME_ID, { stats: st });
+  if (won) {
+    if (activeMode === 'story') unlock('storm-clear');
+    else if (activeMode === 'no-hit') unlock('no-hit');
+    else if (activeMode === 'parry-rush') unlock('parry-clear');
+    else if (activeMode === 'daily') unlock('daily-storm');
+    else if (activeMode === 'gauntlet') unlock('gauntlet-clear');
+    if (grade === 'S') unlock('grade-s');
+    if (grade === 'S' && hits === 0) unlock('perfect-storm');
+    if (sec < 60) unlock('speed-duel');
+    if (parries >= 10) unlock('parry-master');
+    if (P.hp === 3) unlock('untouchable');
+  }
+  if (won && G.score > prevBest) unlock('personal-best');
+}
+function winTitle() {
+  return { story: 'STORM CLEARED!', 'no-hit': 'PERFECT STORM!', 'parry-rush': 'PARRY MASTER!', daily: 'DAILY SQUALL CLEARED!', gauntlet: 'GAUNTLET CLEARED!' }[activeMode] || 'STORM CLEARED!';
+}
+function finishRun(G) {
+  const sec = (totalTime + time) / 60;
+  const pts = 100 - hits * 17 + parries * 3 - Math.max(0, Math.floor(sec) - 75) * 2;
+  lastGrade = pts >= 96 ? 'S' : pts >= 80 ? 'A' : pts >= 60 ? 'B' : 'C';
+  const base = Math.max(0, Math.round(pts)) * 20 + P.hp * 300;
+  const bonus = {
+    story: Math.max(0, 6000 - Math.floor(sec) * 40 - hits * 600),
+    'no-hit': 8000,
+    'parry-rush': parries * 150,
+    daily: Math.max(0, dailyTarget - Math.floor(sec)) * 30,
+    gauntlet: 4000 + (round - 1) * 1500 + 2500,
+  }[activeMode] || 0;
+  G.addScore(base + bonus);
+  recordRun(G, true, sec, lastGrade);
+  const mmss = Math.floor(sec / 60) + ':' + String(Math.floor(sec % 60)).padStart(2, '0');
+  G.win(winTitle(), MODES[activeMode] + ' · Grade ' + lastGrade + ' · ' + mmss + ' · Hits ' + hits + ' · Parries ' + parries);
+}
+function nextRound(G) {
+  totalTime += time; time = 0; round++;
+  B = makeBoss();
+  foe = []; bolts = [];
+  P.x = 120; P.y = GY - P.h; P.vx = 0; P.vy = 0; P.hp = Math.min(3, P.hp + 1); P.inv = 60;
+  intro = 100; say('ROUND ' + round);
+  A.sfx('wave');
+}
+function damage(G) {
   if (P.inv > 0 || P.dash > 0 || P.sup > 0) return;
   P.hp--; P.inv = 100; hits++; P.vy = -7; P.dash = 0; G.shake(8); G.freeze(5); A.sfx('hurt'); G.burst(P.x + 12, P.y + 22, 14, { color: ['#fff', '#fca5a5'], speed: 4, life: 24 });
-  if (P.hp <= 0) { A.sfx('ko'); G.over('Knocked Out', 'Mama Thundercloud had ' + Math.max(1, Math.ceil(B.hp / B.max * 100)) + '% left'); }
+  if (activeMode === 'no-hit') P.hp = 0;
+  if (P.hp <= 0) {
+    recordRun(G, false, (totalTime + time) / 60, 'C');
+    G.over('Knocked Out', 'Mama Thundercloud had ' + Math.max(1, Math.ceil(B.hp / B.max * 100)) + '% left');
+  }
 }
+
 function update(G) {
   if (intro > 0) { intro--; if (intro === 150) A.sfx('wave'); if (intro === 40) A.sfx('charge'); return; }
   if (bannerT > 0) bannerT--;
   if (B.dead) {
-    B.dead++; P.vx = 0; if (B.dead % 7 === 0) G.burst(B.x + A.rand(-90, 90), B.y + A.rand(-60, 60), 14, { color: ['#fff', '#fde047', '#93c5fd'], speed: 5, life: 30, glow: true });
+    B.dead++; P.vx = 0;
+    if (B.dead % 7 === 0) G.burst(B.x + A.rand(-90, 90), B.y + A.rand(-60, 60), 14, { color: ['#fff', '#fde047', '#93c5fd'], speed: 5, life: 30, glow: true });
     if (B.dead === 2) { A.sfx('boom'); G.shake(16); }
-    if (B.dead > 130) {
-      const sec = time / 60, pts = 100 - hits * 17 - Math.max(0, sec - 75) * 0.5 + parries * 4, grade = pts >= 96 ? 'S' : pts >= 80 ? 'A' : pts >= 60 ? 'B' : 'C';
-      G.addScore(Math.round(Math.max(0, pts) * 20) + P.hp * 300);
-      G.win('KNOCKOUT!', 'Grade ' + grade + '  ·  Time ' + Math.floor(sec / 60) + ':' + String(Math.floor(sec % 60)).padStart(2, '0') + '  ·  Hits ' + hits + '  ·  Parries ' + parries);
-    }
+    if (B.dead > 130) { if (round < rounds) nextRound(G); else finishRun(G); }
     return;
   }
   time++; B.t++; if (B.hurt > 0) B.hurt--;
-  G.hudL = 'SCORE ' + G.score; G.hudR = 'PHASE ' + B.phase;
+  G.hudL = 'SCORE ' + G.score;
+  G.hudR = (rounds > 1 ? 'ROUND ' + round + '/' + rounds + ' · ' : '') + 'PHASE ' + B.phase;
   const ax = A.axisX(), jh = A.held.apply(null, JUMP), jp = A.hit.apply(null, JUMP);
   /* ---- player ---- */
   if (P.inv > 0) P.inv--; if (P.dcd > 0) P.dcd--; if (P.cd > 0) P.cd--; if (P.sup > 0) P.sup--; P.sq *= 0.8;
@@ -63,7 +174,13 @@ function update(G) {
     else if (jp && !P.ground) {
       let best = null, bd = 44;
       for (const f of foe) if (f.pink) { const d = Math.hypot(f.x - (P.x + 12), f.y - (P.y + 22)); if (d < bd) { bd = d; best = f; } }
-      if (best) { best.dead = true; parries++; P.vy = -9.5; P.jb = 0; meter = Math.min(100, meter + 22); A.sfx('parry'); G.freeze(4); G.ring(best.x, best.y, '#f9a8d4', 60, 20); G.popup(best.x, best.y - 14, 'PARRY!', '#f9a8d4', 18); G.burst(best.x, best.y, 12, { color: ['#f9a8d4', '#fff'], speed: 4, life: 22, glow: true }); }
+      if (best) {
+        best.dead = true; parries++; P.vy = -9.5; P.jb = 0; meter = Math.min(100, meter + 22);
+        A.sfx('parry'); G.freeze(4); G.ring(best.x, best.y, parryColor, 60, 20);
+        G.popup(best.x, best.y - 14, 'PARRY!', parryColor, 18);
+        G.burst(best.x, best.y, 12, { color: [parryColor, '#fff'], speed: 4, life: 22, glow: true });
+        unlock('first-parry');
+      }
     }
     if (!jh && P.vy < -3) P.vy *= 0.5;
     P.vy = Math.min(P.vy + 0.58, 13);
@@ -75,7 +192,12 @@ function update(G) {
   if (P.ground) P.walk += Math.abs(P.vx) * 0.14;
   if (A.held.apply(null, SHOOT) && P.cd <= 0) { P.cd = 6; P.shotT = 8; const sy = P.y + 18 + A.rand(-2, 2); bul.push({ x: P.x + 12 + P.face * 16, y: sy, vx: P.face * 11, vy: A.rand(-0.25, 0.25), life: 70 }); if (G.t % 12 === 0) A.sfx('shoot'); }
   if (P.shotT > 0) P.shotT--;
-  if (A.hit.apply(null, SUPER) && meter >= 100) { meter = 0; P.sup = 50; B.hp -= 30; B.hurt = 14; G.shake(14); A.sfx('boom'); G.ring(B.x, B.y, '#fde047', 220, 30); G.burst(B.x, B.y, 40, { color: ['#fde047', '#fff'], speed: 7, life: 34, glow: true }); G.popup(P.x, P.y - 20, 'SUPER!', '#fde047', 22); foe = []; bolts = []; }
+  if (A.hit.apply(null, SUPER) && meter >= 100) {
+    meter = 0; P.sup = 50; B.hp -= 30; B.hurt = 14; usedSuper = true; unlock('super-star');
+    G.shake(14); A.sfx('boom'); G.ring(B.x, B.y, '#fde047', 220, 30);
+    G.burst(B.x, B.y, 40, { color: ['#fde047', '#fff'], speed: 7, life: 34, glow: true });
+    G.popup(P.x, P.y - 20, 'SUPER!', '#fde047', 22); foe = []; bolts = [];
+  }
   /* ---- bullets ---- */
   for (const b of bul) {
     b.x += b.vx; b.y += b.vy; b.life--;
@@ -85,21 +207,25 @@ function update(G) {
   bul = bul.filter((b) => !b.dead);
   /* ---- phases ---- */
   const k = B.hp / B.max, ph = k > 0.66 ? 1 : k > 0.33 ? 2 : 3;
-  if (ph !== B.phase) { B.phase = ph; foe = []; bolts = []; say('PHASE ' + ph); A.sfx('charge'); G.shake(8); if (ph === 3) B.charge = 0; }
+  if (ph !== B.phase) { B.phase = ph; foe = []; bolts = []; say('PHASE ' + ph); A.sfx('charge'); G.shake(8); if (ph === 3) { B.charge = 0; unlock('phase-three'); } }
   if (B.hp <= 0) { B.hp = 0; B.dead = 1; foe = []; bolts = []; return; }
   /* ---- boss behaviour ---- */
-  const rainEvery = [0, 46, 36, 26][ph], boltEvery = [0, 210, 170, 140][ph];
+  const roundSpeed = 1 + (round - 1) * 0.1;
+  const dailyBias = activeMode === 'daily' ? runSeed % 5 : 0;
+  const rainEvery = Math.max(14, [0, 46, 36, 26][ph] - dailyBias - (activeMode === 'parry-rush' ? 8 : 0) - (round - 1) * 3);
+  const boltEvery = Math.max(90, [0, 210, 170, 140][ph] - (round - 1) * 15);
+  const pinkEvery = activeMode === 'parry-rush' ? 70 : 130;
   if (B.charge === 0) {
     B.x = 630 + Math.sin(B.t * 0.02) * 24; B.y = 190 + Math.sin(B.t * 0.045) * 14;
-    if (B.t % rainEvery === 0) for (let i = 0; i < (ph === 3 ? 2 : 1); i++) foe.push({ x: A.rand(30, W - 30), y: -10, vx: 0, vy: 3.8 + ph * 0.7, r: 6, kind: 'rain' });
+    if (B.t % rainEvery === 0) for (let i = 0; i < (ph === 3 ? 2 : 1); i++) foe.push({ x: A.rand(30, W - 30), y: -10, vx: 0, vy: (3.8 + ph * 0.7) * roundSpeed, r: 6, kind: 'rain' });
     if (B.t % boltEvery === boltEvery - 110) { bolts.push({ x: P.x + 12, t: 0 }); if (ph === 3) bolts.push({ x: A.clamp(P.x + (Math.random() < 0.5 ? -140 : 140), 40, W - 40), t: 0 }); }
-    if (ph >= 2 && B.t % 130 === 70) { const a = Math.atan2(P.y + 10 - (B.y + 20), P.x - (B.x - 80)); foe.push({ x: B.x - 80, y: B.y + 20, vx: Math.cos(a) * 3, vy: Math.sin(a) * 3, r: 12, kind: 'orb', pink: true }); A.sfx('blip'); }
+    if ((ph >= 2 || activeMode === 'parry-rush') && B.t % pinkEvery === 70) { const a = Math.atan2(P.y + 10 - (B.y + 20), P.x - (B.x - 80)); foe.push({ x: B.x - 80, y: B.y + 20, vx: Math.cos(a) * 3, vy: Math.sin(a) * 3, r: 12, kind: 'orb', pink: true }); A.sfx('blip'); }
     if (ph >= 2 && B.t % 160 === 20) { const a = Math.atan2(P.y + 10 - (B.y + 20), P.x - (B.x - 80)); for (let i = -1; i <= 1; i++) foe.push({ x: B.x - 80, y: B.y + 20, vx: Math.cos(a + i * 0.3) * 4, vy: Math.sin(a + i * 0.3) * 4, r: 7, kind: 'spark' }); A.sfx('shoot'); }
     if (ph === 3 && B.t % 420 === 330) { B.charge = 1; B.ct = 0; A.sfx('charge'); say('LOOK OUT!'); }
   } else {
     B.ct++;
     if (B.charge === 1) { B.y += (GY - 110 - B.y) * 0.1; B.x += (680 - B.x) * 0.1; if (B.ct > 55) { B.charge = 2; A.sfx('dash'); } }
-    else if (B.charge === 2) { B.x -= 15; G.shake(2); if (B.x < -160) { B.charge = 3; B.ct = 0; } }
+    else if (B.charge === 2) { B.x -= 15 * roundSpeed; G.shake(2); if (B.x < -160) { B.charge = 3; B.ct = 0; } }
     else { B.x += (630 - B.x) * 0.05; B.y += (190 - B.y) * 0.05; if (B.ct > 70) { B.charge = 0; B.x = 630; B.y = 190; } }
     if (B.charge === 2 && A.overlap({ x: P.x, y: P.y, w: P.w, h: P.h }, { x: B.x - 90, y: B.y - 60, w: 180, h: 120 })) damage(G);
   }
@@ -120,7 +246,7 @@ function update(G) {
 function cloud(c, x, y, s, col) { c.fillStyle = col; c.beginPath(); for (const [dx, dy, r] of [[-70, 20, 48], [-20, -30, 62], [40, -20, 58], [78, 22, 44], [0, 30, 56]]) { c.moveTo(x + dx * s + r * s, y + dy * s); c.arc(x + dx * s, y + dy * s, r * s, 0, TAU); } c.fill(); }
 function draw(G, c) {
   const t = G.clock;
-  A.sky(c, W, H, ['#6b7fa8', '#b9c6dc', '#f1e6c9']);
+  A.sky(c, W, H, THEMES[theme] || THEMES.inkwell);
   for (let i = 0; i < 4; i++) cloud(c, ((i * 260 - t * 0.2) % 1100 + 1100) % 1100 - 150, 110 + (i % 2) * 60, 0.6, 'rgba(255,255,255,.35)');
   c.fillStyle = '#6b8f5a'; c.beginPath(); c.moveTo(0, 380); for (let x = 0; x <= W; x += 20) c.lineTo(x, 372 + Math.sin(x * 0.015) * 12); c.lineTo(W, H); c.lineTo(0, H); c.fill();
   c.fillStyle = '#7a5c3a'; c.fillRect(0, GY, W, H - GY); c.fillStyle = '#9b7a4d'; c.fillRect(0, GY, W, 6); c.fillStyle = 'rgba(0,0,0,.15)'; for (let x = 0; x < W; x += 40) c.fillRect(x, GY + 20, 18, 3);
@@ -140,11 +266,11 @@ function draw(G, c) {
   }
   for (const f of foe) {
     c.save(); if (f.kind === 'rain') { c.fillStyle = '#93c5fd'; c.beginPath(); c.moveTo(f.x, f.y - 12); c.quadraticCurveTo(f.x + 8, f.y + 2, f.x, f.y + 6); c.quadraticCurveTo(f.x - 8, f.y + 2, f.x, f.y - 12); c.fill(); }
-    else if (f.pink) { c.shadowColor = '#f472b6'; c.shadowBlur = 16; c.fillStyle = '#f9a8d4'; c.beginPath(); c.arc(f.x, f.y, f.r + Math.sin(t * 0.3) * 1.5, 0, TAU); c.fill(); c.fillStyle = '#fff'; c.beginPath(); c.arc(f.x - 3, f.y - 3, 4, 0, TAU); c.fill(); }
+    else if (f.pink) { c.shadowColor = parryColor; c.shadowBlur = 16; c.fillStyle = parryColor; c.beginPath(); c.arc(f.x, f.y, f.r + Math.sin(t * 0.3) * 1.5, 0, TAU); c.fill(); c.fillStyle = '#fff'; c.beginPath(); c.arc(f.x - 3, f.y - 3, 4, 0, TAU); c.fill(); }
     else { c.shadowColor = '#fde047'; c.shadowBlur = 12; c.fillStyle = '#fde047'; c.beginPath(); c.arc(f.x, f.y, f.r, 0, TAU); c.fill(); }
     c.restore();
   }
-  for (const b of bul) { c.fillStyle = '#fff'; c.shadowColor = '#fff'; c.shadowBlur = 6; c.beginPath(); c.ellipse(b.x, b.y, 8, 3.5, 0, 0, TAU); c.fill(); c.shadowBlur = 0; }
+  for (const b of bul) { c.fillStyle = shotColor; c.shadowColor = shotColor; c.shadowBlur = 6; c.beginPath(); c.ellipse(b.x, b.y, 8, 3.5, 0, 0, TAU); c.fill(); c.shadowBlur = 0; }
   /* hero: a round kettle-kid */
   if (!(P.inv > 0 && Math.floor(P.inv / 4) % 2)) {
     const cx = P.x + P.w / 2, b = P.y + P.h, f = P.face, run = P.ground ? Math.sin(P.walk) : 0;
@@ -152,7 +278,7 @@ function draw(G, c) {
     A.shadow(c, cx, GY + 2, 14, 3, 0.3); c.save(); c.translate(cx, b); c.scale(f * (1 + P.sq * 0.4), 1 - P.sq * 0.4);
     if (P.sup > 0) { c.shadowColor = '#fde047'; c.shadowBlur = 24; }
     c.fillStyle = '#111'; c.fillRect(-8 + run * 4, -9, 6, 9); c.fillRect(2 - run * 4, -9, 6, 9); c.fillStyle = '#fff'; c.fillRect(-9 + run * 4, -3, 8, 3); c.fillRect(1 - run * 4, -3, 8, 3);
-    c.fillStyle = '#ef4444'; c.beginPath(); c.ellipse(0, -22, 13, 15, 0, 0, TAU); c.fill(); c.fillStyle = '#fef3c7'; c.beginPath(); c.ellipse(0, -36, 11, 10, 0, 0, TAU); c.fill();
+    c.fillStyle = skinColor; c.beginPath(); c.ellipse(0, -22, 13, 15, 0, 0, TAU); c.fill(); c.fillStyle = '#fef3c7'; c.beginPath(); c.ellipse(0, -36, 11, 10, 0, 0, TAU); c.fill();
     c.fillStyle = '#111'; c.beginPath(); c.ellipse(3, -38, 2.2, 4, 0, 0, TAU); c.ellipse(8, -38, 2.2, 4, 0, 0, TAU); c.fill(); c.fillStyle = '#7dd3fc'; c.fillRect(-7, -48, 14, 4); c.fillRect(-3, -53, 6, 6);
     c.fillStyle = '#fef3c7'; c.beginPath(); c.arc(14, -24 - (P.shotT > 0 ? 2 : 0), 5, 0, TAU); c.arc(-14, -20, 4, 0, TAU); c.fill(); c.restore();
   }
@@ -160,20 +286,131 @@ function draw(G, c) {
   c.save(); c.globalAlpha = 0.07; for (let i = 0; i < 90; i++) { c.fillStyle = Math.random() < 0.5 ? '#000' : '#fff'; c.fillRect(Math.random() * W, Math.random() * H, 2, 2); } c.restore();
   A.vignette(c, W, H, 0.4);
   for (let i = 0; i < 3; i++) { c.fillStyle = i < P.hp ? '#f87171' : 'rgba(255,255,255,.2)'; c.beginPath(); c.arc(30 + i * 24, 52, 9, 0, TAU); c.fill(); }
-  c.fillStyle = 'rgba(0,0,0,.5)'; c.fillRect(16, 70, 110, 10); c.fillStyle = meter >= 100 ? '#fde047' : '#f9a8d4'; c.fillRect(17, 71, 108 * meter / 100, 8); A.text(c, meter >= 100 ? 'SUPER READY — C' : 'SUPER', 16, 96, 11, meter >= 100 ? '#fde047' : '#e5e7eb', 'left', '800');
+  c.fillStyle = 'rgba(0,0,0,.5)'; c.fillRect(16, 70, 110, 10); c.fillStyle = meter >= 100 ? '#fde047' : parryColor; c.fillRect(17, 71, 108 * meter / 100, 8); A.text(c, meter >= 100 ? 'SUPER READY — C' : 'SUPER', 16, 96, 11, meter >= 100 ? '#fde047' : '#e5e7eb', 'left', '800');
   c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(W / 2 - 152, H - 28, 304, 14); c.fillStyle = '#ef4444'; c.fillRect(W / 2 - 150, H - 26, 300 * B.hp / B.max, 10); c.fillStyle = 'rgba(255,255,255,.25)'; c.fillRect(W / 2 - 150, H - 26, 300 * B.hp / B.max, 3);
   if (intro > 0) A.glowText(c, intro > 50 ? 'READY?' : 'WALLOP!', W / 2, 200, intro > 50 ? 56 : 72 + (50 - intro) * 0.6, '#fde047', 'center', 18);
   if (bannerT > 0) { c.save(); c.globalAlpha = Math.min(1, bannerT / 25); A.glowText(c, banner, W / 2, 130, 40, '#fff', 'center', 16); c.restore(); }
   if (B.dead) A.glowText(c, 'KNOCKOUT!', W / 2, 220, 70, '#fde047', 'center', 24);
 }
 
-Arcade.game({
-  id: 'stormcap-showdown', title: 'Stormcap Showdown', subtitle: 'A one-on-one duel with Mama Thundercloud', color: '#f87171', w: W, h: H,
+const game = Arcade.game({
+  id: GAME_ID, title: 'Stormcap Showdown', subtitle: 'A one-on-one duel with Mama Thundercloud', color: '#f87171', w: W, h: H,
   controls: [['← →  /  A D', 'Run'], ['Space  /  ↑  /  W  /  Z', 'Jump (hold for height)'], ['Hold X  /  J', 'Shoot'], ['Shift  /  L', 'Dash (invulnerable while dashing)'], ['Jump again near a pink shot', 'PARRY — charges your super'], ['C  /  K', 'Super (when the bar is full)'], ['P / M', 'Pause / mute']],
   help: '← → run · Space jump · hold X to shoot · Shift dash (safe) · press jump in mid-air next to a PINK shot to parry it · C super when charged',
   touchL: [['◀', 'ArrowLeft'], ['▶', 'ArrowRight']], touchR: [['⚡', 'ShiftLeft'], ['🔥', 'KeyX'], ['▲', 'Space']],
   init, update, draw,
 });
+const originalShake = game.shake.bind(game);
+game.shake = (amount) => originalShake(amount * shakeScale);
+
+const ACHIEVEMENTS = [
+  { id: 'first-parry', name: 'Counterpunch', desc: 'Parry a pink shot.', rarity: 'common' },
+  { id: 'super-star', name: 'Storm Charge', desc: 'Use your super.', rarity: 'rare' },
+  { id: 'phase-three', name: 'Eye of the Storm', desc: 'Reach Mama Thundercloud’s third phase.', rarity: 'rare' },
+  { id: 'storm-clear', name: 'Showdown Won', desc: 'Clear Stormcap Showdown.', rarity: 'rare' },
+  { id: 'no-hit', name: 'Perfect Storm', desc: 'Clear the No-Hit Duel.', rarity: 'epic' },
+  { id: 'parry-clear', name: 'Parry Rush Cleared', desc: 'Clear Parry Rush.', rarity: 'rare' },
+  { id: 'daily-storm', name: 'Daily Forecaster', desc: 'Clear a Daily Squall.', rarity: 'rare' },
+  { id: 'gauntlet-clear', name: 'Three Storms', desc: 'Clear the Thunder Gauntlet.', rarity: 'legendary' },
+  { id: 'grade-s', name: 'S-Rank Showdown', desc: 'Finish any duel with an S grade.', rarity: 'epic' },
+  { id: 'perfect-storm', name: 'Untouched Thunder', desc: 'Finish with an S grade and no hits.', rarity: 'legendary' },
+  { id: 'speed-duel', name: 'Quick Draw', desc: 'Finish a duel in under a minute.', rarity: 'rare' },
+  { id: 'parry-master', name: 'Parry Master', desc: 'Land ten parries in one run.', rarity: 'epic' },
+  { id: 'untouchable', name: 'Untouchable', desc: 'Finish with all three hearts.', rarity: 'rare' },
+  { id: 'personal-best', name: 'Personal Best', desc: 'Finish with a new best score.', rarity: 'rare' },
+];
+
+const SKINS = { 'kettle-crimson': '#ef4444', 'kettle-blue': '#3b82f6', 'kettle-jade': '#34d399', 'kettle-gold': '#facc15', 'kettle-violet': '#a78bfa' };
+const PALETTES = { 'shot-ivory': '#ffffff', 'shot-sky': '#7dd3fc', 'shot-gold': '#fde047', 'shot-mint': '#6ee7b7' };
+const EFFECTS = { 'parry-rose': '#f9a8d4', 'parry-mint': '#6ee7b7', 'parry-gold': '#fde047', 'parry-sky': '#7dd3fc' };
+const THEME_IDS = { 'theme-inkwell': 'inkwell', 'theme-storm': 'storm', 'theme-sunset': 'sunset' };
+const cosmeticKey = (id) => String(id || '').split(':').pop();
+const applyCosmetic = (slot, id) => {
+  const key = cosmeticKey(id);
+  if (slot === 'skin' && SKINS[key]) skinColor = SKINS[key];
+  else if (slot === 'palette' && PALETTES[key]) shotColor = PALETTES[key];
+  else if (slot === 'effect' && EFFECTS[key]) parryColor = EFFECTS[key];
+  else if (slot === 'theme' && THEME_IDS[key]) theme = THEME_IDS[key];
+};
+
+game.ui = UI.mountGame(game, {
+  id: GAME_ID, title: 'Stormcap Showdown', subtitle: 'Dash, parry, and out-duel Mama Thundercloud', accent: '#f87171',
+  modes: [
+    { id: 'story', name: 'Stormcap Showdown', blurb: 'The classic three-phase duel.', seasonTargets: [8000, 14000, 20000] },
+    { id: 'no-hit', name: 'No-Hit Duel', blurb: 'One touch ends the duel. 1.5× score.', seasonTargets: [12000, 18000, 26000] },
+    { id: 'parry-rush', name: 'Parry Rush', blurb: 'Pink shots come fast; every parry pays. 1.2× score.', seasonTargets: [9000, 15000, 22000] },
+    { id: 'daily', name: 'Daily Squall', blurb: 'A same-day seeded storm with a time target.', seeded: true, seasonTargets: [9000, 15000, 23000] },
+    { id: 'gauntlet', name: 'Thunder Gauntlet', blurb: 'Three storms, rising health, 1.4× score.', lockedHint: 'Clear Stormcap Showdown to unlock', requires: { stat: 'storyCompletions', gte: 1 }, seasonTargets: [16000, 24000, 32000] },
+  ],
+  settings: [
+    { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
+    { key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 },
+    { key: 'particles', label: 'Particles', type: 'select', options: ['lite', 'standard', 'ultra'], default: 'standard' },
+  ],
+  achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Run with the arrows or A/D, and hold jump for extra height.', hold: 'ArrowRight' },
+    { text: 'Hold X to shoot; Shift dashes through danger.', hold: 'KeyX' },
+    { text: 'Jump again beside a PINK shot to parry it and charge the super bar.', hold: 'Space' },
+    { text: 'Press C at full meter to unleash the super, then finish the storm.', hold: 'KeyC' },
+  ] },
+  chapter: 'STORMCAP · 3 PHASES', levels: [{}, {}, {}],
+  hooks: {
+    applyMode: (mode) => {
+      const next = MODES[mode] ? mode : 'story';
+      if (next === 'gauntlet' && !(Number((stats().stats || {}).storyCompletions) > 0)) {
+        UI.toast('Clear Stormcap Showdown to unlock Thunder Gauntlet', { color: '#fde047' });
+        return false;
+      }
+      activeMode = next;
+      if (game && lastInitMode !== activeMode) game.restart(false);
+      return true;
+    },
+    applySetting: (key, value) => {
+      if (key === 'difficulty') {
+        difficulty = value; Arcade.difficulty = value;
+        Arcade.speedMult = value === 'easy' ? 0.8 : value === 'hard' ? 1.35 : 1;
+      }
+      if (key === 'shake') shakeScale = Number(value);
+      if (key === 'particles' && window.Perf && Perf.setTier) Perf.setTier(value);
+    },
+    applyCosmetic,
+  },
+});
+
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  window.StormcapTest = {
+    state() {
+      return {
+        mode: activeMode, difficulty, state: game.state, score: game.score, hi: game.hi, title: game.title, sub: game.sub,
+        phase: B ? B.phase : 0, bossHp: B ? B.hp : 0, bossMax: B ? B.max : 0,
+        hp: P ? P.hp : 0, meter: Math.round(meter), parries, hits,
+        timeSec: +(((totalTime + time) / 60).toFixed(2)), round, rounds,
+        seed: runSeed, dailyTarget, grade: lastGrade, startBest, usedSuper,
+      };
+    },
+    setMode(mode) { return game.ui ? game.ui.setMode(mode) : false; },
+    restart(autostart) { game.restart(autostart === true); },
+    setDifficulty(level) { difficulty = level; Arcade.difficulty = level; Arcade.speedMult = level === 'easy' ? 0.8 : level === 'hard' ? 1.35 : 1; },
+    award(points) { game.addScore(points == null ? 1000 : points); },
+    cosmetic(slot, id) { applyCosmetic(slot, id); },
+    colors() { return { skin: skinColor, shot: shotColor, parry: parryColor, theme }; },
+    stats() { return stats(); },
+    skipIntro() { intro = 0; },
+    killBoss() { if (B) { B.hp = 0; B.hurt = 0; intro = 0; } },
+    damageBoss(amount) { if (B) { B.hp = Math.max(0, B.hp - (amount == null ? 60 : amount)); B.hurt = 10; } },
+    setParries(n) { parries = Math.max(0, n | 0); meter = Math.min(100, parries * 22); },
+    setTimeSec(n) { time = Math.max(0, Math.floor(n)) * 60; totalTime = 0; },
+    setHp(n) { if (P) P.hp = Math.max(0, Math.min(3, n | 0)); },
+    fillMeter() { meter = 100; },
+    useSuper() {
+      if (!B) return;
+      meter = 0; P.sup = 50; B.hp = Math.max(0, B.hp - 30); B.hurt = 14; usedSuper = true; unlock('super-star');
+      foe = []; bolts = [];
+    },
+    hurt() { damage(game); },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

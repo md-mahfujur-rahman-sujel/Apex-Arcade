@@ -47,35 +47,284 @@ interface StageDef {
   gems: Gem[];
 }
 
-const CELESTE_STAGE: StageDef = {
-  name: 'Ascent',
-  width: 1540,
-  goalX: 1400,
-  goalY: 120,
-  sky: ['#040714', '#0B1528', '#1A1832'],
-  ridge: 'rgba(15, 23, 42, 0.6)',
-  platforms: [
-    { x: 0, y: 420, w: 340, h: 60 },
-    { x: 380, y: 370, w: 100, h: 20 },
-    { x: 520, y: 310, w: 90, h: 20 },
-    { x: 340, y: 460, w: 400, h: 20, isSpike: true },
-    { x: 670, y: 160, w: 30, h: 260 },
-    { x: 770, y: 120, w: 30, h: 300 },
-    { x: 860, y: 220, w: 110, h: 20 },
-    { x: 1020, y: 180, w: 100, h: 20 },
-    { x: 1160, y: 140, w: 120, h: 20 },
-    { x: 1340, y: 120, w: 200, h: 80 },
-  ],
-  gems: [
-    { x: 430, y: 330, collected: false },
-    { x: 565, y: 270, collected: false },
-    { x: 720, y: 230, collected: false },
-    { x: 915, y: 180, collected: false },
-    { x: 1070, y: 140, collected: false },
-    { x: 1220, y: 100, collected: false },
-    { x: 1440, y: 80, collected: false },
-  ],
-};
+const CELESTE_STAGES: StageDef[] = [
+  {
+    name: 'Ascent',
+    width: 1540,
+    goalX: 1400,
+    goalY: 120,
+    sky: ['#040714', '#0B1528', '#1A1832'],
+    ridge: 'rgba(15, 23, 42, 0.6)',
+    platforms: [
+      { x: 0, y: 420, w: 340, h: 60 },
+      { x: 380, y: 370, w: 100, h: 20 },
+      { x: 520, y: 310, w: 90, h: 20 },
+      { x: 340, y: 460, w: 400, h: 20, isSpike: true },
+      { x: 670, y: 160, w: 30, h: 260 },
+      { x: 770, y: 120, w: 30, h: 300 },
+      { x: 860, y: 220, w: 110, h: 20 },
+      { x: 1020, y: 180, w: 100, h: 20 },
+      { x: 1160, y: 140, w: 120, h: 20 },
+      { x: 1340, y: 120, w: 200, h: 80 },
+    ],
+    gems: [
+      { x: 430, y: 330, collected: false },
+      { x: 565, y: 270, collected: false },
+      { x: 720, y: 230, collected: false },
+      { x: 915, y: 180, collected: false },
+      { x: 1070, y: 140, collected: false },
+      { x: 1220, y: 100, collected: false },
+      { x: 1440, y: 80, collected: false },
+    ],
+  },
+  {
+    name: 'Crystal Climb',
+    width: 1720,
+    goalX: 1560,
+    goalY: 160,
+    sky: ['#06081F', '#101A3A', '#1F2A5C'],
+    ridge: 'rgba(49, 46, 129, 0.55)',
+    platforms: [
+      { x: 0, y: 420, w: 260, h: 60 },
+      { x: 330, y: 390, w: 90, h: 20 },
+      { x: 470, y: 340, w: 90, h: 20 },
+      { x: 610, y: 290, w: 90, h: 20 },
+      { x: 560, y: 460, w: 520, h: 20, isSpike: true },
+      { x: 750, y: 240, w: 30, h: 220 },
+      { x: 850, y: 200, w: 30, h: 260 },
+      { x: 940, y: 290, w: 100, h: 20 },
+      { x: 1090, y: 250, w: 100, h: 20 },
+      { x: 1240, y: 210, w: 110, h: 20 },
+      { x: 1400, y: 170, w: 120, h: 20 },
+      { x: 1560, y: 160, w: 160, h: 80 },
+    ],
+    gems: [
+      { x: 375, y: 350, collected: false },
+      { x: 515, y: 300, collected: false },
+      { x: 655, y: 250, collected: false },
+      { x: 800, y: 210, collected: false },
+      { x: 990, y: 250, collected: false },
+      { x: 1140, y: 210, collected: false },
+      { x: 1460, y: 130, collected: false },
+    ],
+  },
+  {
+    name: 'The Summit',
+    width: 1900,
+    goalX: 1740,
+    goalY: 100,
+    sky: ['#0B0716', '#221033', '#3B1B4D'],
+    ridge: 'rgba(88, 28, 135, 0.5)',
+    platforms: [
+      { x: 0, y: 420, w: 240, h: 60 },
+      { x: 300, y: 380, w: 100, h: 20 },
+      { x: 450, y: 330, w: 90, h: 20 },
+      { x: 590, y: 280, w: 90, h: 20 },
+      { x: 730, y: 320, w: 100, h: 20 },
+      { x: 880, y: 260, w: 90, h: 20 },
+      { x: 1020, y: 210, w: 100, h: 20 },
+      { x: 1170, y: 260, w: 90, h: 20 },
+      { x: 1310, y: 200, w: 100, h: 20 },
+      { x: 1460, y: 150, w: 120, h: 20 },
+      { x: 1620, y: 100, w: 280, h: 80 },
+    ],
+    gems: [
+      { x: 350, y: 340, collected: false },
+      { x: 495, y: 290, collected: false },
+      { x: 635, y: 240, collected: false },
+      { x: 780, y: 280, collected: false },
+      { x: 925, y: 220, collected: false },
+      { x: 1215, y: 220, collected: false },
+      { x: 1520, y: 110, collected: false },
+    ],
+  },
+];
+
+const ORI_STAGES: StageDef[] = [
+  {
+    name: 'Sunken Glades',
+    width: 1640,
+    goalX: 1500,
+    goalY: 150,
+    sky: ['#041B1E', '#0A3334', '#14494A'],
+    ridge: 'rgba(13, 148, 136, 0.35)',
+    platforms: [
+      { x: 0, y: 420, w: 280, h: 60 },
+      { x: 340, y: 380, w: 110, h: 20 },
+      { x: 500, y: 330, w: 90, h: 20 },
+      { x: 650, y: 280, w: 90, h: 20 },
+      { x: 800, y: 330, w: 100, h: 20 },
+      { x: 960, y: 270, w: 100, h: 20 },
+      { x: 1120, y: 220, w: 100, h: 20 },
+      { x: 1290, y: 180, w: 120, h: 20 },
+      { x: 1480, y: 150, w: 160, h: 80 },
+    ],
+    gems: [
+      { x: 395, y: 340, collected: false },
+      { x: 545, y: 290, collected: false },
+      { x: 695, y: 240, collected: false },
+      { x: 850, y: 290, collected: false },
+      { x: 1010, y: 230, collected: false },
+      { x: 1170, y: 180, collected: false },
+      { x: 1345, y: 140, collected: false },
+    ],
+  },
+  {
+    name: 'Ginso Tree',
+    width: 1780,
+    goalX: 1640,
+    goalY: 110,
+    sky: ['#1A0B26', '#31124A', '#4A1C63'],
+    ridge: 'rgba(126, 34, 206, 0.4)',
+    platforms: [
+      { x: 0, y: 420, w: 250, h: 60 },
+      { x: 320, y: 380, w: 90, h: 20 },
+      { x: 460, y: 330, w: 90, h: 20 },
+      { x: 600, y: 280, w: 90, h: 20 },
+      { x: 740, y: 230, w: 90, h: 20 },
+      { x: 690, y: 460, w: 480, h: 20, isSpike: true },
+      { x: 880, y: 190, w: 30, h: 270 },
+      { x: 970, y: 280, w: 90, h: 20 },
+      { x: 1110, y: 230, w: 100, h: 20 },
+      { x: 1260, y: 180, w: 100, h: 20 },
+      { x: 1420, y: 140, w: 120, h: 20 },
+      { x: 1640, y: 110, w: 140, h: 80 },
+    ],
+    gems: [
+      { x: 365, y: 340, collected: false },
+      { x: 505, y: 290, collected: false },
+      { x: 645, y: 240, collected: false },
+      { x: 785, y: 190, collected: false },
+      { x: 1015, y: 240, collected: false },
+      { x: 1160, y: 190, collected: false },
+      { x: 1480, y: 100, collected: false },
+    ],
+  },
+  {
+    name: 'Spirit Willow',
+    width: 1920,
+    goalX: 1780,
+    goalY: 90,
+    sky: ['#06131C', '#0F2B3A', '#1C4A55'],
+    ridge: 'rgba(34, 211, 238, 0.3)',
+    platforms: [
+      { x: 0, y: 420, w: 240, h: 60 },
+      { x: 290, y: 390, w: 100, h: 20 },
+      { x: 440, y: 340, w: 90, h: 20 },
+      { x: 580, y: 290, w: 90, h: 20 },
+      { x: 720, y: 250, w: 100, h: 20 },
+      { x: 870, y: 300, w: 90, h: 20 },
+      { x: 1010, y: 240, w: 100, h: 20 },
+      { x: 1160, y: 190, w: 100, h: 20 },
+      { x: 1310, y: 240, w: 90, h: 20 },
+      { x: 1450, y: 170, w: 110, h: 20 },
+      { x: 1610, y: 120, w: 130, h: 20 },
+      { x: 1770, y: 90, w: 150, h: 80 },
+    ],
+    gems: [
+      { x: 340, y: 350, collected: false },
+      { x: 485, y: 300, collected: false },
+      { x: 625, y: 250, collected: false },
+      { x: 770, y: 210, collected: false },
+      { x: 915, y: 260, collected: false },
+      { x: 1060, y: 200, collected: false },
+      { x: 1660, y: 80, collected: false },
+    ],
+  },
+];
+
+const RAYMAN_STAGES: StageDef[] = [
+  {
+    name: 'Dream Forest',
+    width: 1600,
+    goalX: 1460,
+    goalY: 160,
+    sky: ['#1B1033', '#3B1B5A', '#6D28D9'],
+    ridge: 'rgba(109, 40, 217, 0.4)',
+    platforms: [
+      { x: 0, y: 420, w: 280, h: 60 },
+      { x: 340, y: 380, w: 100, h: 20 },
+      { x: 490, y: 330, w: 90, h: 20 },
+      { x: 640, y: 280, w: 90, h: 20 },
+      { x: 790, y: 320, w: 100, h: 20 },
+      { x: 950, y: 260, w: 100, h: 20 },
+      { x: 1110, y: 210, w: 100, h: 20 },
+      { x: 1270, y: 170, w: 120, h: 20 },
+      { x: 1440, y: 160, w: 160, h: 80 },
+    ],
+    gems: [
+      { x: 390, y: 340, collected: false },
+      { x: 535, y: 290, collected: false },
+      { x: 685, y: 240, collected: false },
+      { x: 840, y: 280, collected: false },
+      { x: 1000, y: 220, collected: false },
+      { x: 1160, y: 170, collected: false },
+      { x: 1325, y: 130, collected: false },
+    ],
+  },
+  {
+    name: 'Band Land',
+    width: 1820,
+    goalX: 1680,
+    goalY: 110,
+    sky: ['#2A0F1C', '#54122E', '#8C1D40'],
+    ridge: 'rgba(190, 24, 93, 0.4)',
+    platforms: [
+      { x: 0, y: 420, w: 250, h: 60 },
+      { x: 310, y: 380, w: 90, h: 20 },
+      { x: 450, y: 330, w: 90, h: 20 },
+      { x: 590, y: 280, w: 90, h: 20 },
+      { x: 530, y: 460, w: 560, h: 20, isSpike: true },
+      { x: 730, y: 230, w: 30, h: 230 },
+      { x: 840, y: 190, w: 30, h: 270 },
+      { x: 930, y: 280, w: 90, h: 20 },
+      { x: 1070, y: 230, w: 100, h: 20 },
+      { x: 1220, y: 180, w: 100, h: 20 },
+      { x: 1380, y: 140, w: 120, h: 20 },
+      { x: 1680, y: 110, w: 140, h: 80 },
+    ],
+    gems: [
+      { x: 355, y: 340, collected: false },
+      { x: 495, y: 290, collected: false },
+      { x: 635, y: 240, collected: false },
+      { x: 790, y: 200, collected: false },
+      { x: 975, y: 240, collected: false },
+      { x: 1120, y: 190, collected: false },
+      { x: 1440, y: 100, collected: false },
+    ],
+  },
+  {
+    name: 'Candy Chasm',
+    width: 1960,
+    goalX: 1820,
+    goalY: 90,
+    sky: ['#1A0B1F', '#3F1035', '#7A1F4C'],
+    ridge: 'rgba(236, 72, 153, 0.35)',
+    platforms: [
+      { x: 0, y: 420, w: 240, h: 60 },
+      { x: 290, y: 390, w: 100, h: 20 },
+      { x: 440, y: 340, w: 90, h: 20 },
+      { x: 580, y: 290, w: 90, h: 20 },
+      { x: 720, y: 250, w: 100, h: 20 },
+      { x: 870, y: 300, w: 90, h: 20 },
+      { x: 1010, y: 240, w: 100, h: 20 },
+      { x: 1160, y: 190, w: 100, h: 20 },
+      { x: 1310, y: 240, w: 90, h: 20 },
+      { x: 1450, y: 170, w: 110, h: 20 },
+      { x: 1610, y: 120, w: 130, h: 20 },
+      { x: 1810, y: 90, w: 150, h: 80 },
+    ],
+    gems: [
+      { x: 340, y: 350, collected: false },
+      { x: 485, y: 300, collected: false },
+      { x: 625, y: 250, collected: false },
+      { x: 770, y: 210, collected: false },
+      { x: 915, y: 260, collected: false },
+      { x: 1060, y: 200, collected: false },
+      { x: 1660, y: 80, collected: false },
+    ],
+  },
+];
 
 const MARIO_STAGES: StageDef[] = [
   {
@@ -278,6 +527,9 @@ const MARIO_WORLD_STAGES: StageDef[] = [
 ];
 
 const MARIO_WORLD_TOTAL_GEMS = MARIO_WORLD_STAGES.reduce((sum, stage) => sum + stage.gems.length, 0);
+const CELESTE_TOTAL_GEMS = CELESTE_STAGES.reduce((sum, stage) => sum + stage.gems.length, 0);
+const ORI_TOTAL_GEMS = ORI_STAGES.reduce((sum, stage) => sum + stage.gems.length, 0);
+const RAYMAN_TOTAL_GEMS = RAYMAN_STAGES.reduce((sum, stage) => sum + stage.gems.length, 0);
 
 export const PrecisionPlatformerEngine: React.FC<PrecisionPlatformerEngineProps> = ({
   variant = 'celeste',
@@ -298,7 +550,15 @@ export const PrecisionPlatformerEngine: React.FC<PrecisionPlatformerEngineProps>
   const isMario = variant === 'mario';
   const isMarioWorld = variant === 'mario-world';
   const stageDefsRef = useRef<StageDef[]>(
-    isMario ? MARIO_STAGES : isMarioWorld ? MARIO_WORLD_STAGES : [CELESTE_STAGE],
+    isMario
+      ? MARIO_STAGES
+      : isMarioWorld
+      ? MARIO_WORLD_STAGES
+      : variant === 'ori'
+      ? ORI_STAGES
+      : variant === 'rayman'
+      ? RAYMAN_STAGES
+      : CELESTE_STAGES,
   );
   const stageIndexRef = useRef(0);
   const bannerRef = useRef<{ title: string; sub: string; frames: number } | null>(null);
@@ -359,7 +619,15 @@ export const PrecisionPlatformerEngine: React.FC<PrecisionPlatformerEngineProps>
     ? 'A/D: Move · Space: Jump ×2 · Shift: Glide'
     : `A/D: Move · Space: Jump · ${themeConfig.dashLabel}`;
 
-  const totalGems = isMario ? MARIO_TOTAL_GEMS : isMarioWorld ? MARIO_WORLD_TOTAL_GEMS : 7;
+  const totalGems = isMario
+    ? MARIO_TOTAL_GEMS
+    : isMarioWorld
+    ? MARIO_WORLD_TOTAL_GEMS
+    : variant === 'ori'
+    ? ORI_TOTAL_GEMS
+    : variant === 'rayman'
+    ? RAYMAN_TOTAL_GEMS
+    : CELESTE_TOTAL_GEMS;
 
   const playerRef = useRef({
     x: 60,
@@ -913,6 +1181,59 @@ export const PrecisionPlatformerEngine: React.FC<PrecisionPlatformerEngineProps>
     themeConfig.heroColor,
   ]);
 
+  useEffect(() => {
+    if (!/(\?|&)test=1(?:&|$)/.test(window.location.search)) return;
+    const host = window as typeof window & { PrecisionTest?: Record<string, unknown> };
+    host.PrecisionTest = {
+      state: () => ({
+        variant,
+        phase: stateRef.current,
+        stage: stageIndexRef.current,
+        stageName: stageDefsRef.current[stageIndexRef.current]?.name ?? '',
+        stages: stageDefsRef.current.length,
+        gems: gemsRef.current.filter((gem) => gem.collected).length,
+        totalGems,
+        deaths: deathsRef.current,
+        score: scoreRef.current,
+      }),
+      start: () => startGame(),
+      setStage: (index: number) => {
+        const next = Math.max(0, Math.min(stageDefsRef.current.length - 1, Math.floor(index)));
+        stageIndexRef.current = next;
+        setStage(next);
+        initLevel(next);
+        stateRef.current = 'PLAYING';
+        setGameState('PLAYING');
+      },
+      reachGoal: () => {
+        const def = stageDefsRef.current[stageIndexRef.current];
+        const p = playerRef.current;
+        p.x = def.goalX + 2;
+        p.y = def.goalY - 40;
+        p.vx = 0;
+        p.vy = 0;
+      },
+      collectAll: () => {
+        const remaining = gemsRef.current.filter((gem) => !gem.collected).length;
+        gemsRef.current.forEach((gem) => {
+          gem.collected = true;
+        });
+        if (remaining > 0) {
+          scoreRef.current += remaining * 100;
+          setCollectibles((prev) => prev + remaining);
+          onScoreUpdate(scoreRef.current);
+        }
+      },
+      setScore: (score: number) => {
+        scoreRef.current = Math.max(0, Math.floor(score));
+        onScoreUpdate(scoreRef.current);
+      },
+    };
+    return () => {
+      delete host.PrecisionTest;
+    };
+  }, [initLevel, onScoreUpdate, startGame, totalGems, variant]);
+
   const stageName = stageDefsRef.current[stage]?.name ?? '';
 
   return (
@@ -938,11 +1259,9 @@ export const PrecisionPlatformerEngine: React.FC<PrecisionPlatformerEngineProps>
         </div>
 
         <div className="flex items-center gap-2">
-          {(isMario || isMarioWorld) && (
-            <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-300 bg-black/60 px-3 py-1.5 rounded-lg border border-white/10">
-              {isMarioWorld ? 'Isle' : 'Route'} {stage + 1}/{stageDefsRef.current.length} · {stageName}
-            </div>
-          )}
+          <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-300 bg-black/60 px-3 py-1.5 rounded-lg border border-white/10">
+            {isMarioWorld ? 'Isle' : isMario ? 'Route' : 'Trail'} {stage + 1}/{stageDefsRef.current.length} · {stageName}
+          </div>
           <div className="text-xs font-mono text-slate-400 bg-black/60 px-3 py-1.5 rounded-lg border border-white/10">
             {controlsLabel}
           </div>
@@ -965,7 +1284,15 @@ export const PrecisionPlatformerEngine: React.FC<PrecisionPlatformerEngineProps>
       {gameState === 'VICTORY' && (
         <div className="absolute inset-0 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center">
           <div className="text-2xl font-bold text-emerald-400 mb-1 tracking-tight">
-            {isMario ? 'All Routes Delivered!' : isMarioWorld ? 'All Isles Cleared!' : 'Stage Complete!'}
+            {isMario
+              ? 'All Routes Delivered!'
+              : isMarioWorld
+              ? 'All Isles Cleared!'
+              : variant === 'rayman'
+              ? 'Dream Worlds Freed!'
+              : variant === 'ori'
+              ? 'Nibel Restored!'
+              : 'Mountain Summited!'}
           </div>
           <div className="text-sm text-slate-300 mb-1">
             {themeConfig.collectibleName}: <span className="font-mono text-cyan-300 font-bold">{collectibles}/{totalGems}</span> · Deaths: <span className="font-mono text-amber-300">{deaths}</span>

@@ -19,73 +19,491 @@
 <script src="../../kits/score-bridge.js"></script>
 <script src="../../kits/ui-kit.js"></script>
 <script>
-/* Lumen Sprite — a glowing forest spirit: double jump, light dash, a soft lantern of light in the dark,
-   and a final escape up a tower while the darkness tide rises. Built on act-kit.js. */
-const A = Arcade, K = Act, TAU = Math.PI * 2;
-let darkness = 0.6;
+/* Lumen Sprite — a glowing forest spirit: find the Leaf Charm for a double jump and the Star Charm
+   for a light dash, collect motes to open the gate, and climb the rising dark. Built on act-kit.js. */
+const A = Arcade, K = Act, TAU = Math.PI * 2, GAME_ID = 'lumen-sprite';
+const NATIVE_RANDOM = Math.random.bind(Math);
 
-const GROVE = K.make('The Whispering Grove', 110, 15, (g) => {
-  g.ground(0, 28); g.set(2, 12, 'P'); g.coins(8, 11, 4); g.set(14, 12, 'J'); g.set(20, 12, 'k'); g.coins(22, 10, 3); g.plat(24, 9, 3);
-  g.ground(31, 50); g.set(33, 12, 'C'); g.set(38, 12, 'k'); g.set(40, 7, 'v'); g.set(44, 12, 'k'); g.set(46, 12, 'D'); g.plat(36, 9, 3); g.coins(36, 8, 3);
-  g.plat(53, 10, 2); g.coins(53, 9, 2);
-  g.ground(57, 80); g.set(60, 12, 'C'); g.set(64, 12, 'k'); g.set(68, 12, '^'); g.set(69, 12, '^'); g.set(72, 7, 'v'); g.plat(66, 9, 4); g.coins(66, 8, 4); g.set(76, 12, 'k');
-  g.ground(83, 110); g.set(86, 12, 'k'); g.set(90, 8, 'v'); g.plat(92, 9, 3); g.set(96, 12, 'k'); g.set(100, 12, 'C'); g.set(106, 12, 'F');
-});
-GROVE.hint = 'Find the double jump and the light dash';
-GROVE.theme = { solid: '#1e3a34', top: '#5eead4', plat: '#2f6f62', accent: '#fde68a', spike: '#fbcfe8' };
+let activeMode = 'story', difficulty = 'normal', dailySeed = 0, rngState = 1, lastInitMode = null;
+let runStarted = 0, runActive = false, runEnded = false, runKills = 0, runDeaths = 0, hurtThisRun = false;
+let startBest = 0, shakeScale = 1, darkness = 0.6, act = null, G0 = null;
 
-const TOWER = K.make('The Rising Dark', 25, 40, (g) => {
-  g.fill(0, 0, 1, 40, '#'); g.fill(24, 0, 1, 40, '#'); g.ground(0, 25, 37); g.set(12, 36, 'P');
-  for (let i = 0; i < 12; i++) { const x = i % 2 ? 13 : 2, y = 34 - 3 * i; g.plat(x, y, 9); g.coins(x + 3, y - 1, 3); if (i % 3 === 1) g.set(x + 4, y - 3, 'v'); if (i % 4 === 2) g.set(x + 7, y - 1, 'C'); }
-  g.set(15, 0, 'F');
-});
-TOWER.hint = 'Climb! The darkness is rising';
-TOWER.theme = { solid: '#2b2150', top: '#c4b5fd', plat: '#6d5bc7', accent: '#fde68a' };
-TOWER.rise = { sp: 0.55, delay: 180 };
+let look = { body: '#fffbeb', glow: '#fde68a', eye: '#1e293b' };
+let flareTint = '#fde68a', effectColor = '#fde68a', themeKey = 'auto';
 
-function bg(c, cam, t, lvl) {
-  darkness = lvl ? 0.8 : 0.6;
-  A.sky(c, 800, 480, lvl ? ['#0b0720', '#1d1243', '#3b2475'] : ['#04141a', '#0a2a2c', '#134e4a']);
+const MODES = {
+  story: 'LUMEN RUN',
+  daily: 'DAILY GLADE',
+  dark: 'NIGHTFALL RUSH',
+  shard: 'MOTE HUNT',
+  plus: 'RADIANT+',
+};
+const MODE_MULT = { story: 1, daily: 1, dark: 1.3, shard: 1.2, plus: 1.6 };
+const MODE_BONUS = { story: 6000, daily: 5000, dark: 6500, shard: 5500, plus: 8000 };
+const STORY_NAMES = ['Whispering Grove', 'Hollow of Echoes', 'The Rising Dark'];
+const SHARD_NEED = [6, 6, 5];
+const SHARD_SPOTS = [
+  [[25, 8], [54, 8], [70, 8], [93, 8], [47, 11], [80, 11]],
+  [[10, 11], [43, 11], [72, 11], [104, 11]],
+  [],
+];
+
+/* ---------- daily seed and records ---------- */
+function seedForToday() {
+  const d = new Date(), key = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  let x = key ^ 0x6d2b79f5;
+  for (const ch of GAME_ID) x = Math.imul(x ^ ch.charCodeAt(0), 16777619);
+  return x >>> 0 || 1;
+}
+function dailySequence(n, seed) {
+  let s = (seed || dailySeed || 1) >>> 0; const out = [];
+  for (let i = 0; i < n; i++) { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; out.push(Number(((s >>> 0) / 4294967296).toFixed(6))); }
+  return out;
+}
+function applyRng() {
+  if (activeMode !== 'daily') { Math.random = NATIVE_RANDOM; return; }
+  rngState = dailySeed || seedForToday();
+  Math.random = () => { rngState ^= rngState << 13; rngState ^= rngState >>> 17; rngState ^= rngState << 5; return (rngState >>> 0) / 4294967296; };
+}
+function saved() { return (window.Save && Save.load(GAME_ID)) || {}; }
+function stats() { const s = saved(); return s.stats || {}; }
+function award(id, label) {
+  const s = saved(), earned = Array.isArray(s.achievements) ? s.achievements : [];
+  if (earned.includes(id) || !window.Save) return;
+  Save.update(GAME_ID, { achievements: [id] });
+  if (window.Apex && Apex.unlockAchievement) Apex.unlockAchievement(id, GAME_ID);
+  UI.toast(label || id.replace(/-/g, ' '), { color: '#fde68a' });
+}
+function stageName() { const n = act ? act.level : 0; return STORY_NAMES[n] || STORY_NAMES[0]; }
+
+function recordRun(won, sec, charms) {
+  const st = stats(), stage = act ? act.level + 1 : 1;
+  const patch = {
+    runs: (st.runs || 0) + 1,
+    seconds: (st.seconds || 0) + sec,
+    kills: (st.kills || 0) + runKills,
+    charms: (st.charms || 0) + charms,
+    deaths: (st.deaths || 0) + runDeaths,
+    highestStage: Math.max(st.highestStage || 0, stage),
+    bestScore: Math.max(st.bestScore || 0, G0 ? G0.score : 0),
+    lastMode: activeMode,
+    storyCompletions: (st.storyCompletions || 0) + (won && activeMode === 'story' ? 1 : 0),
+    dailyCompletions: (st.dailyCompletions || 0) + (won && activeMode === 'daily' ? 1 : 0),
+    nightCompletions: (st.nightCompletions || 0) + (won && activeMode === 'dark' ? 1 : 0),
+    moteCompletions: (st.moteCompletions || 0) + (won && activeMode === 'shard' ? 1 : 0),
+    plusCompletions: (st.plusCompletions || 0) + (won && activeMode === 'plus' ? 1 : 0),
+    dailyBest: activeMode === 'daily' ? Math.max(st.dailyBest || 0, G0 ? G0.score : 0) : (st.dailyBest || 0),
+  };
+  if (won && activeMode === 'story') patch.bestTimeSec = Math.min(st.bestTimeSec || 99999, sec);
+  Save.update(GAME_ID, { stats: patch });
+}
+function finishRun(G, won, coins) {
+  if (runEnded) return 'Score ' + G.score;
+  const sec = Math.max(1, Math.round((Date.now() - (runStarted || Date.now())) / 1000));
+  const charms = act && act.player ? (act.player.ab.dj ? 1 : 0) + (act.player.ab.dash ? 1 : 0) : 0;
+  if (won && MODE_BONUS[activeMode]) G.addScore(MODE_BONUS[activeMode]);
+  recordRun(won, sec, charms);
+  if (won) {
+    if (charms >= 2) award('charm-hunter', 'Charm Hunter');
+    if (!hurtThisRun) award('untouched', 'Untouched');
+    if (G.score >= 12000) award('light-12000', 'Lightbringer');
+    if (activeMode === 'story') {
+      award('story-clear', 'Lumen Run');
+      if (G.score > startBest) award('personal-best', 'Personal Best');
+      if (act && act.player && act.player.hp >= act.player.maxhp) award('full-heart', 'Full Heart');
+      if (sec <= 300) award('swift-light', 'Swift Light');
+      if (charms === 0) award('spirit-bound', 'Spirit Bound');
+    }
+    if (activeMode === 'daily') award('daily-clear', 'Daily Glade');
+    if (activeMode === 'dark') award('night-clear', 'Nightfall Survivor');
+    if (activeMode === 'shard') award('mote-clear', 'Mote Gatherer');
+    if (activeMode === 'plus') award('plus-clear', 'Radiant Adept');
+  }
+  runEnded = true;
+  return won
+    ? 'Score ' + G.score + ' · ' + sec + 's · ' + runKills + (runKills === 1 ? ' kill' : ' kills')
+    : 'Score ' + G.score + ' · reached ' + stageName();
+}
+function trackStage() {
+  if (!act) return;
+  const st = stats();
+  if ((st.highestStage || 0) < act.level + 1) Save.update(GAME_ID, { stats: { highestStage: act.level + 1 } });
+}
+function checkMilestones() {
+  if (G0 && G0.score >= 12000) award('light-12000', 'Lightbringer');
+}
+function onKill(e, G) {
+  runKills++;
+  award('first-glow', 'First Glow');
+  if (runKills >= 10) award('hunter-light', 'Grove Warden');
+  checkMilestones();
+}
+function onHurt(n, x) {
+  hurtThisRun = true;
+  if (x && x.p && x.p.hp <= 0) runDeaths++;
+}
+
+/* ---------- cosmetics ---------- */
+const SKINS = {
+  'spirit-ivory': { body: '#fffbeb', glow: '#fde68a', eye: '#1e293b' },
+  'spirit-jade': { body: '#d1fae5', glow: '#34d399', eye: '#064e3b' },
+  'spirit-sky': { body: '#e0f2fe', glow: '#38bdf8', eye: '#0c4a6e' },
+  'spirit-rose': { body: '#ffe4e6', glow: '#fb7185', eye: '#4c0519' },
+  'spirit-violet': { body: '#ede9fe', glow: '#a78bfa', eye: '#2e1065' },
+};
+const PALETTES = { 'flare-gold': '#fde68a', 'flare-mint': '#5eead4', 'flare-sky': '#7dd3fc', 'flare-rose': '#fda4af' };
+const EFFECTS = { 'trail-gold': '#fde68a', 'trail-mint': '#5eead4', 'trail-violet': '#c4b5fd', 'trail-rose': '#fda4af' };
+const THEME_KEYS = { 'theme-grove': 'grove', 'theme-echo': 'echo', 'theme-tower': 'tower' };
+const cosmeticKey = (id) => String(id || '').split(':').pop();
+function applyCosmetic(slot, id) {
+  const key = cosmeticKey(id);
+  if (slot === 'skin' && SKINS[key]) look = Object.assign({}, SKINS[key]);
+  else if (slot === 'palette' && PALETTES[key]) flareTint = PALETTES[key];
+  else if (slot === 'effect' && EFFECTS[key]) effectColor = EFFECTS[key];
+  else if (slot === 'theme' && THEME_KEYS[key]) themeKey = THEME_KEYS[key];
+}
+
+/* ---------- stages ---------- */
+const GROVE_THEME = { solid: '#1e3a34', top: '#5eead4', plat: '#2f6f62', accent: '#fde68a', spike: '#fbcfe8' };
+const HOLLOW_THEME = { solid: '#2a2350', top: '#c4b5fd', plat: '#4c3f86', accent: '#f0abfc', spike: '#fda4af' };
+const TOWER_THEME = { solid: '#2b2150', top: '#c4b5fd', plat: '#6d5bc7', accent: '#fde68a' };
+
+function grove() {
+  const L = K.make('Whispering Grove', 110, 15, (g) => {
+    g.ground(0, 28); g.set(2, 12, 'P'); g.coins(8, 11, 4); g.set(14, 12, 'J'); g.set(20, 12, 'k'); g.coins(22, 10, 3); g.plat(24, 9, 3);
+    g.ground(31, 50); g.set(33, 12, 'C'); g.set(38, 12, 'k'); g.set(40, 7, 'v'); g.set(44, 12, 'k'); g.set(46, 12, 'D'); g.plat(36, 9, 3); g.coins(36, 8, 3);
+    g.plat(53, 10, 2); g.coins(53, 9, 2);
+    g.ground(57, 80); g.set(60, 12, 'C'); g.set(64, 12, 'k'); g.set(68, 12, '^'); g.set(69, 12, '^'); g.set(72, 7, 'v'); g.plat(66, 9, 4); g.coins(66, 8, 4); g.set(76, 12, 'k');
+    g.ground(83, 110); g.set(86, 12, 'k'); g.set(90, 8, 'v'); g.plat(92, 9, 3); g.set(96, 12, 'k'); g.set(100, 12, 'C'); g.set(106, 12, 'F');
+  });
+  L.theme = GROVE_THEME;
+  L.hint = 'Find the Leaf Charm and the Star Charm';
+  return L;
+}
+function hollow() {
+  const L = K.make('Hollow of Echoes', 120, 15, (g) => {
+    g.ground(0, 24); g.set(2, 12, 'P'); g.coins(6, 11, 3); g.set(10, 12, 'k'); g.set(14, 9, 'g'); g.plat(13, 10, 3);
+    g.ground(27, 46); g.set(30, 12, 'C'); g.set(34, 12, 'k'); g.set(36, 12, '^'); g.set(37, 12, '^'); g.set(41, 12, 'h'); g.plat(33, 9, 3); g.coins(33, 8, 3); g.set(39, 7, 'v');
+    g.plat(49, 10, 2); g.set(49, 9, 'g'); g.plat(53, 8, 2); g.plat(57, 10, 2); g.set(57, 9, 'g');
+    g.ground(60, 88); g.set(62, 12, 'C'); g.set(66, 12, 'k'); g.set(70, 12, 'h'); g.set(74, 7, 'v'); g.plat(68, 9, 4); g.coins(68, 8, 4); g.set(78, 12, 'k'); g.set(82, 12, '^'); g.set(83, 12, '^'); g.set(86, 12, 'u');
+    g.plat(91, 10, 2); g.plat(95, 8, 2); g.set(91, 9, 'g'); g.set(95, 7, 'g');
+    g.ground(98, 120); g.set(100, 12, 'C'); g.set(104, 12, 'k'); g.set(108, 12, 'h'); g.set(114, 12, 'F');
+  });
+  L.theme = HOLLOW_THEME;
+  L.hint = 'Spikes bite — dash or double-jump across';
+  return L;
+}
+function tower(rise) {
+  const L = K.make('The Rising Dark', 25, 40, (g) => {
+    g.fill(0, 0, 1, 40, '#'); g.fill(24, 0, 1, 40, '#'); g.ground(0, 25, 37); g.set(12, 36, 'P');
+    for (let i = 0; i < 12; i++) {
+      const x = i % 2 ? 13 : 2, y = 34 - 3 * i;
+      g.plat(x, y, 9); g.coins(x + 3, y - 1, 3);
+      if (i % 3 === 1) g.set(x + 4, y - 3, 'v');
+      if (i % 4 === 2) g.set(x + 7, y - 1, 'C');
+      if (i === 3) g.set(x + 2, y - 1, 'h');
+      if (i === 8) g.set(x + 2, y - 1, 'u');
+    }
+    g.set(15, 0, 'F');
+  });
+  L.theme = TOWER_THEME;
+  L.hint = 'Climb! The darkness is rising';
+  L.rise = rise;
+  return L;
+}
+function addShards(L, i) {
+  const rows = L.rows.map((r) => r.split(''));
+  if (i === 2) {
+    for (let k = 0; k < 12; k += 2) {
+      const x = k % 2 ? 13 : 2, y = 34 - 3 * k, c = x + 8;
+      if (rows[y - 1] && rows[y - 1][c] === ' ') rows[y - 1][c] = 'g';
+    }
+  } else {
+    for (const [c, r] of SHARD_SPOTS[i]) if (rows[r] && rows[r][c] === ' ') rows[r][c] = 'g';
+  }
+  L.rows = rows.map((r) => r.join(''));
+  L.need = SHARD_NEED[i];
+  return L;
+}
+function scatter(L, i) {
+  const rows = L.rows.map((r) => r.split('')), R = rows.length, C = rows[0].length;
+  const rnd = () => { rngState ^= rngState << 13; rngState ^= rngState >>> 17; rngState ^= rngState << 5; return (rngState >>> 0) / 4294967296; };
+  let placed = 0, guard = 0;
+  while (placed < 9 && guard++ < 600) {
+    const c = 3 + Math.floor(rnd() * (C - 6)), r = 2 + Math.floor(rnd() * (R - 5));
+    if (rows[r] && rows[r][c] === ' ' && rows[r + 1] && (rows[r + 1][c] === '#' || rows[r + 1][c] === '=')) {
+      rows[r][c] = placed < 7 ? 'o' : 'g'; placed++;
+    }
+  }
+  L.rows = rows.map((r) => r.join(''));
+  return L;
+}
+function buildLevel(i) {
+  if (activeMode === 'daily') rngState = (dailySeed ^ Math.imul(i + 1, 0x9e3779b1)) >>> 0;
+  let L;
+  if (i === 0) L = grove();
+  else if (i === 1) L = hollow();
+  else L = tower(activeMode === 'dark' ? { sp: 0.7, delay: 90 } : { sp: 0.55, delay: 180 });
+  if (activeMode === 'dark' && i === 0) L.rise = { sp: 0.26, delay: 540 };
+  if (activeMode === 'dark' && i === 1) L.rise = { sp: 0.34, delay: 420 };
+  if (activeMode === 'daily') scatter(L, i);
+  if (activeMode === 'shard') addShards(L, i);
+  return L;
+}
+const levels = [0, 1, 2].map((i) => () => buildLevel(i));
+
+/* ---------- enemies (Radiant+ scales HP, speed, and rewards) ---------- */
+const ENEMY_BASE = {
+  k: { w: 28, h: 22, hp: 2, ai: 'walk', sp: 0.7, sight: 120, score: 80, color: '#4c1d95' },
+  v: { w: 24, h: 18, hp: 1, ai: 'fly', sp: 1.4, sight: 190, range: 60, bob: 22, score: 80, color: '#6d28d9' },
+  h: { w: 24, h: 24, hp: 2, ai: 'hop', sp: 2.2, jump: 8.5, every: 80, score: 100, color: '#a78bfa' },
+  u: { w: 22, h: 30, hp: 2, ai: 'turret', sp: 0, sight: 330, score: 120, color: '#0e7490', shoot: { speed: 3.4, color: '#f0abfc' }, every: 130, aim: true },
+};
+const enemies = {};
+for (const key of Object.keys(ENEMY_BASE)) {
+  Object.defineProperty(enemies, key, {
+    enumerable: true, configurable: true,
+    get() {
+      const base = ENEMY_BASE[key];
+      if (activeMode !== 'plus') return base;
+      return Object.assign({}, base, { hp: Math.ceil(base.hp * 1.5), sp: (base.sp || 1) * 1.15, score: Math.round((base.score || 100) * 1.5) });
+    },
+  });
+}
+
+/* ---------- backdrop ---------- */
+const SKY = [
+  ['#04141a', '#0a2a2c', '#134e4a'],
+  ['#0b1224', '#1b2350', '#3b2a63'],
+  ['#0b0720', '#1d1243', '#3b2475'],
+];
+const THEME_SKY = {
+  grove: ['#071a14', '#0d3b2e', '#155e46'],
+  echo: ['#120b24', '#251447', '#43256b'],
+  tower: ['#0b0720', '#1d1243', '#3b2475'],
+};
+function bg(c, cam, t, lvl, G) {
+  darkness = lvl === 2 ? 0.8 : lvl === 1 ? 0.7 : 0.6;
+  A.sky(c, 800, 480, THEME_SKY[themeKey] || SKY[Math.min(2, lvl)]);
   A.drawStars(c, bg.st || (bg.st = A.makeStars(60, 800, 400)), t, 800, 480, 0.03, '#fef9c3');
-  if (!lvl) { for (let i = 0; i < 10; i++) { const x = ((i * 170 - cam.x * 0.3) % 1700 + 1700) % 1700 - 100; c.fillStyle = 'rgba(6,40,40,.9)'; c.fillRect(x, 120 + (i % 3) * 30, 26, 360); c.beginPath(); c.arc(x + 13, 120 + (i % 3) * 30, 56, 0, TAU); c.fill(); } K.ridge(c, 420, 24, 3, cam.x * 0.5, '#031a1a'); }
-  for (let i = 0; i < 30; i++) { const x = ((i * 83 - cam.x * 0.4 + Math.sin(t * 0.01 + i) * 26) % 860 + 860) % 860 - 30, y = ((i * 57 - cam.y * 0.3 - t * 0.2) % 520 + 520) % 520 - 20; c.globalAlpha = 0.2 + 0.3 * Math.sin(t * 0.05 + i); c.fillStyle = '#fde68a'; c.fillRect(x, y, 2, 2); } c.globalAlpha = 1;
+  if (lvl !== 2) {
+    for (let i = 0; i < 10; i++) {
+      const x = ((i * 170 - cam.x * 0.3) % 1700 + 1700) % 1700 - 100;
+      c.fillStyle = 'rgba(6,40,40,.9)'; c.fillRect(x, 120 + (i % 3) * 30, 26, 360);
+      c.beginPath(); c.arc(x + 13, 120 + (i % 3) * 30, 56, 0, TAU); c.fill();
+    }
+    K.ridge(c, 420, 24, 3, cam.x * 0.5, '#031a1a');
+  }
+  for (let i = 0; i < 30; i++) {
+    const x = ((i * 83 - cam.x * 0.4 + Math.sin(t * 0.01 + i) * 26) % 860 + 860) % 860 - 30;
+    const y = ((i * 57 - cam.y * 0.3 - t * 0.2) % 520 + 520) % 520 - 20;
+    c.globalAlpha = 0.2 + 0.3 * Math.sin(t * 0.05 + i); c.fillStyle = '#fde68a'; c.fillRect(x, y, 2, 2);
+  }
+  c.globalAlpha = 1;
+  if (G && G.state === 'playing' && !runActive) { runActive = true; runStarted = Date.now(); runEnded = false; }
+  if (G && (G.state === 'ready' || G.state === 'over' || G.state === 'won')) runActive = false;
+  trackStage();
+  checkMilestones();
 }
 function post(c, cam, G, p) {
   const x = p.x + 10 - cam.x, y = p.y + 14 - cam.y, g = c.createRadialGradient(x, y, 40, x, y, 300);
-  g.addColorStop(0, 'rgba(2,6,20,0)'); g.addColorStop(1, 'rgba(2,6,20,' + darkness + ')'); c.fillStyle = g; c.fillRect(0, 0, 800, 480);
-  c.save(); c.globalCompositeOperation = 'lighter'; const h = c.createRadialGradient(x, y, 0, x, y, 90); h.addColorStop(0, 'rgba(253,230,138,.28)'); h.addColorStop(1, 'rgba(253,230,138,0)'); c.fillStyle = h; c.fillRect(x - 90, y - 90, 180, 180); c.restore();
+  g.addColorStop(0, 'rgba(2,6,20,0)'); g.addColorStop(1, 'rgba(2,6,20,' + darkness + ')');
+  c.fillStyle = g; c.fillRect(0, 0, 800, 480);
+  c.save(); c.globalCompositeOperation = 'lighter';
+  const h = c.createRadialGradient(x, y, 0, x, y, 90);
+  h.addColorStop(0, 'rgba(253,230,138,.26)'); h.addColorStop(1, 'rgba(253,230,138,0)');
+  c.fillStyle = h; c.fillRect(x - 90, y - 90, 180, 180); c.restore();
 }
+function hud(c, G, p) {
+  A.text(c, MODES[activeMode] + (MODE_MULT[activeMode] > 1 ? '  ×' + MODE_MULT[activeMode] : ''), 400, 22, 11, effectColor, 'center', '800');
+  const charms = (p.ab.dj ? 1 : 0) + (p.ab.dash ? 1 : 0);
+  A.text(c, 'CHARMS ' + charms + '/2', 786, 88, 10, 'rgba(226,232,240,.75)', 'right', '700');
+}
+
+/* ---------- characters ---------- */
 function drawSprite(c, p, G) {
   const cx = p.x + p.w / 2, f = p.face, t = G.clock, cy = p.y + 14;
-  if (p.dashT > 0) { c.save(); for (let i = 1; i < 5; i++) { c.globalAlpha = 0.4 - i * 0.07; c.fillStyle = '#fde68a'; c.beginPath(); c.arc(cx - f * i * 11, cy, 9 - i, 0, TAU); c.fill(); } c.restore(); }
+  if (p.dashT > 0) {
+    c.save();
+    for (let i = 1; i < 5; i++) { c.globalAlpha = 0.4 - i * 0.07; c.fillStyle = effectColor; c.beginPath(); c.arc(cx - f * i * 11, cy, 9 - i, 0, TAU); c.fill(); }
+    c.restore();
+  }
   c.save(); c.translate(cx, cy); c.scale(f * (1 + p.sq * 0.3), 1 - p.sq * 0.3);
-  c.shadowColor = '#fde68a'; c.shadowBlur = 22; c.fillStyle = '#fffbeb';
+  c.shadowColor = look.glow; c.shadowBlur = 22; c.fillStyle = look.body;
   const wag = Math.sin(t * 0.2) * 3;
   c.beginPath(); c.moveTo(-6, 6); c.quadraticCurveTo(-24, 6 + wag, -30, -2 + wag * 1.5); c.quadraticCurveTo(-20, 12, -6, 12); c.fill();
   c.beginPath(); c.ellipse(0, 2, 11, 12, 0, 0, TAU); c.fill();
   c.beginPath(); c.moveTo(-5, -8); c.lineTo(-10, -22 - wag * 0.4); c.lineTo(0, -10); c.moveTo(3, -9); c.lineTo(8, -23 + wag * 0.4); c.lineTo(8, -8); c.fill();
-  c.shadowBlur = 0; c.fillStyle = '#1e293b'; c.beginPath(); c.ellipse(-2, -2, 2, 3, 0, 0, TAU); c.ellipse(6, -2, 2, 3, 0, 0, TAU); c.fill();
-  if (p.atk > 0) { c.strokeStyle = 'rgba(254,243,199,.9)'; c.lineWidth = 4; c.lineCap = 'round'; c.beginPath(); c.arc(4, 2, 24 + (8 - p.atk) * 1.5, -0.8, 0.8); c.stroke(); }
+  c.shadowBlur = 0; c.fillStyle = look.eye;
+  c.beginPath(); c.ellipse(-2, -2, 2, 3, 0, 0, TAU); c.ellipse(6, -2, 2, 3, 0, 0, TAU); c.fill();
+  if (p.atk > 0) { c.strokeStyle = flareTint; c.lineWidth = 4; c.lineCap = 'round'; c.beginPath(); c.arc(4, 2, 24 + (9 - p.atk) * 1.5, -0.8, 0.8); c.stroke(); }
   c.restore();
 }
 function drawEnemy(c, e, G) {
   const cx = e.x + e.w / 2, cy = e.y + e.h / 2, t = G.clock, f = e.face, hit = e.hurt > 0;
-  if (e.k === 'k') { A.shadow(c, cx, e.y + e.h + 1, 12, 3, 0.25); c.fillStyle = hit ? '#fff' : '#4c1d95'; c.beginPath(); c.ellipse(cx, cy + 3, 14, 11, 0, Math.PI, 0); c.fill(); c.fillRect(e.x, cy + 3, e.w, 7); for (let i = 0; i < 4; i++) c.fillRect(e.x + 3 + i * 6, e.y + e.h - 3 + Math.sin(t * 0.4 + i * 2) * 2, 3, 4); c.fillStyle = '#f0abfc'; c.fillRect(cx + f * 5 - 2, cy - 1, 4, 4); return true; }
-  const fl = Math.sin(t * 0.35 + e.x) * 8; c.fillStyle = hit ? '#fff' : '#6d28d9'; c.beginPath(); c.moveTo(cx - 3, cy); c.lineTo(cx - 18, cy - fl - 6); c.lineTo(cx - 9, cy + 6); c.fill(); c.beginPath(); c.moveTo(cx + 3, cy); c.lineTo(cx + 18, cy - fl - 6); c.lineTo(cx + 9, cy + 6); c.fill(); c.beginPath(); c.arc(cx, cy, 8, 0, TAU); c.fill(); c.fillStyle = '#f0abfc'; c.fillRect(cx - 4, cy - 2, 3, 3); c.fillRect(cx + 1, cy - 2, 3, 3); return true;
+  if (e.k === 'k') {
+    A.shadow(c, cx, e.y + e.h + 1, 12, 3, 0.25); c.fillStyle = hit ? '#fff' : '#4c1d95';
+    c.beginPath(); c.ellipse(cx, cy + 3, 14, 11, 0, Math.PI, 0); c.fill(); c.fillRect(e.x, cy + 3, e.w, 7);
+    for (let i = 0; i < 4; i++) c.fillRect(e.x + 3 + i * 6, e.y + e.h - 3 + Math.sin(t * 0.4 + i * 2) * 2, 3, 4);
+    c.fillStyle = '#f0abfc'; c.fillRect(cx + f * 5 - 2, cy - 1, 4, 4); return true;
+  }
+  if (e.k === 'v') {
+    const fl = Math.sin(t * 0.35 + e.x) * 8; c.fillStyle = hit ? '#fff' : '#6d28d9';
+    c.beginPath(); c.moveTo(cx - 3, cy); c.lineTo(cx - 18, cy - fl - 6); c.lineTo(cx - 9, cy + 6); c.fill();
+    c.beginPath(); c.moveTo(cx + 3, cy); c.lineTo(cx + 18, cy - fl - 6); c.lineTo(cx + 9, cy + 6); c.fill();
+    c.beginPath(); c.arc(cx, cy, 8, 0, TAU); c.fill();
+    c.fillStyle = '#f0abfc'; c.fillRect(cx - 4, cy - 2, 3, 3); c.fillRect(cx + 1, cy - 2, 3, 3); return true;
+  }
+  if (e.k === 'h') {
+    A.shadow(c, cx, e.y + e.h + 1, 11, 3, 0.25); c.save(); c.translate(cx, e.y + e.h); c.scale(f, 1);
+    c.fillStyle = hit ? '#fff' : '#a78bfa'; A.roundRect(c, -12, -22 + (e.ground ? 2 : 0), 24, 22 - (e.ground ? 2 : 0), 9); c.fill();
+    c.strokeStyle = '#ddd6fe'; c.lineWidth = 2; c.beginPath(); c.moveTo(-4, -22); c.lineTo(-6, -30); c.moveTo(4, -22); c.lineTo(6, -30); c.stroke();
+    c.fillStyle = '#fdf4ff'; c.fillRect(-7, -15, 5, 6); c.fillRect(2, -15, 5, 6); c.restore(); return true;
+  }
+  if (e.k === 'u') {
+    A.shadow(c, cx, e.y + e.h + 1, 10, 3, 0.25); c.fillStyle = hit ? '#fff' : '#0e7490';
+    A.roundRect(c, e.x + 2, e.y + 8, e.w - 4, e.h - 8, 6); c.fill();
+    c.fillStyle = hit ? '#fff' : '#164e63'; c.beginPath(); c.arc(cx, e.y + 9, 9, 0, TAU); c.fill();
+    c.save(); c.shadowColor = '#f0abfc'; c.shadowBlur = 14; c.fillStyle = '#f0abfc'; c.beginPath(); c.arc(cx + f * 3, e.y + 9, 4, 0, TAU); c.fill(); c.restore();
+    c.strokeStyle = '#a5f3fc'; c.lineWidth = 2; c.beginPath(); c.arc(cx, e.y + 9, 14 + Math.sin(t * 0.12) * 2, 0, TAU); c.stroke(); return true;
+  }
 }
 
-K.game({
-  id: 'lumen-sprite', title: 'Lumen Sprite', subtitle: 'Carry the light through the dark wood', color: '#fde68a',
-  controls: [['← →  /  A D', 'Glide along the ground'], ['Space  /  ↑  /  W  /  Z', 'Jump — press again in the air (after the Leaf Charm)'], ['Shift  /  L', 'Light dash (after the Star Charm)'], ['X  /  J', 'Flare — harms dark creatures'], ['Land on creatures', 'Bounce on them'], ['P / M', 'Pause / mute']],
-  help: '← → move · Space jump (again in mid-air for a double jump) · Shift light dash · X flare · bounce on creatures · in the tower, never let the darkness catch you',
-  levels: [GROVE, TOWER], bg, post, hero: { hp: 5, run: 3.4, jump: 10.6, stomp: true, dashInv: true, dashSpd: 9.5, ab: {}, weapon: { type: 'melee', dmg: 1, range: 46, h: 38, cd: 26, dur: 9 } },
+/* ---------- run lifecycle ---------- */
+function onInit(G) {
+  G0 = G; runStarted = 0; runActive = false; runEnded = false; runKills = 0; runDeaths = 0; hurtThisRun = false;
+  startBest = Number(stats().bestScore) || 0;
+  dailySeed = activeMode === 'daily' ? seedForToday() : 0;
+  applyRng();
+  if (G) G.scoreMultiplier = MODE_MULT[activeMode] || 1;
+  lastInitMode = activeMode;
+}
+
+const game = K.game({
+  id: GAME_ID, title: 'Lumen Sprite', subtitle: 'Carry the light through the dark wood', color: '#fde68a', lives: 3,
+  controls: [['← →  /  A D', 'Glide along the ground'], ['Space  /  ↑  /  W  /  Z', 'Jump — again in the air after the Leaf Charm'], ['Shift  /  L', 'Light dash after the Star Charm'], ['X  /  J', 'Flare — harms dark creatures'], ['Land on creatures', 'Bounce on them'], ['P / M', 'Pause / mute']],
+  help: '← → move · Space jump (Leaf Charm adds a double jump) · Shift light dash (Star Charm) · X flare · bounce on creatures · collect motes to open the gate · climb before the darkness catches you',
+  levels, bg, post, hud,
+  onKill, onHurt,
+  hero: { hp: 5, run: 3.4, jump: 10.6, stomp: true, dashInv: true, dashSpd: 9.5, ab: {}, weapon: { type: 'melee', dmg: 1, range: 46, h: 38, cd: 26, dur: 9 } },
   pickups: { J: { ab: 'dj', msg: 'LEAF CHARM — jump again in mid-air', icon: 'J' }, D: { ab: 'dash', msg: 'STAR CHARM — press Shift to dash', icon: 'D' } },
-  enemies: {
-    k: { w: 28, h: 22, hp: 2, ai: 'walk', sp: 0.7, sight: 120, score: 80, color: '#4c1d95' },
-    v: { w: 24, h: 18, hp: 1, ai: 'fly', sp: 1.4, sight: 190, range: 60, bob: 22, score: 80, color: '#6d28d9' },
-  },
-  hazColor: 'rgba(76,29,149,.88)', hazColor2: 'rgba(15,5,40,.97)', drawEnemy, drawHero: drawSprite, clear: 'THE LIGHT RETURNS', winTitle: 'Dawn Breaks', winSub: (G, coins) => 'The forest glows again · ' + coins + ' motes · Score ' + G.score,
+  enemies,
+  drawEnemy, drawHero: drawSprite, clear: 'THE LIGHT RETURNS',
+  winTitle: 'Dawn Breaks',
+  winSub: (G, coins) => finishRun(G, true, coins),
+  overTitle: 'The Dark Takes Hold',
+  overSub: (G, coins) => finishRun(G, false, coins),
+  debug: (d) => { act = d; },
+  touchL: [['◀', 'ArrowLeft'], ['▶', 'ArrowRight']],
+  touchR: [['✦', 'KeyX'], ['➤', 'ShiftLeft'], ['▲', 'Space']],
+  onInit,
 });
+const originalShake = game.shake.bind(game);
+game.shake = (amount) => originalShake(amount * shakeScale);
+
+const ACHIEVEMENTS = [
+  { id: 'first-glow', name: 'First Glow', desc: 'Defeat your first creature.', rarity: 'common' },
+  { id: 'hunter-light', name: 'Grove Warden', desc: 'Defeat 10 creatures in one run.', rarity: 'common' },
+  { id: 'charm-hunter', name: 'Charm Hunter', desc: 'Hold the Leaf and Star Charms in one run.', rarity: 'rare' },
+  { id: 'story-clear', name: 'Lumen Run', desc: 'Finish the Lumen Run.', rarity: 'rare' },
+  { id: 'daily-clear', name: 'Daily Glade', desc: 'Finish a Daily Glade.', rarity: 'rare' },
+  { id: 'night-clear', name: 'Nightfall Survivor', desc: 'Finish Nightfall Rush.', rarity: 'epic' },
+  { id: 'mote-clear', name: 'Mote Gatherer', desc: 'Finish Mote Hunt.', rarity: 'rare' },
+  { id: 'plus-clear', name: 'Radiant Adept', desc: 'Finish Radiant+.', rarity: 'legendary' },
+  { id: 'swift-light', name: 'Swift Light', desc: 'Finish the Lumen Run in under five minutes.', rarity: 'epic' },
+  { id: 'untouched', name: 'Untouched', desc: 'Finish a run without taking damage.', rarity: 'epic' },
+  { id: 'light-12000', name: 'Lightbringer', desc: 'Score 12,000 in one run.', rarity: 'epic' },
+  { id: 'personal-best', name: 'Personal Best', desc: 'Finish the Lumen Run with a new best score.', rarity: 'rare' },
+  { id: 'full-heart', name: 'Full Heart', desc: 'Finish the Lumen Run at full health.', rarity: 'rare' },
+  { id: 'spirit-bound', name: 'Spirit Bound', desc: 'Finish the Lumen Run without either charm.', rarity: 'legendary' },
+];
+
+game.ui = UI.mountGame(game, {
+  id: GAME_ID, title: 'Lumen Sprite', subtitle: 'A glowing spirit against the rising dark.', accent: '#fde68a',
+  modes: [
+    { id: 'story', name: 'Lumen Run', blurb: 'Three glades, two charms, and the tower beyond.', seasonTargets: [7000, 13000, 20000] },
+    { id: 'daily', name: 'Daily Glade', blurb: "A seeded glade fixed to today's date.", seeded: true, seasonTargets: [7000, 13000, 20000] },
+    { id: 'dark', name: 'Nightfall Rush', blurb: 'The dark rises in every glade. 1.3× score.', seasonTargets: [9000, 16000, 24000] },
+    { id: 'shard', name: 'Mote Hunt', blurb: 'Every gate demands motes. 1.2× score.', seasonTargets: [8000, 15000, 22000] },
+    { id: 'plus', name: 'Radiant+', blurb: 'Brighter foes, 1.6× score, no mercy.', lockedHint: 'Finish the Lumen Run to unlock', requires: { stat: 'storyCompletions', gte: 1 }, seasonTargets: [12000, 22000, 32000] },
+  ],
+  settings: [
+    { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
+    { key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 },
+    { key: 'particles', label: 'Particles', type: 'select', options: ['lite', 'standard', 'ultra'], default: 'standard' },
+  ],
+  achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Run with A/D or the arrows and jump with Space.', hold: 'KeyD' },
+    { text: 'Walk into the Leaf Charm to unlock a mid-air jump.', hold: 'Space' },
+    { text: 'Walk into the Star Charm, then press Shift to dash through danger.', hold: 'ShiftLeft' },
+    { text: 'Press X or J to flare, collect motes, then reach the gate.', hold: 'KeyX' },
+  ] },
+  chapter: 'LUMEN SPRITE · 3 GLADES', levels: [{}, {}, {}],
+  hooks: {
+    applyMode: (mode) => {
+      const next = MODES[mode] ? mode : 'story';
+      if (next === 'plus' && !(Number(stats().storyCompletions) > 0)) {
+        UI.toast('Finish the Lumen Run to unlock Radiant+', { color: '#fde68a' });
+        return false;
+      }
+      activeMode = next;
+      if (activeMode === 'daily') dailySeed = seedForToday();
+      applyRng();
+      if (game && lastInitMode !== activeMode) game.restart(false);
+      return true;
+    },
+    applySetting: (key, value) => {
+      if (key === 'difficulty') {
+        difficulty = value; Arcade.difficulty = value;
+        Arcade.speedMult = value === 'easy' ? 0.8 : value === 'hard' ? 1.35 : 1;
+      }
+      if (key === 'shake') shakeScale = Number(value);
+      if (key === 'particles' && window.Perf && Perf.setTier) Perf.setTier(value);
+    },
+    applyCosmetic,
+  },
+});
+
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  window.LumenTest = {
+    state() {
+      const p = act && act.player, lv = act ? act.level : 0;
+      return {
+        mode: activeMode, difficulty, state: game.state, score: game.score, hi: game.hi, title: game.title, sub: game.sub,
+        level: lv, stage: stageName(), lives: act ? act.lives : 0,
+        hp: p ? p.hp : 0, maxhp: p ? p.maxhp : 0, x: p ? Math.round(p.x) : 0, y: p ? Math.round(p.y) : 0,
+        charms: p ? (p.ab.dj ? 1 : 0) + (p.ab.dash ? 1 : 0) : 0,
+        enemies: act ? act.enemies.length : 0, tokens: act ? act.tokens : 0,
+        seed: dailySeed, elapsed: runStarted ? Date.now() - runStarted : 0,
+        kills: runKills, deaths: runDeaths, startBest, levelCount: levels.length,
+        rise: game.state === 'playing' && (activeMode === 'dark' || lv === 2) ? { on: true } : null,
+      };
+    },
+    sequence(n) { return dailySequence(n == null ? 12 : n, dailySeed || seedForToday()); },
+    world() { return act && act.grid ? act.grid.map((row) => row.join('')).join('\n') : ''; },
+    levelName(n) { const i = n == null ? (act ? act.level : 0) : n; return STORY_NAMES[i] || ''; },
+    setMode(mode) { return game.ui.setMode(mode); },
+    restart(autostart) { game.restart(autostart === true); },
+    setDifficulty(level) { difficulty = level; Arcade.difficulty = level; Arcade.speedMult = level === 'easy' ? 0.8 : level === 'hard' ? 1.35 : 1; },
+    award(points) { game.addScore(points == null ? 1000 : points); },
+    cosmetic(slot, id) { applyCosmetic(slot, id); },
+    colors() { return { body: look.body, glow: look.glow, eye: look.eye, flare: flareTint, effect: effectColor, theme: themeKey }; },
+    stats() { return (window.Save && Save.load(GAME_ID)) || {}; },
+    goLevel(i) { if (act) act.goLevel(i); },
+    finishLevel() { if (act) act.finishLevel(); },
+    hurt(n) { if (act) act.hurt(n); },
+    clearEnemies() { if (act) act.clearEnemies(); },
+    teleport(x, y) { if (act) act.teleport(x, y); },
+    spawn(ch, x, y) { const e = act && act.spawn(ch, x, y); return e ? { k: e.k, hp: e.hp, hmax: e.hmax } : null; },
+    setHp(n) { if (act && act.player) act.player.hp = Math.max(0, Math.min(act.player.maxhp, n | 0)); },
+    setTokens(n) { if (act) act.setTokens(n); },
+    need() { return act ? SHARD_NEED[act.level] || 0 : 0; },
+    enemyStats() { return act ? act.enemies.map((e) => ({ k: e.k, hp: e.hp, hmax: e.hmax })) : []; },
+    gridAt(c, r) { return act ? act.tile(c, r) : ' '; },
+    stageCount() { return levels.length; },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

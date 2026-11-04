@@ -20,68 +20,496 @@
 <script src="../../kits/ui-kit.js"></script>
 <script>
 /* Glimmer Gadabout — a bouncy rhythm platformer: hair-glide across gaps, punch with floating fists,
-   hop beat-synced spike pads, collect all the sparks to open the gate. Built on act-kit.js. */
-const A = Arcade, K = Act, TAU = Math.PI * 2, BPM = 100, HALF = 3600 / BPM;
+   hop beat-synced spike pads, collect sparks to open the gate. Built on act-kit.js. */
+const A = Arcade, K = Act, TAU = Math.PI * 2, GAME_ID = 'glimmer-gadabout', BPM = 100, HALF = 3600 / BPM;
+const NATIVE_RANDOM = Math.random.bind(Math);
 
-const C1 = K.make('1 · Drumline Meadow', 120, 15, (g) => {
-  g.ground(0, 25); g.set(2, 12, 'P'); g.coins(5, 11, 3); g.set(8, 9, 'g'); g.set(12, 9, 'g'); g.set(18, 12, 'k');
-  g.ground(28, 60); g.set(34, 12, 'r'); g.set(36, 12, 'R'); g.set(38, 12, 'r'); g.set(40, 8, 'g'); g.set(45, 12, 'k'); g.set(52, 9, 'g'); g.plat(50, 10, 4); g.set(56, 12, 'C');
-  g.set(63, 8, 'g'); g.coins(61, 8, 5);
-  g.ground(66, 95); g.set(70, 12, 'C'); g.set(72, 12, 'R'); g.set(74, 12, 'r'); g.set(76, 12, 'R'); g.set(82, 8, 'v'); g.set(80, 7, 'g'); g.set(88, 12, 'k');
-  g.ground(98, 120); g.set(104, 9, 'g'); g.plat(103, 10, 3); g.set(108, 12, 'k'); g.set(110, 8, 'g'); g.set(112, 12, 'r'); g.set(113, 12, 'R'); g.set(118, 12, 'F');
-});
-C1.need = 8; C1.hint = 'Hold jump in the air to glide · collect 8 sparks';
-const C2 = K.make('2 · Neon Reef', 130, 15, (g) => {
-  g.ground(0, 20); g.set(2, 12, 'P'); g.set(10, 9, 'g'); g.set(14, 12, 'k'); g.coins(6, 11, 3);
-  g.ground(23, 50); g.set(28, 12, 'r'); g.set(29, 12, 'R'); g.set(30, 12, 'r'); g.set(36, 8, 'g'); g.set(34, 12, 'C'); g.set(40, 12, 'k'); g.set(45, 9, 'g'); g.set(43, 12, 'R'); g.set(44, 12, 'r');
-  g.plat(53, 10, 2); g.plat(57, 8, 2); g.plat(61, 10, 2); g.set(58, 6, 'g');
-  g.ground(64, 100); g.set(66, 12, 'C'); g.set(70, 9, 'g'); g.set(72, 12, 'k'); g.set(76, 12, 'R'); g.set(77, 12, 'r'); g.set(78, 12, 'R'); g.set(84, 8, 'g'); g.set(82, 7, 'v'); g.set(88, 12, 'r'); g.set(89, 12, 'R'); g.set(92, 9, 'g'); g.set(95, 12, 'k');
-  g.set(104, 7, 'g');
-  g.ground(108, 130); g.set(111, 12, 'C'); g.set(115, 9, 'g'); g.set(117, 12, 'k'); g.set(121, 8, 'g'); g.set(119, 12, 'r'); g.set(120, 12, 'R'); g.set(126, 12, 'F');
-});
-C2.need = 10; C2.hint = 'Spikes pulse with the beat — move on the off-beat';
-C1.theme = { solid: '#7c3aed', top: '#4ade80', plat: '#f59e0b', accent: '#fde047' };
-C2.theme = { solid: '#0e7490', top: '#22d3ee', plat: '#e879f9', accent: '#f0abfc' };
+let activeMode = 'story', difficulty = 'normal', dailySeed = 0, rngState = 1, lastInitMode = null;
+let runStarted = 0, runActive = false, runEnded = false, runKills = 0, runDeaths = 0, runSparks = 0, hurtThisRun = false;
+let startBest = 0, shakeScale = 1, curNeed = 0, act = null, G0 = null;
 
-function bg(c, cam, t, lvl) {
-  const ph = (t % HALF) / HALF, pulse = Math.max(0, 1 - ph * 3);
-  A.sky(c, 800, 480, lvl ? ['#1e1b4b', '#6d28d9', '#f0abfc'] : ['#38bdf8', '#a5f3fc', '#fef9c3']);
-  for (let i = 0; i < 8; i++) { const x = ((i * 190 - cam.x * 0.2) % 1520 + 1520) % 1520 - 120, r = 50 + (i % 3) * 14 + pulse * 6; c.fillStyle = lvl ? 'rgba(244,114,182,.18)' : 'rgba(255,255,255,.35)'; c.beginPath(); c.arc(x, 150 + (i % 4) * 36, r, 0, TAU); c.fill(); }
-  K.ridge(c, 370, 34, 1 + lvl, cam.x * 0.25, lvl ? '#4c1d95' : '#86efac'); K.ridge(c, 420, 26, 4 + lvl, cam.x * 0.45, lvl ? '#2e1065' : '#22c55e');
-  c.fillStyle = 'rgba(255,255,255,' + (0.06 + pulse * 0.12) + ')'; c.fillRect(0, 0, 800, 480);
+let look = { body: '#f97316', head: '#fde68a', hair: '#facc15', eye: '#111827' };
+let punchTint = '#fb923c', effectColor = '#fde047', themeKey = 'auto';
+
+const MODES = {
+  story: 'ON STAGE',
+  daily: 'DAILY ENCORE',
+  grounded: 'GROUNDED RUN',
+  spark: 'EVERY SPARK',
+  plus: 'GLIMMER+',
+};
+const MODE_MULT = { story: 1, daily: 1, grounded: 1.3, spark: 1.2, plus: 1.6 };
+const MODE_BONUS = { story: 6000, daily: 5000, grounded: 6500, spark: 5500, plus: 8000 };
+const STORY_NAMES = ['Drumline Meadow', 'Neon Reef', 'Candy Chasm'];
+const SPARK_SPOTS = [
+  [[4, 11], [16, 11], [22, 11], [30, 11], [56, 11], [78, 11]],
+  [[6, 11], [16, 11], [26, 11], [42, 11], [48, 11], [66, 11], [88, 11]],
+  [[4, 11], [8, 11], [38, 11], [44, 11], [76, 11], [90, 11]],
+];
+
+/* ---------- daily seed and records ---------- */
+function seedForToday() {
+  const d = new Date(), key = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  let x = key ^ 0x6d2b79f5;
+  for (const ch of GAME_ID) x = Math.imul(x ^ ch.charCodeAt(0), 16777619);
+  return x >>> 0 || 1;
 }
-function hud(c, G) { for (let i = 0; i < 2; i++) { c.fillStyle = Math.floor(G.clock / HALF) % 2 === i ? '#f43f5e' : 'rgba(255,255,255,.25)'; c.beginPath(); c.arc(760 + i * 18, 76, 6, 0, TAU); c.fill(); } }
+function dailySequence(n, seed) {
+  let s = (seed || dailySeed || 1) >>> 0; const out = [];
+  for (let i = 0; i < n; i++) { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; out.push(Number(((s >>> 0) / 4294967296).toFixed(6))); }
+  return out;
+}
+function applyRng() {
+  if (activeMode !== 'daily') { Math.random = NATIVE_RANDOM; return; }
+  rngState = dailySeed || seedForToday();
+  Math.random = () => { rngState ^= rngState << 13; rngState ^= rngState >>> 17; rngState ^= rngState << 5; return (rngState >>> 0) / 4294967296; };
+}
+function saved() { return (window.Save && Save.load(GAME_ID)) || {}; }
+function stats() { const s = saved(); return s.stats || {}; }
+function award(id, label) {
+  const s = saved(), earned = Array.isArray(s.achievements) ? s.achievements : [];
+  if (earned.includes(id) || !window.Save) return;
+  Save.update(GAME_ID, { achievements: [id] });
+  if (window.Apex && Apex.unlockAchievement) Apex.unlockAchievement(id, GAME_ID);
+  UI.toast(label || id.replace(/-/g, ' '), { color: '#f97316' });
+}
+function stageName() { const n = act ? act.level : 0; return STORY_NAMES[n] || STORY_NAMES[0]; }
+
+function recordRun(won, sec) {
+  const st = stats(), stage = act ? act.level + 1 : 1;
+  const patch = {
+    runs: (st.runs || 0) + 1,
+    seconds: (st.seconds || 0) + sec,
+    kills: (st.kills || 0) + runKills,
+    sparks: (st.sparks || 0) + runSparks,
+    deaths: (st.deaths || 0) + runDeaths,
+    highestStage: Math.max(st.highestStage || 0, stage),
+    bestScore: Math.max(st.bestScore || 0, G0 ? G0.score : 0),
+    lastMode: activeMode,
+    storyCompletions: (st.storyCompletions || 0) + (won && activeMode === 'story' ? 1 : 0),
+    dailyCompletions: (st.dailyCompletions || 0) + (won && activeMode === 'daily' ? 1 : 0),
+    groundedCompletions: (st.groundedCompletions || 0) + (won && activeMode === 'grounded' ? 1 : 0),
+    sparkCompletions: (st.sparkCompletions || 0) + (won && activeMode === 'spark' ? 1 : 0),
+    plusCompletions: (st.plusCompletions || 0) + (won && activeMode === 'plus' ? 1 : 0),
+    dailyBest: activeMode === 'daily' ? Math.max(st.dailyBest || 0, G0 ? G0.score : 0) : (st.dailyBest || 0),
+  };
+  if (won && activeMode === 'story') patch.bestTimeSec = Math.min(st.bestTimeSec || 99999, sec);
+  Save.update(GAME_ID, { stats: patch });
+}
+function finishRun(G, won, coins) {
+  if (runEnded) return 'Score ' + G.score;
+  const sec = Math.max(1, Math.round((Date.now() - (runStarted || Date.now())) / 1000));
+  if (won && MODE_BONUS[activeMode]) G.addScore(MODE_BONUS[activeMode]);
+  recordRun(won, sec);
+  if (won) {
+    if (!hurtThisRun) award('untouched', 'Untouched');
+    if (G.score >= 12000) award('light-12000', 'Glimmer Legend');
+    if (activeMode === 'story') {
+      award('story-clear', 'Standing Ovation');
+      if (G.score > startBest) award('personal-best', 'Personal Best');
+      if (act && act.player && act.player.hp >= act.player.maxhp) award('full-heart', 'Full Heart');
+      if (sec <= 300) award('swift-show', 'Encore Timing');
+    }
+    if (activeMode === 'daily') award('daily-clear', 'Daily Encore');
+    if (activeMode === 'grounded') award('grounded-clear', 'Feet On The Ground');
+    if (activeMode === 'spark') award('spark-clear', 'Every Spark');
+    if (activeMode === 'plus') award('plus-clear', 'Glimmer Adept');
+  }
+  runEnded = true;
+  return won
+    ? 'Score ' + G.score + ' · ' + sec + 's · ' + runKills + (runKills === 1 ? ' kill' : ' kills')
+    : 'Score ' + G.score + ' · reached ' + stageName();
+}
+function trackStage() {
+  if (!act) return;
+  const st = stats();
+  if ((st.highestStage || 0) < act.level + 1) Save.update(GAME_ID, { stats: { highestStage: act.level + 1 } });
+}
+function checkMilestones() {
+  if (G0 && G0.score >= 12000) award('light-12000', 'Glimmer Legend');
+}
+function onKill(e, G) {
+  runKills++;
+  award('first-punch', 'First Punch');
+  if (runKills >= 10) award('crowd-pleaser', 'Crowd Pleaser');
+  if (runKills >= 18) award('showstopper', 'Showstopper');
+  checkMilestones();
+}
+function onToken(n, x) {
+  runSparks++;
+  if (runSparks >= 15) award('spark-hoarder', 'Spark Hoarder');
+  checkMilestones();
+}
+function onHurt(n, x) {
+  hurtThisRun = true;
+  if (x && x.p && x.p.hp <= 0) runDeaths++;
+}
+
+/* ---------- cosmetics ---------- */
+const SKINS = {
+  'gad-rose': { body: '#f97316', head: '#fde68a', hair: '#facc15', eye: '#111827' },
+  'gad-mint': { body: '#10b981', head: '#fde68a', hair: '#5eead4', eye: '#064e3b' },
+  'gad-sky': { body: '#0284c7', head: '#fde68a', hair: '#7dd3fc', eye: '#0c4a6e' },
+  'gad-grape': { body: '#7c3aed', head: '#f5d0fe', hair: '#e879f9', eye: '#2e1065' },
+  'gad-candy': { body: '#e11d48', head: '#ffe4e6', hair: '#fda4af', eye: '#4c0519' },
+};
+const PALETTES = { 'punch-amber': '#fb923c', 'punch-lime': '#a3e635', 'punch-sky': '#38bdf8', 'punch-rose': '#fb7185' };
+const EFFECTS = { 'trail-gold': '#fde047', 'trail-mint': '#5eead4', 'trail-violet': '#c4b5fd', 'trail-rose': '#fda4af' };
+const THEME_KEYS = { 'theme-meadow': 'meadow', 'theme-reef': 'reef', 'theme-chasm': 'chasm' };
+const cosmeticKey = (id) => String(id || '').split(':').pop();
+function applyCosmetic(slot, id) {
+  const key = cosmeticKey(id);
+  if (slot === 'skin' && SKINS[key]) look = Object.assign({}, SKINS[key]);
+  else if (slot === 'palette' && PALETTES[key]) punchTint = PALETTES[key];
+  else if (slot === 'effect' && EFFECTS[key]) effectColor = EFFECTS[key];
+  else if (slot === 'theme' && THEME_KEYS[key]) themeKey = THEME_KEYS[key];
+}
+
+/* ---------- stages ---------- */
+const MEADOW_THEME = { solid: '#7c3aed', top: '#4ade80', plat: '#f59e0b', accent: '#fde047' };
+const REEF_THEME = { solid: '#0e7490', top: '#22d3ee', plat: '#e879f9', accent: '#f0abfc' };
+const CHASM_THEME = { solid: '#9d174d', top: '#f9a8d4', plat: '#fbbf24', accent: '#fde047' };
+
+function meadow() {
+  const L = K.make('Drumline Meadow', 120, 15, (g) => {
+    g.ground(0, 25); g.set(2, 12, 'P'); g.coins(5, 11, 3); g.set(8, 9, 'g'); g.set(12, 9, 'g'); g.set(18, 12, 'k');
+    g.ground(28, 60); g.set(34, 12, 'r'); g.set(36, 12, 'R'); g.set(38, 12, 'r'); g.set(40, 8, 'g'); g.set(45, 12, 'k'); g.set(52, 9, 'g'); g.plat(50, 10, 4); g.set(56, 12, 'C');
+    g.set(63, 8, 'g'); g.coins(61, 8, 2); g.coins(64, 8, 2);
+    g.ground(66, 95); g.set(70, 12, 'C'); g.set(72, 12, 'R'); g.set(74, 12, 'r'); g.set(76, 12, 'R'); g.set(82, 8, 'v'); g.set(80, 7, 'g'); g.set(88, 12, 'k');
+    g.ground(98, 120); g.set(104, 9, 'g'); g.plat(103, 10, 3); g.set(108, 12, 'k'); g.set(110, 8, 'g'); g.set(112, 12, 'r'); g.set(113, 12, 'R'); g.set(118, 12, 'F');
+  });
+  L.need = 8;
+  L.theme = MEADOW_THEME;
+  L.hint = 'Hold jump in the air to glide · collect 8 sparks';
+  return L;
+}
+function reef() {
+  const L = K.make('Neon Reef', 130, 15, (g) => {
+    g.ground(0, 20); g.set(2, 12, 'P'); g.set(10, 9, 'g'); g.set(14, 12, 'k'); g.coins(6, 11, 3);
+    g.ground(23, 50); g.set(28, 12, 'r'); g.set(29, 12, 'R'); g.set(30, 12, 'r'); g.set(36, 8, 'g'); g.set(34, 12, 'C'); g.set(40, 12, 'k'); g.set(45, 9, 'g'); g.set(43, 12, 'R'); g.set(44, 12, 'r');
+    g.plat(53, 10, 2); g.plat(57, 8, 2); g.plat(61, 10, 2); g.set(58, 6, 'g');
+    g.ground(64, 100); g.set(66, 12, 'C'); g.set(70, 9, 'g'); g.set(72, 12, 'k'); g.set(76, 12, 'R'); g.set(77, 12, 'r'); g.set(78, 12, 'R'); g.set(84, 8, 'g'); g.set(82, 7, 'v'); g.set(88, 12, 'r'); g.set(89, 12, 'R'); g.set(92, 9, 'g'); g.set(95, 12, 'k');
+    g.set(104, 7, 'g');
+    g.ground(108, 130); g.set(111, 12, 'C'); g.set(115, 9, 'g'); g.set(117, 12, 'k'); g.set(121, 8, 'g'); g.set(119, 12, 'r'); g.set(120, 12, 'R'); g.set(126, 12, 'F');
+  });
+  L.need = 10;
+  L.theme = REEF_THEME;
+  L.hint = 'Spikes pulse with the beat — move on the off-beat';
+  return L;
+}
+function chasm() {
+  const L = K.make('Candy Chasm', 112, 15, (g) => {
+    g.ground(0, 18); g.set(2, 12, 'P'); g.coins(6, 11, 3); g.set(10, 12, 'k');
+    g.plat(21, 10, 3); g.plat(26, 8, 3); g.plat(31, 10, 3); g.set(22, 9, 'g'); g.set(27, 7, 'g'); g.set(32, 9, 'g');
+    g.ground(35, 58); g.set(37, 12, 'r'); g.set(38, 12, 'R'); g.set(39, 12, 'r'); g.set(43, 12, 'C'); g.set(46, 12, 'h'); g.set(50, 8, 'v'); g.set(53, 12, 'k'); g.set(52, 9, 'g');
+    g.plat(61, 10, 2); g.plat(65, 8, 2); g.plat(69, 10, 2); g.set(66, 7, 'g');
+    g.ground(72, 112); g.set(74, 12, 'C'); g.set(78, 12, 'u'); g.set(82, 12, 'r'); g.set(83, 12, 'R'); g.set(84, 12, 'r'); g.set(88, 12, 'h'); g.set(92, 8, 'v'); g.plat(86, 9, 4); g.set(87, 8, 'g'); g.set(96, 12, 'k'); g.set(100, 9, 'g'); g.set(104, 12, 'C'); g.set(108, 12, 'F');
+  });
+  L.need = 6;
+  L.theme = CHASM_THEME;
+  L.hint = 'Candy spikes keep the beat — punch the drones';
+  return L;
+}
+function addSparks(L, i) {
+  const rows = L.rows.map((r) => r.split(''));
+  for (const [c, r] of SPARK_SPOTS[i]) if (rows[r] && rows[r][c] === ' ') rows[r][c] = 'g';
+  L.rows = rows.map((r) => r.join(''));
+  L.need = L.rows.join('').split('g').length - 1;
+  return L;
+}
+function scatter(L) {
+  const rows = L.rows.map((r) => r.split('')), R = rows.length, C = rows[0].length;
+  const rnd = () => { rngState ^= rngState << 13; rngState ^= rngState >>> 17; rngState ^= rngState << 5; return (rngState >>> 0) / 4294967296; };
+  let placed = 0, guard = 0;
+  while (placed < 9 && guard++ < 600) {
+    const c = 3 + Math.floor(rnd() * (C - 6)), r = 2 + Math.floor(rnd() * (R - 5));
+    if (rows[r] && rows[r][c] === ' ' && rows[r + 1] && (rows[r + 1][c] === '#' || rows[r + 1][c] === '=')) {
+      rows[r][c] = placed < 7 ? 'o' : 'g'; placed++;
+    }
+  }
+  L.rows = rows.map((r) => r.join(''));
+  return L;
+}
+function buildLevel(i) {
+  if (activeMode === 'daily') rngState = (dailySeed ^ Math.imul(i + 1, 0x9e3779b1)) >>> 0;
+  let L;
+  if (i === 0) L = meadow();
+  else if (i === 1) L = reef();
+  else L = chasm();
+  if (activeMode === 'daily') scatter(L);
+  if (activeMode === 'spark') addSparks(L, i);
+  curNeed = L.need || 0;
+  return L;
+}
+const levels = [0, 1, 2].map((i) => () => buildLevel(i));
+
+/* ---------- enemies (Glimmer+ scales HP, speed, and rewards) ---------- */
+const ENEMY_BASE = {
+  k: { w: 28, h: 26, hp: 1, ai: 'walk', sp: 0.8, sight: 120, score: 80, color: '#ec4899' },
+  v: { w: 26, h: 20, hp: 1, ai: 'fly', sp: 1.4, sight: 190, range: 60, bob: 22, score: 80, color: '#a855f7' },
+  h: { w: 24, h: 24, hp: 2, ai: 'hop', sp: 2.2, jump: 8.5, every: 80, score: 100, color: '#f472b6' },
+  u: { w: 22, h: 30, hp: 2, ai: 'turret', sp: 0, sight: 330, score: 120, color: '#f59e0b', shoot: { speed: 3.4, color: '#fde047' }, every: 130, aim: true },
+};
+const enemies = {};
+for (const key of Object.keys(ENEMY_BASE)) {
+  Object.defineProperty(enemies, key, {
+    enumerable: true, configurable: true,
+    get() {
+      const base = ENEMY_BASE[key];
+      if (activeMode !== 'plus') return base;
+      return Object.assign({}, base, { hp: Math.ceil(base.hp * 1.5), sp: (base.sp || 1) * 1.15, score: Math.round((base.score || 100) * 1.5) });
+    },
+  });
+}
+
+/* ---------- backdrop ---------- */
+const SKY = [
+  ['#38bdf8', '#a5f3fc', '#fef9c3'],
+  ['#1e1b4b', '#6d28d9', '#f0abfc'],
+  ['#500724', '#be185d', '#fbcfe8'],
+];
+const THEME_SKY = {
+  meadow: ['#0c4a6e', '#0ea5e9', '#fef9c3'],
+  reef: ['#1e1b4b', '#6d28d9', '#f0abfc'],
+  chasm: ['#500724', '#9d174d', '#fda4af'],
+};
+const RIDGE = [
+  ['#4ade80', '#22c55e'],
+  ['#4c1d95', '#2e1065'],
+  ['#9d174d', '#701a3f'],
+];
+function bg(c, cam, t, lvl, G) {
+  const ph = (t % HALF) / HALF, pulse = Math.max(0, 1 - ph * 3);
+  A.sky(c, 800, 480, THEME_SKY[themeKey] || SKY[Math.min(2, lvl)]);
+  for (let i = 0; i < 8; i++) {
+    const x = ((i * 190 - cam.x * 0.2) % 1520 + 1520) % 1520 - 120, r = 50 + (i % 3) * 14 + pulse * 6;
+    c.fillStyle = lvl ? 'rgba(244,114,182,.18)' : 'rgba(255,255,255,.35)';
+    c.beginPath(); c.arc(x, 150 + (i % 4) * 36, r, 0, TAU); c.fill();
+  }
+  const ridge = RIDGE[Math.min(2, lvl)];
+  K.ridge(c, 370, 34, 1 + lvl, cam.x * 0.25, ridge[0]);
+  K.ridge(c, 420, 26, 4 + lvl, cam.x * 0.45, ridge[1]);
+  c.fillStyle = 'rgba(255,255,255,' + (0.04 + pulse * 0.1) + ')'; c.fillRect(0, 0, 800, 480);
+  if (G && G.state === 'playing' && !runActive) { runActive = true; runStarted = Date.now(); runEnded = false; }
+  if (G && (G.state === 'ready' || G.state === 'over' || G.state === 'won')) runActive = false;
+  trackStage();
+  checkMilestones();
+}
+function post(c, cam, G, p) {
+  const x = p.x + 10 - cam.x, y = p.y + 14 - cam.y, g = c.createRadialGradient(x, y, 50, x, y, 320);
+  g.addColorStop(0, 'rgba(20,8,6,0)'); g.addColorStop(1, 'rgba(20,8,6,.32)');
+  c.fillStyle = g; c.fillRect(0, 0, 800, 480);
+  c.save(); c.globalCompositeOperation = 'lighter';
+  const h = c.createRadialGradient(x, y, 0, x, y, 80);
+  h.addColorStop(0, 'rgba(249,115,22,.18)'); h.addColorStop(1, 'rgba(249,115,22,0)');
+  c.fillStyle = h; c.fillRect(x - 80, y - 80, 160, 160); c.restore();
+}
+function hud(c, G) {
+  A.text(c, MODES[activeMode] + (MODE_MULT[activeMode] > 1 ? '  ×' + MODE_MULT[activeMode] : ''), 400, 22, 11, effectColor, 'center', '800');
+  for (let i = 0; i < 2; i++) {
+    c.fillStyle = Math.floor(G.clock / HALF) % 2 === i ? '#f43f5e' : 'rgba(255,255,255,.25)';
+    c.beginPath(); c.arc(760 + i * 18, 76, 6, 0, TAU); c.fill();
+  }
+}
+
+/* ---------- characters ---------- */
 function drawGad(c, p, G, wp) {
-  const cx = p.x + p.w / 2, f = p.face, b = p.y + p.h, t = G.clock, run = p.ground ? Math.sin(p.walk) : 0, glide = p.ab.glide && !p.ground && p.vy >= 1.4 && A.held('Space', 'ArrowUp', 'KeyW', 'KeyZ');
+  const cx = p.x + p.w / 2, f = p.face, b = p.y + p.h, t = G.clock, run = p.ground ? Math.sin(p.walk) : 0;
+  const glide = p.ab.glide && !p.ground && p.vy >= 1.4 && A.held('Space', 'ArrowUp', 'KeyW', 'KeyZ');
+  if (glide || p.vy > 3) {
+    c.save(); c.globalAlpha = 0.32;
+    for (let i = 1; i < 4; i++) { c.fillStyle = effectColor; c.beginPath(); c.arc(cx - p.face * i * 7, b - 22 + i * 5, 4 - i * 0.6, 0, TAU); c.fill(); }
+    c.restore();
+  }
   A.shadow(c, cx, b + 1, 11, 3, 0.25); c.save(); c.translate(cx, b); c.scale(f * (1 + p.sq * 0.4), 1 - p.sq * 0.4);
   c.fillStyle = '#0d9488'; c.beginPath(); c.ellipse(-4 + run * 3, -3, 5, 3, 0, 0, TAU); c.ellipse(5 - run * 3, -3, 5, 3, 0, 0, TAU); c.fill();
-  c.fillStyle = '#f97316'; A.roundRect(c, -8, -22, 16, 17, 6); c.fill();
-  c.fillStyle = '#fde68a'; c.beginPath(); c.arc(0, -29, 9, 0, TAU); c.fill();
-  c.fillStyle = '#facc15'; if (glide) { for (let i = 0; i < 7; i++) { const a = -Math.PI / 2 + (i - 3) * 0.5; c.save(); c.translate(0, -36); c.rotate(a + Math.sin(t * 0.4 + i) * 0.15); c.fillRect(-2, -22, 4, 22); c.restore(); } }
+  c.fillStyle = look.body; A.roundRect(c, -8, -22, 16, 17, 6); c.fill();
+  c.fillStyle = look.head; c.beginPath(); c.arc(0, -29, 9, 0, TAU); c.fill();
+  c.fillStyle = look.hair;
+  if (glide) { for (let i = 0; i < 7; i++) { const a = -Math.PI / 2 + (i - 3) * 0.5; c.save(); c.translate(0, -36); c.rotate(a + Math.sin(t * 0.4 + i) * 0.15); c.fillRect(-2, -22, 4, 22); c.restore(); } }
   else { c.beginPath(); c.moveTo(-5, -37); c.lineTo(0, -46 + Math.sin(t * 0.2) * 2); c.lineTo(5, -37); c.moveTo(-8, -34); c.lineTo(-13 - Math.abs(p.vx), -40); c.lineTo(-5, -36); c.fill(); }
-  c.fillStyle = '#111'; c.fillRect(2, -31, 3, 4); c.fillRect(-4, -31, 3, 4);
+  c.fillStyle = look.eye; c.fillRect(2, -31, 3, 4); c.fillRect(-4, -31, 3, 4);
   const L = p.atk > 0 ? wp.range * Math.min(1, (1 - p.atk / wp.dur) * 2.2) : 0;
-  c.fillStyle = '#fb923c'; c.beginPath(); c.arc(8 + L, -14, p.atk > 0 ? 7 : 5, 0, TAU); c.fill(); c.beginPath(); c.arc(-10, -14 + Math.sin(t * 0.15) * 2, 5, 0, TAU); c.fill();
+  c.fillStyle = punchTint; c.beginPath(); c.arc(8 + L, -14, p.atk > 0 ? 7 : 5, 0, TAU); c.fill();
+  c.beginPath(); c.arc(-10, -14 + Math.sin(t * 0.15) * 2, 5, 0, TAU); c.fill();
   if (L) { c.strokeStyle = '#fed7aa'; c.lineWidth = 3; c.beginPath(); c.moveTo(6, -14); c.lineTo(8 + L, -14); c.stroke(); }
   c.restore();
 }
 function drawEnemy(c, e, G) {
   const cx = e.x + e.w / 2, cy = e.y + e.h / 2, t = G.clock, f = e.face, hit = e.hurt > 0;
-  if (e.k === 'k') { A.shadow(c, cx, e.y + e.h + 1, 12, 3, 0.25); c.fillStyle = hit ? '#fff' : '#ec4899'; A.roundRect(c, e.x, e.y + Math.abs(Math.sin(t * 0.2)) * -2, e.w, e.h, 10); c.fill(); c.fillStyle = '#fff'; c.beginPath(); c.arc(cx - 5, cy - 2, 4, 0, TAU); c.arc(cx + 5, cy - 2, 4, 0, TAU); c.fill(); c.fillStyle = '#111'; c.beginPath(); c.arc(cx - 5 + f * 1.5, cy - 2, 2, 0, TAU); c.arc(cx + 5 + f * 1.5, cy - 2, 2, 0, TAU); c.fill(); return true; }
-  const fl = Math.sin(t * 0.4 + e.x) * 8; c.fillStyle = 'rgba(255,255,255,.8)'; c.beginPath(); c.ellipse(cx - 9, cy - 4 - fl * 0.3, 9, 4, -0.4, 0, TAU); c.ellipse(cx + 9, cy - 4 + fl * 0.3, 9, 4, 0.4, 0, TAU); c.fill(); c.fillStyle = hit ? '#fff' : '#a855f7'; c.beginPath(); c.arc(cx, cy, 9, 0, TAU); c.fill(); c.fillStyle = '#fff'; c.fillRect(cx - 4, cy - 3, 3, 4); c.fillRect(cx + 1, cy - 3, 3, 4); return true;
+  if (e.k === 'k') {
+    A.shadow(c, cx, e.y + e.h + 1, 12, 3, 0.25); c.fillStyle = hit ? '#fff' : '#ec4899';
+    A.roundRect(c, e.x, e.y + Math.abs(Math.sin(t * 0.2)) * -2, e.w, e.h, 10); c.fill();
+    c.fillStyle = '#fff'; c.beginPath(); c.arc(cx - 5, cy - 2, 4, 0, TAU); c.arc(cx + 5, cy - 2, 4, 0, TAU); c.fill();
+    c.fillStyle = '#111'; c.beginPath(); c.arc(cx - 5 + f * 1.5, cy - 2, 2, 0, TAU); c.arc(cx + 5 + f * 1.5, cy - 2, 2, 0, TAU); c.fill(); return true;
+  }
+  if (e.k === 'v') {
+    const fl = Math.sin(t * 0.4 + e.x) * 8; c.fillStyle = 'rgba(255,255,255,.8)';
+    c.beginPath(); c.ellipse(cx - 9, cy - 4 - fl * 0.3, 9, 4, -0.4, 0, TAU); c.ellipse(cx + 9, cy - 4 + fl * 0.3, 9, 4, 0.4, 0, TAU); c.fill();
+    c.fillStyle = hit ? '#fff' : '#a855f7'; c.beginPath(); c.arc(cx, cy, 9, 0, TAU); c.fill();
+    c.fillStyle = '#fff'; c.fillRect(cx - 4, cy - 3, 3, 4); c.fillRect(cx + 1, cy - 3, 3, 4); return true;
+  }
+  if (e.k === 'h') {
+    A.shadow(c, cx, e.y + e.h + 1, 11, 3, 0.25); c.save(); c.translate(cx, e.y + e.h); c.scale(f, 1);
+    c.fillStyle = hit ? '#fff' : '#f472b6'; A.roundRect(c, -12, -22 + (e.ground ? 2 : 0), 24, 22 - (e.ground ? 2 : 0), 9); c.fill();
+    c.strokeStyle = '#fbcfe8'; c.lineWidth = 2; c.beginPath(); c.moveTo(-4, -22); c.lineTo(-6, -30); c.moveTo(4, -22); c.lineTo(6, -30); c.stroke();
+    c.fillStyle = '#fdf2f8'; c.fillRect(-7, -15, 5, 6); c.fillRect(2, -15, 5, 6); c.restore(); return true;
+  }
+  if (e.k === 'u') {
+    A.shadow(c, cx, e.y + e.h + 1, 10, 3, 0.25); c.fillStyle = hit ? '#fff' : '#f59e0b';
+    A.roundRect(c, e.x + 2, e.y + 8, e.w - 4, e.h - 8, 6); c.fill();
+    c.fillStyle = hit ? '#fff' : '#b45309'; c.beginPath(); c.arc(cx, e.y + 9, 9, 0, TAU); c.fill();
+    c.save(); c.shadowColor = '#fde047'; c.shadowBlur = 14; c.fillStyle = '#fde047'; c.beginPath(); c.arc(cx + f * 3, e.y + 9, 4, 0, TAU); c.fill(); c.restore();
+    c.strokeStyle = '#fde68a'; c.lineWidth = 2; c.beginPath(); c.arc(cx, e.y + 9, 14 + Math.sin(t * 0.12) * 2, 0, TAU); c.stroke(); return true;
+  }
 }
 
-K.game({
-  id: 'glimmer-gadabout', title: 'Glimmer Gadabout', subtitle: 'Hop to the beat, punch, glide, collect', color: '#f97316', bpm: BPM,
+/* ---------- run lifecycle ---------- */
+function onInit(G) {
+  G0 = G; runStarted = 0; runActive = false; runEnded = false; runKills = 0; runDeaths = 0; runSparks = 0; hurtThisRun = false;
+  startBest = Number(stats().bestScore) || 0;
+  dailySeed = activeMode === 'daily' ? seedForToday() : 0;
+  applyRng();
+  if (G) G.scoreMultiplier = MODE_MULT[activeMode] || 1;
+  if (activeMode === 'grounded' && act && act.player) act.player.ab.glide = false;
+  lastInitMode = activeMode;
+}
+
+const game = K.game({
+  id: GAME_ID, title: 'Glimmer Gadabout', subtitle: 'Hop to the beat, punch, glide, collect', color: '#f97316', bpm: BPM, lives: 3,
   controls: [['← →  /  A D', 'Run'], ['Space  /  ↑  /  W  /  Z', 'Jump — hold in the air to glide'], ['X  /  J', 'Punch (long reach)'], ['Land on enemies', 'Bounce on them'], ['Red pulsing spikes', 'Safe when faded — watch the beat dots'], ['P / M', 'Pause / mute']],
   help: '← → run · Space jump, hold in the air to glide · X punch · land on enemies to bounce · spikes pulse with the beat (dots, top right) · collect every spark to open the gate',
-  levels: [C1, C2], bg, hud, hero: { hp: 4, run: 3.5, jump: 10.6, stomp: true, ab: { glide: true }, weapon: { type: 'melee', dmg: 1, range: 66, h: 26, cd: 22, dur: 10 } },
-  enemies: {
-    k: { w: 28, h: 26, hp: 1, ai: 'walk', sp: 0.8, sight: 120, score: 80, color: '#ec4899' },
-    v: { w: 26, h: 20, hp: 1, ai: 'fly', sp: 1.4, sight: 190, range: 60, bob: 22, score: 80, color: '#a855f7' },
-  },
-  drawEnemy, drawHero: drawGad, clear: 'GATE OPEN!', winTitle: 'Encore!', winSub: (G, coins) => 'Every spark collected · ' + coins + ' coins · Score ' + G.score,
+  levels, bg, post, hud,
+  onKill, onHurt, onToken,
+  hero: { hp: 4, run: 3.5, jump: 10.6, stomp: true, ab: { glide: true }, weapon: { type: 'melee', dmg: 1, range: 66, h: 26, cd: 22, dur: 10 } },
+  enemies,
+  drawEnemy, drawHero: drawGad, clear: 'THE CROWD GOES WILD',
+  winTitle: 'Encore!',
+  winSub: (G, coins) => finishRun(G, true, coins),
+  overTitle: 'The Curtain Falls',
+  overSub: (G, coins) => finishRun(G, false, coins),
+  debug: (d) => { act = d; },
+  touchL: [['◀', 'ArrowLeft'], ['▶', 'ArrowRight']],
+  touchR: [['✦', 'KeyX'], ['▲', 'Space']],
+  onInit,
 });
+const originalShake = game.shake.bind(game);
+game.shake = (amount) => originalShake(amount * shakeScale);
+
+const ACHIEVEMENTS = [
+  { id: 'first-punch', name: 'First Punch', desc: 'Defeat your first creature.', rarity: 'common' },
+  { id: 'crowd-pleaser', name: 'Crowd Pleaser', desc: 'Defeat 10 creatures in one run.', rarity: 'common' },
+  { id: 'showstopper', name: 'Showstopper', desc: 'Defeat 18 creatures in one run.', rarity: 'epic' },
+  { id: 'spark-hoarder', name: 'Spark Hoarder', desc: 'Collect 15 sparks in one run.', rarity: 'rare' },
+  { id: 'story-clear', name: 'Standing Ovation', desc: 'Finish the On Stage run.', rarity: 'rare' },
+  { id: 'daily-clear', name: 'Daily Encore', desc: 'Finish a Daily Encore.', rarity: 'rare' },
+  { id: 'grounded-clear', name: 'Feet On The Ground', desc: 'Finish Grounded Run.', rarity: 'epic' },
+  { id: 'spark-clear', name: 'Every Spark', desc: 'Finish Every Spark.', rarity: 'rare' },
+  { id: 'plus-clear', name: 'Glimmer Adept', desc: 'Finish Glimmer+.', rarity: 'legendary' },
+  { id: 'swift-show', name: 'Encore Timing', desc: 'Finish the On Stage run in under five minutes.', rarity: 'epic' },
+  { id: 'untouched', name: 'Untouched', desc: 'Finish a run without taking damage.', rarity: 'epic' },
+  { id: 'light-12000', name: 'Glimmer Legend', desc: 'Score 12,000 in one run.', rarity: 'epic' },
+  { id: 'personal-best', name: 'Personal Best', desc: 'Finish the On Stage run with a new best score.', rarity: 'rare' },
+  { id: 'full-heart', name: 'Full Heart', desc: 'Finish the On Stage run at full health.', rarity: 'rare' },
+];
+
+game.ui = UI.mountGame(game, {
+  id: GAME_ID, title: 'Glimmer Gadabout', subtitle: 'A paper-bright rhythm romp.', accent: '#f97316',
+  modes: [
+    { id: 'story', name: 'On Stage', blurb: 'Three stages, hair glide, and every spark in reach.', seasonTargets: [7000, 13000, 20000] },
+    { id: 'daily', name: 'Daily Encore', blurb: "A seeded encore fixed to today's date.", seeded: true, seasonTargets: [7000, 13000, 20000] },
+    { id: 'grounded', name: 'Grounded Run', blurb: 'No glide: jump it or punch it. 1.3× score.', seasonTargets: [9000, 16000, 24000] },
+    { id: 'spark', name: 'Every Spark', blurb: 'Extra sparks appear and every gate demands all of them. 1.2× score.', seasonTargets: [8000, 15000, 22000] },
+    { id: 'plus', name: 'Glimmer+', blurb: 'Brighter foes, 1.6× score, no mercy.', lockedHint: 'Finish the On Stage run to unlock', requires: { stat: 'storyCompletions', gte: 1 }, seasonTargets: [12000, 22000, 32000] },
+  ],
+  settings: [
+    { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
+    { key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 },
+    { key: 'particles', label: 'Particles', type: 'select', options: ['lite', 'standard', 'ultra'], default: 'standard' },
+  ],
+  achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Run with A/D or the arrows and jump with Space.', hold: 'KeyD' },
+    { text: 'Hold jump in the air to hair-glide over the gaps.', hold: 'Space' },
+    { text: 'Press X or J to punch through creatures and spike pads.', hold: 'KeyX' },
+    { text: 'Collect every spark on the beat, then reach the gate.', hold: 'KeyX' },
+  ] },
+  chapter: 'GLIMMER GADABOUT · 3 STAGES', levels: [{}, {}, {}],
+  hooks: {
+    applyMode: (mode) => {
+      const next = MODES[mode] ? mode : 'story';
+      if (next === 'plus' && !(Number(stats().storyCompletions) > 0)) {
+        UI.toast('Finish the On Stage run to unlock Glimmer+', { color: '#f97316' });
+        return false;
+      }
+      activeMode = next;
+      if (activeMode === 'daily') dailySeed = seedForToday();
+      applyRng();
+      if (game && lastInitMode !== activeMode) game.restart(false);
+      return true;
+    },
+    applySetting: (key, value) => {
+      if (key === 'difficulty') {
+        difficulty = value; Arcade.difficulty = value;
+        Arcade.speedMult = value === 'easy' ? 0.8 : value === 'hard' ? 1.35 : 1;
+      }
+      if (key === 'shake') shakeScale = Number(value);
+      if (key === 'particles' && window.Perf && Perf.setTier) Perf.setTier(value);
+    },
+    applyCosmetic,
+  },
+});
+
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  window.GlimmerTest = {
+    state() {
+      const p = act && act.player, lv = act ? act.level : 0;
+      return {
+        mode: activeMode, difficulty, state: game.state, score: game.score, hi: game.hi, title: game.title, sub: game.sub,
+        level: lv, stage: stageName(), lives: act ? act.lives : 0,
+        hp: p ? p.hp : 0, maxhp: p ? p.maxhp : 0, x: p ? Math.round(p.x) : 0, y: p ? Math.round(p.y) : 0,
+        glide: p ? !!p.ab.glide : false, sparks: runSparks, need: curNeed,
+        enemies: act ? act.enemies.length : 0, tokens: act ? act.tokens : 0,
+        seed: dailySeed, elapsed: runStarted ? Date.now() - runStarted : 0,
+        kills: runKills, deaths: runDeaths, startBest, levelCount: levels.length,
+      };
+    },
+    sequence(n) { return dailySequence(n == null ? 12 : n, dailySeed || seedForToday()); },
+    world() { return act && act.grid ? act.grid.map((row) => row.join('')).join('\n') : ''; },
+    levelName(n) { const i = n == null ? (act ? act.level : 0) : n; return STORY_NAMES[i] || ''; },
+    setMode(mode) { return game.ui.setMode(mode); },
+    restart(autostart) { game.restart(autostart === true); },
+    setDifficulty(level) { difficulty = level; Arcade.difficulty = level; Arcade.speedMult = level === 'easy' ? 0.8 : level === 'hard' ? 1.35 : 1; },
+    award(points) { game.addScore(points == null ? 1000 : points); },
+    cosmetic(slot, id) { applyCosmetic(slot, id); },
+    colors() { return { body: look.body, head: look.head, hair: look.hair, eye: look.eye, punch: punchTint, effect: effectColor, theme: themeKey }; },
+    stats() { return (window.Save && Save.load(GAME_ID)) || {}; },
+    goLevel(i) { if (act) act.goLevel(i); },
+    finishLevel() { if (act) act.finishLevel(); },
+    hurt(n) { if (act) act.hurt(n); },
+    clearEnemies() { if (act) act.clearEnemies(); },
+    teleport(x, y) { if (act) act.teleport(x, y); },
+    spawn(ch, x, y) { const e = act && act.spawn(ch, x, y); return e ? { k: e.k, hp: e.hp, hmax: e.hmax } : null; },
+    setHp(n) { if (act && act.player) act.player.hp = Math.max(0, Math.min(act.player.maxhp, n | 0)); },
+    setTokens(n) { if (act) act.setTokens(n); },
+    need() { return curNeed; },
+    grabSparks(limit) {
+      const max = limit == null ? 99 : limit;
+      if (!act || !Arcade.test) return 0;
+      let got = 0;
+      const grid = act.grid;
+      for (let r = 0; r < grid.length && got < max; r++) {
+        for (let c = 0; c < grid[r].length && got < max; c++) {
+          if (grid[r][c] === 'g') { act.teleport(c * 32 + 6, r * 32 + 4); Arcade.test.step(2); got++; }
+        }
+      }
+      return got;
+    },
+    enemyStats() { return act ? act.enemies.map((e) => ({ k: e.k, hp: e.hp, hmax: e.hmax })) : []; },
+    gridAt(c, r) { return act ? act.tile(c, r) : ' '; },
+    stageCount() { return levels.length; },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

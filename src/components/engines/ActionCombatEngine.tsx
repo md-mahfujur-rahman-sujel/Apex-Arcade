@@ -326,49 +326,56 @@ const KITS: Record<Variant, VariantKit> = {
     ],
   },
   deadcells: {
-    title: 'Prisoner Quarters Slasher',
-    subtitle: 'Cut through the ossuary and roll under the Concierge.',
-    cleared: 'The Concierge collapses.',
-    accent: '#8B5CF6',
-    bossName: 'The Concierge',
-    attackName: 'Broadsword Slash',
+    title: 'Ashen Descent',
+    subtitle: 'Cut through the ash, crack the chests, and fell the Warden of the Spire.',
+    cleared: 'The Warden crumbles to ash.',
+    accent: '#FB7185',
+    bossName: 'The Warden',
+    attackName: 'Ashen Blade',
     specialName: 'Roll Dodge',
-    startLabel: 'BREAK OUT',
+    startLabel: 'DESCEND',
     attack: 'sword',
     special: 'roll',
-    meleeRange: 64,
-    meleeDamage: 14,
+    meleeRange: 66,
+    meleeDamage: 15,
     shotDamage: 0,
-    speed: 4,
-    jump: 10.2,
+    speed: 4.05,
+    jump: 10.3,
     maxAmmo: 0,
     doubleJump: false,
-    bossHp: 290,
-    hero: { cloth: '#312e81', trim: '#8B5CF6', skin: '#c7d2fe' },
+    bossHp: 320,
+    hero: { cloth: '#374151', trim: '#FB7185', skin: '#e2e8f0' },
     zones: [
       zone(
-        'Prisoner Quarters',
-        ['#120a24', '#070510'],
+        "Prisoner's Quarter",
+        ['#0a0d16', '#2a1620'],
         [{ x: 160, y: 306, w: 110 }, { x: 400, y: 248, w: 120 }, { x: 630, y: 312, w: 100 }],
         [[{ type: 'walker', count: 2 }], [{ type: 'turret', count: 1 }, { type: 'walker', count: 1 }]],
         groundCandles([110, 320, 540, 700], [{ x: 215, y: 306 }, { x: 680, y: 312 }]),
       ),
       zone(
-        'Ossuary',
-        ['#160a1c', '#0a0510'],
+        'Toxic Sewers',
+        ['#07120f', '#14291a'],
+        [{ x: 120, y: 298, w: 100 }, { x: 300, y: 242, w: 110 }, { x: 500, y: 298, w: 120 }, { x: 680, y: 236, w: 90 }],
+        [[{ type: 'hopper', count: 2 }], [{ type: 'flyer', count: 2 }, { type: 'turret', count: 1 }]],
+        groundCandles([90, 240, 430, 620], [{ x: 350, y: 242 }, { x: 720, y: 236 }]),
+      ),
+      zone(
+        "The Warden's Spire",
+        ['#140a10', '#2a1220'],
         [{ x: 120, y: 320, w: 90 }, { x: 590, y: 320, w: 90 }, { x: 360, y: 250, w: 90 }],
-        [[{ type: 'flyer', count: 2 }, { type: 'hopper', count: 1 }], [{ type: 'walker', count: 2 }]],
+        [[{ type: 'flyer', count: 2 }, { type: 'walker', count: 1 }], [{ type: 'turret', count: 2 }]],
         groundCandles([90, 300, 500, 740]),
-        'The Concierge',
+        'The Warden',
       ),
     ],
   },
   cuphead: {
-    title: 'Inkwell Isle Boss Showdown',
-    subtitle: 'Pepper the Root Pack and parry everything it throws.',
-    cleared: 'The Root Pack is uprooted.',
+    title: 'Stormcap Showdown',
+    subtitle: 'Dash through the squall and out-parry Mama Thundercloud.',
+    cleared: 'Mama Thundercloud blows away.',
     accent: '#F87171',
-    bossName: 'The Root Pack',
+    bossName: 'Mama Thundercloud',
     attackName: 'Pea Shooter',
     specialName: 'Pink Parry',
     startLabel: 'TAKE THE STAGE',
@@ -381,23 +388,30 @@ const KITS: Record<Variant, VariantKit> = {
     jump: 10.4,
     maxAmmo: 0,
     doubleJump: false,
-    bossHp: 270,
-    hero: { cloth: '#f8fafc', trim: '#F87171', skin: '#fde68a' },
+    bossHp: 360,
+    hero: { cloth: '#ef4444', trim: '#fde047', skin: '#fef3c7' },
     zones: [
       zone(
         'Inkwell Shore',
-        ['#2a1206', '#120905'],
+        ['#6b7fa8', '#f1e6c9'],
         [{ x: 150, y: 302, w: 110 }, { x: 410, y: 246, w: 120 }, { x: 640, y: 312, w: 100 }],
         [[{ type: 'walker', count: 2 }], [{ type: 'flyer', count: 2 }, { type: 'walker', count: 1 }]],
         groundCandles([100, 300, 540, 700], [{ x: 205, y: 302 }, { x: 690, y: 312 }]),
       ),
       zone(
-        'Root Pack Garden',
-        ['#241006', '#140704'],
-        [{ x: 120, y: 318, w: 90 }, { x: 590, y: 318, w: 90 }, { x: 360, y: 248, w: 90 }],
-        [[{ type: 'hopper', count: 2 }, { type: 'flyer', count: 1 }], [{ type: 'turret', count: 2 }]],
+        'Cloudtop Climb',
+        ['#33415c', '#c9c1ab'],
+        [{ x: 120, y: 318, w: 90 }, { x: 300, y: 250, w: 110 }, { x: 590, y: 318, w: 90 }, { x: 700, y: 240, w: 70 }],
+        [[{ type: 'hopper', count: 2 }, { type: 'flyer', count: 1 }], [{ type: 'turret', count: 1 }, { type: 'walker', count: 1 }]],
         groundCandles([90, 300, 500, 740]),
-        'The Root Pack',
+      ),
+      zone(
+        'Thunderhead Arena',
+        ['#2a1206', '#120905'],
+        [{ x: 120, y: 318, w: 90 }, { x: 590, y: 318, w: 90 }, { x: 360, y: 248, w: 90 }],
+        [[{ type: 'flyer', count: 2 }, { type: 'turret', count: 1 }], [{ type: 'walker', count: 2 }]],
+        groundCandles([90, 300, 500, 740]),
+        'Mama Thundercloud',
       ),
     ],
   },
@@ -1531,7 +1545,7 @@ function renderScene(ctx: CanvasRenderingContext2D, sim: Sim) {
     ctx.shadowBlur = 0;
     ctx.font = '800 12px ui-monospace, monospace';
     ctx.fillStyle = hexAlpha(cfg.accent, 0.95);
-    ctx.fillText(sim.phase === 'ZONECLEAR' ? 'LANTERN RESTORED +25' : `AREA ${sim.zoneIndex + 1} / ${sim.cfg.zones.length}`, W / 2, 164);
+    ctx.fillText(sim.phase === 'ZONECLEAR' ? 'AREA CLEAR +25' : `AREA ${sim.zoneIndex + 1} / ${sim.cfg.zones.length}`, W / 2, 164);
     ctx.globalAlpha = 1;
     ctx.textAlign = 'start';
   }
@@ -1854,7 +1868,7 @@ export const ActionCombatEngine: React.FC<ActionCombatEngineProps> = ({
         <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3">
           <div className="min-w-[180px] rounded-lg border border-white/10 bg-black/55 px-3 py-2 backdrop-blur-sm">
             <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-white/70">
-              <span>Lantern</span>
+              <span>Health</span>
               <span className="font-mono text-amber-300">{hud.hp}/{hud.maxHp}</span>
             </div>
             <div className="mt-1 h-2 overflow-hidden rounded bg-white/10">
@@ -1912,8 +1926,8 @@ export const ActionCombatEngine: React.FC<ActionCombatEngineProps> = ({
 
       {phase === 'GAMEOVER' && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 px-6 text-center">
-          <div className="text-2xl font-black tracking-tight text-rose-300">THE LANTERN GOES OUT</div>
-          <p className="mt-2 text-xs text-slate-300">{kit.bossName} still stirs in the dark. Score {hud.score}.</p>
+          <div className="text-2xl font-black tracking-tight text-rose-300">RUN ENDED</div>
+          <p className="mt-2 text-xs text-slate-300">{kit.bossName} still waits. Score {hud.score}.</p>
           <button
             type="button"
             data-testid="action-restart"
@@ -1921,14 +1935,14 @@ export const ActionCombatEngine: React.FC<ActionCombatEngineProps> = ({
             className="mt-5 min-h-11 rounded-xl px-6 text-sm font-black text-slate-950"
             style={{ backgroundColor: kit.accent }}
           >
-            RELIGHT THE LANTERN
+            TRY AGAIN
           </button>
         </div>
       )}
 
       {phase === 'VICTORY' && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 px-6 text-center">
-          <div className="text-2xl font-black tracking-tight text-emerald-300">CRYPT CONQUERED</div>
+          <div className="text-2xl font-black tracking-tight text-emerald-300">RUN CONQUERED</div>
           <p className="mt-2 text-xs text-slate-300">{kit.cleared} Final score {hud.score}.</p>
           <button
             type="button"
