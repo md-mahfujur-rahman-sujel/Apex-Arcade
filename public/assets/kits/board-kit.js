@@ -390,4 +390,100 @@ html[data-apex-paused="true"] *,html[data-apex-paused="true"] *::before,html[dat
     });
     if (!d.open) d.showModal();
   };
+
+  /* ---------- shared mode, record and achievement bridge ----------
+     Board pages are not Arcade.G canvases, so they publish the menu contract
+     from here: the same modes/customize/achievements screens the canvas games
+     get from ui-kit, backed by the shared save file and Sparks registry. */
+  B.ui = function (config) {
+    if (!config || !config.id) throw new Error('Board.ui requires a game id');
+    const hooks = config.hooks || {};
+    const modes = Array.isArray(config.modes) && config.modes.length ? config.modes : [{ id: 'classic', name: 'Classic' }];
+    const readSave = () => { try { return window.Save && Save.load ? Save.load(config.id) || {} : {}; } catch (e) { return {}; } };
+    const writeSave = (patch) => { try { return window.Save && Save.update ? Save.update(config.id, patch) : null; } catch (e) { return null; } };
+    const savedMode = (readSave().settings || {}).mode;
+    let mode = modes.some((m) => m.id === savedMode) ? savedMode : modes[0].id;
+    let startedAt = Date.now();
+    const api = {
+      config,
+      modes,
+      getMode: () => mode,
+      mode: () => modes.find((m) => m.id === mode) || modes[0],
+      setMode: (id) => {
+        const entry = modes.find((m) => m.id === id);
+        if (!entry) return false;
+        const saved = readSave(), required = entry.requires;
+        if (required && !(Number(saved.stats && saved.stats[required.stat]) >= Number(required.gte || 1))) return false;
+        mode = id;
+        writeSave({ settings: { mode } });
+        if (hooks.applyMode) { try { hooks.applyMode(mode); } catch (e) { console.error(e); } }
+        try { if (window.Apex && Apex.report) Apex.report({ gameId: config.id, type: 'mode_start', mode }); } catch (e) {}
+        return true;
+      },
+      start: () => {
+        startedAt = Date.now();
+        if (hooks.onStart) { try { hooks.onStart(mode); } catch (e) { console.error(e); } }
+        if (window.ApexGameMenuActions && typeof ApexGameMenuActions.play === 'function') ApexGameMenuActions.play();
+        else if (hooks.play) hooks.play(mode);
+      },
+      record: (result) => {
+        const data = result || {};
+        const stats = readSave().stats || {}, patch = {};
+        const score = Number(data.score) || 0;
+        patch.bestScore = Math.max(Number(stats.bestScore) || 0, score);
+        patch.plays = (Number(stats.plays) || 0) + 1;
+        patch.secondsPlayed = (Number(stats.secondsPlayed) || 0) + Math.max(0, Math.round(data.seconds == null ? (Date.now() - startedAt) / 1000 : data.seconds));
+        patch.lastResult = String(data.result || '').slice(0, 80);
+        patch.lastMode = mode;
+        Object.keys(data.records || {}).forEach((key) => { patch[key] = Math.max(Number(stats[key]) || 0, Number(data.records[key]) || 0); });
+        Object.keys(data.mins || {}).forEach((key) => {
+          const value = Number(data.mins[key]) || 0;
+          if (value > 0) patch[key] = Math.min(Number(stats[key]) || Infinity, value);
+        });
+        Object.keys(data.counters || {}).forEach((key) => { patch[key] = (Number(stats[key]) || 0) + (Number(data.counters[key]) || 0); });
+        writeSave({ stats: patch });
+        if (score > 0) { try { if (window.Apex && Apex.report) Apex.report({ gameId: config.id, type: 'score', score, mode }); } catch (e) {} }
+        if (data.achievement) api.unlock(data.achievement);
+        (data.achievements || []).forEach((id) => api.unlock(id));
+        return patch;
+      },
+      unlock: (id) => {
+        const entry = (config.achievements || []).find((item) => item.id === id);
+        if (!entry) return false;
+        const saved = readSave(), earned = Array.isArray(saved.achievements) ? saved.achievements : [];
+        if (earned.includes(id)) return false;
+        writeSave({ achievements: earned.concat(id) });
+        try { if (window.Apex && Apex.report) Apex.report({ gameId: config.id, type: 'achievement', achievementId: id }); } catch (e) {}
+        if (window.UI && UI.toast) UI.toast(entry.name + ' unlocked', { color: config.accent || '#67e8f9' });
+        return true;
+      },
+      stats: () => readSave().stats || {},
+      equipped: () => {
+        const out = {};
+        try {
+          if (!window.Meta || !Meta.getCosmetics) return out;
+          Meta.getCosmetics(config.id).forEach((item) => { if (item.equipped) out[item.slot] = item.id; });
+        } catch (e) {}
+        return out;
+      },
+      cosmetic: (slot, fallback) => api.equipped()[slot] || fallback,
+      applyCosmetics: () => {
+        const equipped = api.equipped();
+        if (hooks.applyCosmetic) Object.keys(equipped).forEach((slot) => { try { hooks.applyCosmetic(slot, equipped[slot]); } catch (e) { console.error(e); } });
+        return equipped;
+      },
+      resetClock: () => { startedAt = Date.now(); }
+    };
+    if (hooks.applyMode) { try { hooks.applyMode(mode); } catch (e) { console.error(e); } }
+    api.applyCosmetics();
+    window.ApexBoardUI = {
+      config,
+      getMode: api.getMode,
+      setMode: api.setMode,
+      getMutator: () => 'none',
+      setMutator: () => false,
+      start: api.start
+    };
+    return api;
+  };
 })();

@@ -11,13 +11,14 @@
   #cv { width: 100%; max-width: 640px; height: auto; border-radius: 12px; box-shadow: 0 20px 50px -20px #000, 0 0 0 6px #2a2f45; touch-action: manipulation; }
   .side { display: grid; gap: 12px; }
   .die { font-size: 92px; line-height: 1; text-align: center; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 10px 0 18px; user-select: none; }
+  .die.pair { font-size: 54px; letter-spacing: 2px; padding-top: 28px; padding-bottom: 32px; }
   .die.roll { animation: shake .12s linear infinite; }
   @keyframes shake { 0% { transform: rotate(-6deg); } 50% { transform: rotate(6deg); } 100% { transform: rotate(-6deg); } }
   .big { font-size: 18px !important; padding: 12px 18px !important; }
   .pl { display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
   .pl.on { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan); }
-  .pl i { width: 16px; height: 16px; border-radius: 50%; display: inline-block; border: 2px solid #fff; }
-  .pl span { margin-left: auto; color: var(--muted); font: 600 13px ui-monospace, Consolas, monospace; }
+  .pl i { width: 16px; height: 16px; border-radius: 50%; display: inline-block; border: 2px solid #fff; flex: none; }
+  .pl span { margin-left: auto; color: var(--muted); font: 600 12px ui-monospace, Consolas, monospace; white-space: nowrap; }
 </style>
 <script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
 </head>
@@ -33,7 +34,7 @@
 <script>
 const ui = Board.shell({
   id: 'snakes-ladders', cpu: true, title: 'Snakes & Ladders', subtitle: 'Race to 100 — climb the ladders, dodge the snakes',
-  rules: 'Roll the die and move that many squares. Land at the foot of a ladder to climb it; land on a snake\'s head and you slide down to its tail. Roll a 6 for another turn. You must roll the exact number to land on 100. First to 100 wins. Easy shortens snake drops, Normal uses the printed board, and Hard extends each snake drop by five squares. The selected rule applies to every player.',
+  rules: 'Roll the die and move that many squares. Land at the foot of a ladder to climb it; land on a snake\'s head and you slide down to its tail. Roll a 6 for another turn. Classic and most modes need the exact number to land on 100. Quick Dash starts everyone on square 24; Twin Dice rolls two dice and rewards any double; Chaos moves a ladder or snake to a new square each time one is used; Marathon runs three laps of the board with no exact finish. Easy shortens snake drops, Normal uses the printed board, Hard extends each snake drop by five squares. First to finish wins.',
   controls: [['Space / Enter / R','Roll the die'], ['Roll button','Roll the die (touch)'], ['N','Start a new game'], ['H / M','Toggle help / mute']],
 });
 ui.main.innerHTML = `
@@ -43,7 +44,7 @@ ui.main.innerHTML = `
     <div class="bk-status" id="status"></div>
     <div class="die" id="die">\u2680</div>
     <button class="bk-btn bk-primary big" id="roll">Roll the die</button>
-    <div class="bk-row"><label>Players <select class="bk-select" id="mode">
+    <div class="bk-row"><label>Players <select class="bk-select" id="players">
       <option value="2c">You vs 1 computer</option><option value="3c">You vs 2 computers</option><option value="4c">You vs 3 computers</option>
       <option value="2">2 players</option><option value="3">3 players</option><option value="4">4 players</option></select></label>
       <button class="bk-btn" id="new">New game</button></div>
@@ -53,54 +54,126 @@ ui.main.innerHTML = `
 const $ = (s) => ui.main.querySelector(s);
 const cv = $('#cv'), c = cv.getContext('2d');
 
-const COLORS = ['#f43f5e', '#22d3ee', '#facc15', '#4ade80'], NAMES = ['Red', 'Cyan', 'Gold', 'Green'];
+const NAMES = ['Red', 'Cyan', 'Gold', 'Green'];
 const FACES = ['\u2680', '\u2681', '\u2682', '\u2683', '\u2684', '\u2685'];
-const LAD = { 1: 38, 4: 14, 9: 31, 21: 42, 28: 84, 36: 44, 51: 67, 71: 91, 80: 100 };
-const SNK = { 16: 6, 47: 26, 49: 11, 56: 53, 62: 19, 64: 60, 87: 24, 93: 73, 95: 75, 98: 78 };
-const SNAKE_COL = ['#ef4444', '#a855f7', '#22c55e', '#f97316', '#3b82f6', '#ec4899', '#14b8a6', '#eab308', '#8b5cf6', '#f43f5e'];
+const LAD0 = { 1: 38, 4: 14, 9: 31, 21: 42, 28: 84, 36: 44, 51: 67, 71: 91, 80: 100 };
+const SNK0 = { 16: 6, 47: 26, 49: 11, 56: 53, 62: 19, 64: 60, 87: 24, 93: 73, 95: 75, 98: 78 };
 const CELL = 60, OFF = [[-12, -12], [12, -12], [-12, 12], [12, 12]];
-let players, cur, busy, over, difficulty = Board.difficulty();
+const MODE_NAMES = { classic: 'Classic', quick: 'Quick Dash', twin: 'Twin Dice', chaos: 'Chaos Board', marathon: 'Marathon' };
+const MODE_KEY = { classic: 'Classic', quick: 'Quick', twin: 'Twin', chaos: 'Chaos', marathon: 'Marathon' };
+const WIN_BONUS = { classic: 800, quick: 600, twin: 900, chaos: 900, marathon: 1200 };
+const MODES = [
+  { id: 'classic', name: 'Classic', blurb: 'The standard board. Roll exactly to land on 100.' },
+  { id: 'quick', name: 'Quick Dash', blurb: 'Everyone starts on square 24 and races to 100.' },
+  { id: 'twin', name: 'Twin Dice', blurb: 'Two dice, doubles earn another roll. Exact 100 wins.' },
+  { id: 'chaos', name: 'Chaos Board', blurb: 'Every ladder and snake relocates after it is used. 1.3× score.' },
+  { id: 'marathon', name: 'Marathon', blurb: 'Three laps of the board, no exact finish. 1.5× score.', requires: { stat: 'classicWins', gte: 1 }, lockedHint: 'Win a Classic game to unlock' },
+];
+const ACHIEVEMENTS = [
+  { id: 'first-roll', name: 'First Roll', desc: 'Roll the die in any mode.', rarity: 'common' },
+  { id: 'first-ladder', name: 'Up We Go', desc: 'Climb a ladder.', rarity: 'common' },
+  { id: 'first-snake', name: 'Down We Go', desc: 'Land on a snake.', rarity: 'common' },
+  { id: 'classic-clear', name: 'Classic Finish', desc: 'Win a Classic game.', rarity: 'common' },
+  { id: 'quick-clear', name: 'Quick Dash', desc: 'Win a Quick Dash game.', rarity: 'common' },
+  { id: 'twin-clear', name: 'Double Trouble', desc: 'Win a Twin Dice game.', rarity: 'rare' },
+  { id: 'chaos-clear', name: 'Chaos Tamer', desc: 'Win a Chaos Board game.', rarity: 'rare' },
+  { id: 'marathon-clear', name: 'Marathoner', desc: 'Win a Marathon game.', rarity: 'epic' },
+  { id: 'six-streak', name: 'Six Streak', desc: 'Roll three sixes in a row.', rarity: 'rare' },
+  { id: 'no-snakes', name: 'Clean Climb', desc: 'Win without landing on a snake.', rarity: 'rare' },
+  { id: 'exact-finish', name: 'Right On The Dot', desc: 'Win by rolling the exact number.', rarity: 'rare' },
+  { id: 'comeback', name: 'From The Back', desc: 'Win after sitting on square 10 or lower.', rarity: 'epic' },
+  { id: 'personal-best', name: 'Personal Best', desc: 'Set a new best score.', rarity: 'rare' },
+];
+
+/* ---------------- cosmetics ---------------- */
+const TOKENS = {
+  'snl:tokens-ember': ['#f43f5e', '#22d3ee', '#facc15', '#4ade80'],
+  'snl:tokens-ocean': ['#38bdf8', '#818cf8', '#2dd4bf', '#c084fc'],
+  'snl:tokens-candy': ['#fb7185', '#f472b6', '#facc15', '#a78bfa'],
+  'snl:tokens-mono': ['#f8fafc', '#64748b', '#e2e8f0', '#334155'],
+  'snl:tokens-neon': ['#f0abfc', '#67e8f9', '#bef264', '#fde047'],
+};
+const BOARDS = {
+  'snl:board-midnight': { a: '#222a45', b: '#1a2038', finish: '#5b4a14', text: 'rgba(230,233,245,.55)', grid: 'rgba(255,255,255,.07)', bar: '#0f1322', barText: '#8b93b3', frame: '#2a2f45' },
+  'snl:board-paper': { a: '#efe6d3', b: '#dccfb4', finish: '#e8c56b', text: 'rgba(40,32,22,.6)', grid: 'rgba(70,55,35,.14)', bar: '#c8b996', barText: '#5b4a2c', frame: '#8a7a5c' },
+  'snl:board-forest': { a: '#1f3a2d', b: '#173026', finish: '#3f6212', text: 'rgba(220,255,235,.62)', grid: 'rgba(190,255,220,.08)', bar: '#0c1c15', barText: '#8fd6b0', frame: '#2f5a44' },
+  'snl:board-sunset': { a: '#3b2145', b: '#2c1936', finish: '#7c2d12', text: 'rgba(255,230,240,.6)', grid: 'rgba(255,210,235,.08)', bar: '#1a0f22', barText: '#d8b8c8', frame: '#6b3a63' },
+};
+const SNAKE_SETS = {
+  'snl:snakes-classic': ['#ef4444', '#a855f7', '#22c55e', '#f97316', '#3b82f6', '#ec4899', '#14b8a6', '#eab308', '#8b5cf6', '#f43f5e'],
+  'snl:snakes-neon': ['#22d3ee', '#a3e635', '#f472b6', '#f0abfc', '#67e8f9', '#fde047', '#818cf8', '#34d399', '#fb7185', '#c084fc'],
+  'snl:snakes-pastel': ['#fda4af', '#c4b5fd', '#86efac', '#fdba74', '#93c5fd', '#f9a8d4', '#5eead4', '#fde68a', '#ddd6fe', '#fecdd3'],
+  'snl:snakes-mono': ['#e2e8f0', '#94a3b8', '#f1f5f9', '#64748b', '#cbd5e1', '#7f8ea3', '#94a3b8', '#e2e8f0', '#64748b', '#cbd5e1'],
+};
+const THEMES = {
+  'snl:theme-night': '',
+  'snl:theme-dusk': 'radial-gradient(1100px 520px at 12% -8%, #4c1d3d, transparent 60%), radial-gradient(900px 520px at 100% 0, #1e3a5f, transparent 55%), #090a10',
+  'snl:theme-jungle': 'radial-gradient(1000px 500px at 10% -10%, #14532d, transparent 60%), radial-gradient(800px 500px at 100% 0, #422006, transparent 55%), #070d09',
+};
+const PALETTE = {
+  tokens: TOKENS['snl:tokens-ember'].slice(),
+  board: Object.assign({}, BOARDS['snl:board-midnight']),
+  snakes: SNAKE_SETS['snl:snakes-classic'].slice(),
+  ladder: '#d6a56b', ladderDark: '#7c4a1c', ladderLight: '#b9824a',
+};
+function applyCosmetic(slot, id) {
+  if (slot === 'skin') PALETTE.tokens = (TOKENS[id] || TOKENS['snl:tokens-ember']).slice();
+  else if (slot === 'palette') PALETTE.board = Object.assign({}, BOARDS[id] || BOARDS['snl:board-midnight']);
+  else if (slot === 'effect') PALETTE.snakes = (SNAKE_SETS[id] || SNAKE_SETS['snl:snakes-classic']).slice();
+  else if (slot === 'theme') document.body.style.background = THEMES[id] || '';
+  if (slot === 'palette') cv.style.boxShadow = '0 20px 50px -20px #000, 0 0 0 6px ' + PALETTE.board.frame;
+  if (players) { ui_update(); draw(); }
+}
+
+/* ---------------- state ---------------- */
+let players = null, cur = 0, busy = false, over = false, winner = null, mode = 'classic', menuPaused = true, genId = 0;
+let LADDERS = Object.assign({}, LAD0), SNAKES = Object.assign({}, SNK0);
+let die = 1, rolls = 0, difficulty = Board.difficulty();
+const scoreMult = () => mode === 'chaos' ? 1.3 : mode === 'marathon' ? 1.5 : 1;
+const addScore = (p, n) => { p.score += Math.round(n * scoreMult()); };
+window.addEventListener('apex:board-difficulty', (event) => { difficulty = event.detail?.difficulty || 'normal'; if (players) draw(); });
+
 function snakeTarget(from) {
-  const target = SNK[from];
+  const target = SNAKES[from];
   if (target == null) return null;
   if (difficulty === 'easy') return Math.ceil((from + target) / 2);
   if (difficulty === 'hard') return Math.max(1, target - 5);
   return target;
 }
-window.addEventListener('apex:board-difficulty', (event) => { difficulty = event.detail?.difficulty || 'normal'; draw(); });
-
 function pt(n, i) {
   if (n <= 0) return [34 + i * 30, 625];
   const k = n - 1, r = Math.floor(k / 10), cc = r % 2 === 0 ? k % 10 : 9 - (k % 10);
   return [cc * CELL + CELL / 2, (9 - r) * CELL + CELL / 2];
 }
 function draw() {
+  if (!players) return;
+  const pal = PALETTE.board;
   c.clearRect(0, 0, 600, 650);
   for (let n = 1; n <= 100; n++) {
-    const [x, y] = pt(n); c.fillStyle = (Math.floor((n - 1) / 10) + n) % 2 ? '#222a45' : '#1a2038';
-    if (n === 100) c.fillStyle = '#5b4a14';
+    const [x, y] = pt(n); c.fillStyle = (Math.floor((n - 1) / 10) + n) % 2 ? pal.a : pal.b;
+    if (n === 100) c.fillStyle = pal.finish;
     c.fillRect(x - 30, y - 30, 60, 60);
-    c.fillStyle = 'rgba(230,233,245,.55)'; c.font = '600 11px ui-monospace, Consolas, monospace'; c.textAlign = 'left'; c.textBaseline = 'top'; c.fillText(n === 100 ? '100 ★' : n, x - 27, y - 27);
+    c.fillStyle = pal.text; c.font = '600 11px ui-monospace, Consolas, monospace'; c.textAlign = 'left'; c.textBaseline = 'top'; c.fillText(n === 100 ? '100 \u2605' : n, x - 27, y - 27);
   }
-  c.strokeStyle = 'rgba(255,255,255,.07)'; c.lineWidth = 1;
+  c.strokeStyle = pal.grid; c.lineWidth = 1;
   for (let i = 0; i <= 10; i++) { c.beginPath(); c.moveTo(i * CELL, 0); c.lineTo(i * CELL, 600); c.moveTo(0, i * CELL); c.lineTo(600, i * CELL); c.stroke(); }
-  c.fillStyle = '#0f1322'; c.fillRect(0, 600, 600, 50); c.fillStyle = '#8b93b3'; c.font = '600 11px ui-monospace, Consolas, monospace'; c.textBaseline = 'middle'; c.fillText('START', 540, 625);
-  for (const a in LAD) ladder(pt(+a), pt(LAD[a]));
-  Object.keys(SNK).forEach((a, i) => snake(pt(+a), pt(snakeTarget(+a)), SNAKE_COL[i % SNAKE_COL.length], i));
+  c.fillStyle = pal.bar; c.fillRect(0, 600, 600, 50); c.fillStyle = pal.barText; c.font = '600 11px ui-monospace, Consolas, monospace'; c.textBaseline = 'middle'; c.fillText('START', 540, 625);
+  for (const a in LADDERS) ladder(pt(+a), pt(LADDERS[a]));
+  Object.keys(SNAKES).forEach((a, i) => snake(pt(+a), pt(snakeTarget(+a)), PALETTE.snakes[i % PALETTE.snakes.length], i));
   players.forEach((p, i) => {
-    const [bx, by] = p.ax != null ? [p.ax, p.ay] : pt(p.pos, i), o = p.pos <= 0 ? [0, 0] : OFF[i];
+    const [bx, by] = p.ax != null ? [p.ax, p.ay] : pt(p.pos, i), o = p.pos <= 0 && p.laps === 0 ? [0, 0] : OFF[i];
     const x = bx + o[0], y = by + o[1];
     c.fillStyle = 'rgba(0,0,0,.4)'; c.beginPath(); c.ellipse(x + 2, y + 9, 11, 5, 0, 0, 7); c.fill();
-    c.fillStyle = p.col; c.strokeStyle = '#fff'; c.lineWidth = 2.5; c.beginPath(); c.arc(x, y, 11, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = PALETTE.tokens[i]; c.strokeStyle = '#fff'; c.lineWidth = 2.5; c.beginPath(); c.arc(x, y, 11, 0, 7); c.fill(); c.stroke();
     c.fillStyle = '#fff'; c.beginPath(); c.arc(x - 3, y - 4, 3, 0, 7); c.fill();
   });
 }
 function ladder([x1, y1], [x2, y2]) {
   const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy), ux = dx / L, uy = dy / L, nx = -uy * 8, ny = ux * 8;
   c.lineCap = 'round';
-  c.strokeStyle = '#7c4a1c'; c.lineWidth = 9; c.beginPath(); c.moveTo(x1 + nx, y1 + ny); c.lineTo(x2 + nx, y2 + ny); c.moveTo(x1 - nx, y1 - ny); c.lineTo(x2 - nx, y2 - ny); c.stroke();
-  c.strokeStyle = '#d6a56b'; c.lineWidth = 5; c.beginPath(); c.moveTo(x1 + nx, y1 + ny); c.lineTo(x2 + nx, y2 + ny); c.moveTo(x1 - nx, y1 - ny); c.lineTo(x2 - nx, y2 - ny); c.stroke();
-  c.lineWidth = 4; c.strokeStyle = '#b9824a'; c.beginPath();
+  c.strokeStyle = PALETTE.ladderDark; c.lineWidth = 9; c.beginPath(); c.moveTo(x1 + nx, y1 + ny); c.lineTo(x2 + nx, y2 + ny); c.moveTo(x1 - nx, y1 - ny); c.lineTo(x2 - nx, y2 - ny); c.stroke();
+  c.strokeStyle = PALETTE.ladder; c.lineWidth = 5; c.beginPath(); c.moveTo(x1 + nx, y1 + ny); c.lineTo(x2 + nx, y2 + ny); c.moveTo(x1 - nx, y1 - ny); c.lineTo(x2 - nx, y2 - ny); c.stroke();
+  c.lineWidth = 4; c.strokeStyle = PALETTE.ladderLight; c.beginPath();
   for (let d = 18; d < L - 8; d += 22) { c.moveTo(x1 + ux * d + nx, y1 + uy * d + ny); c.lineTo(x1 + ux * d - nx, y1 + uy * d - ny); }
   c.stroke();
 }
@@ -120,58 +193,276 @@ function snake([hx, hy], [tx, ty], col, k) {
   c.restore();
 }
 
-function newGame() {
-  const m = $('#mode').value, n = +m[0], cpu = m.length > 1;
-  players = Array.from({ length: n }, (_, i) => ({ pos: 0, col: COLORS[i], cpu: cpu && i > 0, name: cpu ? (i === 0 ? 'You' : 'Computer ' + i) : NAMES[i], ax: null, ay: null }));
-  cur = 0; busy = false; over = false; $('#die').textContent = FACES[0];
-  ui_update(); draw(); autoplay();
+/* ---------------- rules ---------------- */
+function relocate(up, from) {
+  const src = up ? LADDERS : SNAKES;
+  const used = new Set();
+  [LADDERS, SNAKES].forEach((map) => { Object.keys(map).forEach((k) => used.add(Number(k))); Object.values(map).forEach((v) => used.add(v)); });
+  used.add(Number(from));
+  const starts = [];
+  for (let s = 8; s <= 92; s++) if (!used.has(s)) starts.push(s);
+  if (!starts.length) return null;
+  const start = starts[Board.rand(starts.length)];
+  const targets = [];
+  if (up) for (let t = start + 7; t <= 100; t++) if (!used.has(t)) targets.push(t);
+  else for (let t = 1; t <= start - 7; t++) if (!used.has(t)) targets.push(t);
+  if (!targets.length) return null;
+  const target = targets[Board.rand(targets.length)];
+  delete src[from];
+  src[start] = target;
+  return { from: start, to: target, up };
 }
-function ui_update(msg) {
-  const p = players[cur];
-  $('#status').textContent = msg || (over ? p.name + ' won!' : (p.cpu ? p.name + ' is rolling…' : (players.length > 1 && !players.some((q) => q.cpu) ? p.name + ', ' : '') + (players.some((q) => q.cpu) ? 'Your turn — ' : '') + 'roll the die'));
-  $('#roll').disabled = busy || over || p.cpu;
-  $('#plist').innerHTML = players.map((q, i) => `<div class="pl ${i === cur && !over ? 'on' : ''}"><i style="background:${q.col}"></i>${q.name}<span>${q.pos === 0 ? 'start' : 'square ' + q.pos}</span></div>`).join('');
-}
-function autoplay() { if (!over && players[cur].cpu) Board.after(Board.pace(1300), () => { if (!over && !Board.paused() && players[cur].cpu) roll(); }); }
-async function roll() {
-  if (busy || over) return; busy = true;
-  const p = players[cur]; ui_update(p.name + ' rolls…');
-  const T = (ms) => Board.sleep(p.cpu ? Board.pace(ms * 1.6) : ms);   /* the computer takes its time */
-  $('#die').classList.add('roll'); Board.sfx('dice');
-  for (let i = 0; i < 9; i++) { $('#die').textContent = FACES[Board.rand(6)]; await T(70); }
-  const r = 1 + Board.rand(6); $('#die').textContent = FACES[r - 1]; $('#die').classList.remove('roll');
-  await T(450);
-  let msg = '';
-  if (p.pos + r > 100) { Board.sfx('error'); msg = p.name + ' rolled ' + r + ' — needs exactly ' + (100 - p.pos) + ' to finish'; }
-  else {
-    ui_update(p.name + ' rolled ' + r);
-    for (let s = 0; s < r; s++) { p.pos++; Board.sfx('step'); draw(); await T(200); }
-    const jump = LAD[p.pos] || snakeTarget(p.pos);
-    if (jump) {
-      const up = !!LAD[p.pos]; msg = up ? 'A ladder! ' + p.name + ' climbs to ' + jump : 'A snake! ' + p.name + ' slides to ' + jump;
-      ui_update(msg); await T(450); Board.sfx(up ? 'ladder' : 'snake');
-      const a = pt(p.pos, cur), b = pt(jump, cur);
-      for (let i = 1; i <= 26; i++) { const t = i / 26; p.ax = a[0] + (b[0] - a[0]) * t; p.ay = a[1] + (b[1] - a[1]) * t; draw(); await T(30); }
-      p.ax = p.ay = null; p.pos = jump; draw();
+function applyRoll(p, a, b) {
+  const twin = mode === 'twin';
+  const dice = twin ? [Number(a) || 1, Number(b) || 1] : [Number(a) || 1];
+  const r = dice.reduce((s, x) => s + x, 0);
+  const res = { player: p, dice, r, path: [], jump: null, relocate: null, win: false, skipped: false, extra: false, ladder: false, snake: false, lap: 0, message: '' };
+  rolls++; p.rolls++;
+  if (p.human) GameUI.unlock('first-roll');
+  const allSix = dice.every((x) => x === 6);
+  p.streak = allSix ? p.streak + 1 : 0;
+  if (p.human && p.streak >= 3) GameUI.unlock('six-streak');
+  if (mode !== 'marathon' && p.pos + r > 100) {
+    res.skipped = true;
+    res.message = p.name + ' rolled ' + r + ' \u2014 needs exactly ' + (100 - p.pos);
+    Board.sfx('error');
+  } else {
+    for (let i = 0; i < r; i++) {
+      p.pos++;
+      if (mode === 'marathon' && p.pos > 100) {
+        p.pos = 1; p.laps++; res.lap++;
+        if (p.laps < 3) addScore(p, 400);
+      }
+      res.path.push({ pos: p.pos, laps: p.laps });
     }
-    if (p.pos === 100) {
-      over = true; busy = false; ui_update(); Board.sfx(players.some((q) => q.cpu) && p.cpu ? 'lose' : 'win');
-      Board.modal(p.cpu ? 'Computer wins' : 'You win!', p.name + ' reached square 100.', [['Play again', newGame], ['Close']]); return;
+    p.lowWater = Math.min(p.lowWater, p.pos);
+    const up = LADDERS[p.pos];
+    if (up != null) {
+      const from = p.pos;
+      p.pos = up; res.ladder = true; p.ladders++; addScore(p, 40);
+      res.jump = { from, to: up, up: true };
+      res.message = 'Ladder! ' + p.name + ' climbs to ' + up;
+      if (mode === 'chaos') res.relocate = { up: true, from };
+      if (p.human) GameUI.unlock('first-ladder');
+    } else {
+      const down = snakeTarget(p.pos);
+      if (down != null) {
+        const from = p.pos;
+        p.pos = down; res.snake = true; p.snakes++;
+        res.jump = { from, to: down, up: false };
+        res.message = 'Snake! ' + p.name + ' slides to ' + down;
+        if (mode === 'chaos') res.relocate = { up: false, from };
+        if (p.human) GameUI.unlock('first-snake');
+      }
     }
+    const total = p.laps * 100 + p.pos;
+    res.win = mode === 'marathon' ? total >= 300 : p.pos === 100;
+    if (res.win) { res.message = p.name + ' reaches the finish!'; p.exactFinish = !res.jump; }
+    else if (!res.message) res.message = p.name + ' moves to ' + p.pos + (mode === 'marathon' ? ' \u00b7 lap ' + Math.min(p.laps + 1, 3) + '/3' : '');
   }
-  if (r !== 6 || p.pos + 0 > 100) cur = (cur + 1) % players.length; else msg = (msg ? msg + ' · ' : '') + 'Rolled a 6 — roll again!';
-  busy = false; ui_update(msg || undefined); draw();
-  if (msg && !players[cur].cpu && !over) $('#status').textContent = msg + ' — ' + (players.some((q) => q.cpu) ? 'your turn' : players[cur].name + ' to roll');
+  res.extra = allSix;
+  return res;
+}
+function finishTurn(res) {
+  const p = res.player;
+  if (res.relocate) relocate(res.relocate.up, res.relocate.from);
+  die = res.r;
+  if (res.win) { conclude(p); return; }
+  if (!res.extra) cur = (cur + 1) % players.length;
+  busy = false;
+  ui_update(res.message);
+  draw();
   autoplay();
 }
+function conclude(p) {
+  if (over) return;
+  over = true; winner = p; busy = false;
+  addScore(p, WIN_BONUS[mode] || 800);
+  const cpu = players.some((q) => q.cpu);
+  const humanWon = !!p.human;
+  const humanScore = (cpu ? players[0] : players.filter((q) => q.human).reduce((best, q) => q.score > best.score ? q : best, players[0])).score;
+  const achievements = [];
+  if (humanWon) {
+    achievements.push(mode + '-clear');
+    if (p.snakes === 0) achievements.push('no-snakes');
+    if (mode !== 'marathon' && p.exactFinish) achievements.push('exact-finish');
+    if (p.lowWater <= 10) achievements.push('comeback');
+  }
+  const records = {};
+  records['best' + MODE_KEY[mode] + 'Score'] = humanScore;
+  const counters = { rolls: rolls, laddersClimbed: players.reduce((s, q) => s + q.ladders, 0), snakesSlid: players.reduce((s, q) => s + q.snakes, 0) };
+  if (humanWon) { counters.wins = 1; counters[mode + 'Wins'] = 1; }
+  const mins = humanWon ? { fewestRolls: p.rolls } : {};
+  const prevBest = Number(GameUI.stats().bestScore) || 0;
+  GameUI.record({ score: humanScore, result: p.name + ' won ' + MODE_NAMES[mode], records, counters, mins, achievements });
+  if (humanScore > prevBest) GameUI.unlock('personal-best');
+  Board.sfx(humanWon ? 'win' : 'lose');
+  ui_update();
+  draw();
+  Board.modal(humanWon ? (cpu ? 'You win!' : p.name + ' wins!') : (cpu ? 'Computer wins' : p.name + ' wins!'),
+    p.name + ' finished ' + MODE_NAMES[mode] + ' in ' + p.rolls + ' rolls \u00b7 ' + humanScore + ' pts.',
+    [['Play again', newGame], ['Close']]);
+}
+function posLabel(p) {
+  return mode === 'marathon' ? 'L' + Math.min(p.laps + 1, 3) + ' \u00b7 ' + (p.pos === 0 ? 'start' : 'square ' + p.pos) : (p.pos === 0 ? 'start' : 'square ' + p.pos);
+}
+function newGame() {
+  genId++;
+  const d = document.getElementById('bk-dlg'); if (d && d.open) d.close();
+  mode = GameUI.getMode();
+  const value = $('#players').value, n = +value[0], cpu = value.length > 1;
+  LADDERS = Object.assign({}, LAD0); SNAKES = Object.assign({}, SNK0);
+  const start = mode === 'quick' ? 24 : 0;
+  players = Array.from({ length: n }, (_, i) => ({
+    pos: start, laps: 0, cpu: cpu && i > 0, human: !cpu || i === 0,
+    name: cpu ? (i === 0 ? 'You' : 'Computer ' + i) : NAMES[i],
+    score: 0, ax: null, ay: null, rolls: 0, streak: 0, snakes: 0, ladders: 0,
+    lowWater: start === 0 ? 101 : start,
+  }));
+  cur = 0; busy = false; over = false; winner = null; rolls = 0; die = 1;
+  setDie([1]); ui_update(); draw(); autoplay();
+}
+function setDie(dice) {
+  const el = $('#die');
+  el.classList.toggle('pair', dice.length > 1);
+  el.textContent = dice.map((v) => FACES[v - 1]).join(dice.length > 1 ? ' ' : '');
+}
+function ui_update(msg) {
+  if (!players) return;
+  const p = players[cur];
+  const allHuman = !players.some((q) => q.cpu);
+  $('#status').textContent = msg || (over ? (winner ? winner.name + ' wins!' : '') : (p.cpu ? p.name + ' is rolling\u2026' : (allHuman ? p.name + ', ' : 'Your turn \u2014 ') + 'roll the die'));
+  $('#roll').disabled = busy || over || p.cpu || menuPaused;
+  $('#plist').innerHTML = players.map((q, i) => `<div class="pl ${i === cur && !over ? 'on' : ''}"><i style="background:${PALETTE.tokens[i]}"></i>${q.name}<span>${posLabel(q)} \u00b7 ${q.score} pts</span></div>`).join('');
+}
+function autoplay() {
+  if (over || menuPaused || !players) return;
+  const p = players[cur];
+  if (!p || !p.cpu) return;
+  const g = genId;
+  Board.after(Board.pace(1200), () => { if (g === genId && !over && !menuPaused && !busy && players[cur].cpu) roll(); });
+}
+async function animate(res, g) {
+  const p = res.player, i = players.indexOf(p);
+  const T = (ms) => Board.sleep(p.cpu ? Board.pace(ms * 1.6) : ms);
+  for (const step of res.path) {
+    if (g !== genId) return;
+    const [x, y] = pt(step.pos, i); p.ax = x; p.ay = y; Board.sfx('step'); draw(); await T(150);
+  }
+  if (res.jump) {
+    await T(320); if (g !== genId) return;
+    Board.sfx(res.jump.up ? 'ladder' : 'snake');
+    const a = pt(res.jump.from, i), b = pt(res.jump.to, i);
+    for (let k = 1; k <= 24; k++) { const t = k / 24; p.ax = a[0] + (b[0] - a[0]) * t; p.ay = a[1] + (b[1] - a[1]) * t; draw(); await T(28); }
+  }
+  p.ax = p.ay = null; draw();
+}
+async function roll() {
+  if (busy || over || menuPaused || !players) return;
+  const p = players[cur], g = genId;
+  busy = true; ui_update(p.name + ' rolls\u2026');
+  const T = (ms) => Board.sleep(p.cpu ? Board.pace(ms * 1.6) : ms);
+  const el = $('#die'); el.classList.add('roll'); Board.sfx('dice');
+  for (let i = 0; i < 9; i++) {
+    const f = 1 + Board.rand(6);
+    setDie(mode === 'twin' ? [f, 1 + Board.rand(6)] : [f]);
+    await T(70);
+    if (g !== genId) return;
+  }
+  const a = 1 + Board.rand(6), b = mode === 'twin' ? 1 + Board.rand(6) : 0;
+  setDie(b ? [a, b] : [a]); el.classList.remove('roll');
+  await T(420); if (g !== genId) return;
+  const res = applyRoll(p, a, b);
+  await animate(res, g);
+  if (g !== genId) return;
+  finishTurn(res);
+}
 
-$('#roll').onclick = roll; $('#new').onclick = newGame; $('#mode').onchange = newGame;
-document.addEventListener('keydown', (e) => {
-  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey) return;
-  const k = e.key.toLowerCase();
-  if (k === ' ' || k === 'enter' || k === 'r') { e.preventDefault(); if (!players[cur].cpu) roll(); } else if (k === 'n') newGame();
+/* ---------------- shared menu contract ---------------- */
+const GameUI = Board.ui({
+  id: 'snakes-ladders', title: 'Snakes & Ladders', subtitle: 'Five ways to race the board.', accent: '#22d3ee',
+  modes: MODES, achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Roll the die and move along the board. A 6 earns another turn.' },
+    { text: 'Ladders lift you upward; snakes slide you down.' },
+    { text: 'Classic and most modes need an exact roll to land on 100.' },
+    { text: 'Twin Dice rolls two dice; any double rolls again.' },
+  ] },
+  hooks: {
+    applyMode: (next) => {
+      mode = MODES.some((m) => m.id === next) ? next : 'classic';
+      if (players) newGame();
+    },
+    applyCosmetic,
+    onStart: () => { menuPaused = false; ui_update(); autoplay(); },
+  },
 });
+
+$('#roll').onclick = roll; $('#new').onclick = newGame; $('#players').onchange = newGame;
+document.addEventListener('keydown', (e) => {
+  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || menuPaused) return;
+  const k = e.key.toLowerCase();
+  if (k === ' ' || k === 'enter' || k === 'r') { e.preventDefault(); if (players && !players[cur].cpu) roll(); }
+  else if (k === 'n') newGame();
+});
+window.ApexGameMenuActions = {
+  play: function () { menuPaused = false; ui_update(); autoplay(); },
+  pause: function (value) { menuPaused = !!value; ui_update(); if (!menuPaused) autoplay(); },
+  resume: function () { menuPaused = false; ui_update(); autoplay(); },
+  restart: function () { menuPaused = false; newGame(); }
+};
+
 newGame();
+
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  window.SnakesTest = {
+    state: () => ({
+      mode, cur, over, busy, menuPaused, die, difficulty, wins: Number(GameUI.stats().wins) || 0,
+      winners: winner ? winner.name : null,
+      players: players.map((p) => ({ pos: p.pos, laps: p.laps, score: p.score, rolls: p.rolls, cpu: p.cpu, human: p.human, snakes: p.snakes, ladders: p.ladders, lowWater: p.lowWater })),
+      ladders: Object.keys(LADDERS).length, snakes: Object.keys(SNAKES).length,
+      best: Number(GameUI.stats().bestScore) || 0,
+    }),
+    modes: () => MODES.map((m) => m.id),
+    setMode: (id) => GameUI.setMode(id),
+    getMode: () => GameUI.getMode(),
+    restart: () => { newGame(); return true; },
+    setPlayers: (value) => {
+      const sel = $('#players');
+      if (!Array.from(sel.options).some((o) => o.value === value)) return false;
+      sel.value = value; newGame(); return true;
+    },
+    setPos: (i, pos, laps) => {
+      const p = players[i]; if (!p) return false;
+      p.pos = Math.max(0, Math.min(100, Number(pos))); p.laps = Math.max(0, Math.min(2, Number(laps) || 0));
+      p.ax = p.ay = null; draw(); ui_update(); return { pos: p.pos, laps: p.laps };
+    },
+    setTurn: (i) => { if (!players[i]) return false; cur = i; ui_update(); return true; },
+    board: () => ({ ladders: Object.assign({}, LADDERS), snakes: Object.assign({}, SNAKES) }),
+    turn: (a, b) => {
+      if (over || !players) return null;
+      const p = players[cur];
+      const res = applyRoll(p, Number(a), b == null ? 0 : Number(b));
+      finishTurn(res);
+      return { r: res.r, dice: res.dice, pos: p.pos, laps: p.laps, score: p.score, cur, over, win: res.win, skipped: res.skipped, extra: res.extra, ladder: res.ladder, snake: res.snake, path: res.path.length, message: res.message };
+    },
+    finish: (i) => { const p = players[i]; if (!p) return false; conclude(p); return true; },
+    award: (n) => { addScore(players[0], Number(n) || 0); ui_update(); return players[0].score; },
+    roll: () => roll(),
+    menuPaused: (value) => { menuPaused = !!value; ui_update(); return menuPaused; },
+    start: () => { menuPaused = false; ui_update(); autoplay(); },
+    setDie: (a, b) => { setDie(b ? [a, b] : [a]); },
+    setDifficulty: (d) => Board.setDifficulty(d),
+    level: () => Board.level(),
+    colors: () => ({ tokens: PALETTE.tokens.slice(), board: Object.assign({}, PALETTE.board), snakes: PALETTE.snakes.slice(), theme: document.body.style.background || 'auto' }),
+    cosmetic: (slot, id) => { applyCosmetic(slot, id); return window.SnakesTest.colors(); },
+    cosmeticList: () => (window.Meta && Meta.getCosmetics ? Meta.getCosmetics('snakes-ladders') : []).map((item) => ({ id: item.id, slot: item.slot })),
+    achievements: () => (Save.load('snakes-ladders').achievements || []).slice(),
+    stats: () => Save.load('snakes-ladders').stats || {},
+    modalOpen: () => { const d = document.getElementById('bk-dlg'); return !!(d && d.open); },
+    closeModal: () => { const d = document.getElementById('bk-dlg'); if (d && d.open) d.close(); },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

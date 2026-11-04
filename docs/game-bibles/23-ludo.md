@@ -2,55 +2,87 @@
 
 ## Pitch
 
-Classic 2 to 4 player race around the cross board. Roll a 6 to deploy tokens, capture rivals, and bring all 4 pieces home. Keep the source game’s recognizable rhythm and make each run readable, quick to restart, and rewarding to master.
+Five races around the same cross board. Classic keeps four tokens and full capture rules; Sprint shortens the race to two tokens; Hunter ignores star safety and pays more for captures; Steady Pace removes the six bonus but scales every point; Duel is a 1v1 against the hard computer at 1.5×. Twelve achievements and 16 cosmetics extend the race without changing its clear turn rhythm.
 
 ## Art direction
 
-Preserve the current artwork, silhouettes, animation, and sound on the canonical page. Use the game’s existing #EF4444 accent as a guide for new menu and reward states. Keep gameplay objects distinct from the background; never rely on colour alone for hazards or legal moves. Lite and reduced-motion settings must reduce effects without removing gameplay feedback.
+Keep the 600×600 cross board: four coloured yards, a fourteen-cell arm per seat, star safe cells, numbered tokens, and a white ring on every piece. Legal picks pulse with the equipped glow, the active seat is framed in the sidebar, and captures and home arrivals use distinct movement cues. Use the game's `#22d3ee` cyan accent for live status, while the front menu keeps its `#f472b6` table identity. Token and board cosmetics must keep all four seats distinguishable; Lite and reduced-motion settings preserve the glow's meaning while reducing pulse animation.
 
 ## Modes and match structure
 
-1. **Classic:** preserve the canonical rules and scoring.
-2. **Daily challenge:** a deterministic seeded puzzle or short target run with a saved local best.
+1. **Classic:** four tokens each. Roll a 6 to leave the yard, capture rivals outside safe cells, and bring all four tokens home. Win bonus 1000.
+2. **Sprint:** two tokens each; the first pair home wins. Win bonus 600.
+3. **Hunter:** only the coloured start cells remain safe — star cells no longer block captures — and each capture pays 150 instead of 120. First three tokens home wins. Win bonus 900.
+4. **Steady Pace:** a 6 no longer grants another roll. Every gain is multiplied by 1.2×. Win bonus 1100.
+5. **Duel:** a 1v1 against the hard computer at 1.5× score. Win bonus 1400. Locked behind a Classic win, with the menu hint `Win a Classic game to unlock`.
 
-A mode change must reset only the state named by that mode. Pause and resume preserve the complete in-progress state. Daily seeds use the local date and produce the same starting state for every retry that day.
+Modes rebuild the token count, home target, seats, and board state. A 6, a capture, or a token reaching home earns another roll except in Steady Pace. Safe cells are stars in every mode except Hunter, where only the coloured start squares are safe. Up to three computers can join, or zero for four local players. Pause suspends CPU turns and preserves the current roll, selection, and token positions.
 
 ## Settings and difficulty
 
 | Setting | Behavior |
 | --- | --- |
-| Easy | 0.8× simulation speed or a wider timing/mistake allowance; 1.0× score. |
-| Normal | Preserve the source page’s baseline rules at 1.0× speed and score. |
-| Hard | 1.35× simulation speed or a stricter opponent/puzzle target; 1.25× score. |
-| Performance | Respect Lite, Standard, and Ultra budgets; preserve essential playfield feedback. |
-| Reduced motion | Remove decorative movement, shake, and nonessential flashes; preserve input and game-state motion. |
-| Audio and palette | Inherit global settings, allow per-game overrides, and keep objects legible in colour-blind palettes. |
+| Easy | Random CPU token choice; 1.0× score. |
+| Normal | Weighted CPU that values home, captures, and exits; 1.0× score. |
+| Hard | Stronger weighting for home, captures, exits, and safe landings; 1.0× score. |
+| Duel | Forces the hard CPU in a 1v1; 1.5× score. |
+| Performance | Respect Lite, Standard, and Ultra budgets; the canvas redraws on turn changes and keeps simple vector art. |
+| Reduced motion | Reduce the legal-pick pulse and token travel decoration; keep the glow, roll, and capture feedback visible. |
+| Audio and palette | Inherit global settings; all cosmetic palettes keep four seats, safe cells, and numbered tokens legible. |
+
+## Scoring
+
+Leaving the yard pays 20, a capture pays 120 (150 in Hunter), and a token reaching home pays 250. Win bonuses are **Classic 1000, Sprint 600, Hunter 900, Steady Pace 1100, and Duel 1400** before multipliers. Steady Pace multiplies every gain by 1.2× and Duel by 1.5×, so Steady Pace pays 300 for a home arrival and 1320 for the win, while a Duel win pays 2100.
+
+## Records
+
+`GameUI.record` writes to save id `ludo`:
+
+- `bestClassicScore, bestSprintScore, bestHunterScore, bestSteadyScore, bestDuelScore`
+- `captures, tokensHome, wins, classicWins, sprintWins, hunterWins, steadyWins, duelWins`
+- `fewestRolls` (min-merged across wins), plus host `plays, bestScore, secondsPlayed, lastResult, lastMode`
+
+Personal Best unlocks on the first record-breaking finish. Flawless Finish requires a win with no token lost, and Sharpshooter requires three captures in the winning game.
 
 ## Cosmetics
 
-Plan 3 cosmetics across palette, board/craft/object skin, effects, and scene/theme slots as applicable to this game. Keep all interactive objects distinguishable and do not change game physics. Purchases use the shared Sparks registry, charge once, and persist ownership and equip state after reload.
+16 cosmetics are registered across four slots:
+
+- **Token sets (5):** Classic (default), Pastel, Neon, Jewel, Mono.
+- **Boards (4):** Midnight (default), Ivory, Cedar, Graphite.
+- **Pick glows (4):** Gold (default), Cyan, Rose, White.
+- **Themes (3):** Game Night, Casino Floor, Garden Table.
+
+Token sets repaint every seat; boards repaint the background, frame, yards, track, and stars; glows tint the legal-pick ring; themes replace the page backdrop. Cosmetics never alter movement or capture rules.
 
 ## Achievements
 
 | Achievement | Trigger | Rarity |
 | --- | --- | --- |
-| First Run | complete one session | Common |
-| Steady Hand | reach the first score milestone | Common |
-| Quick Clear | finish within the target time | Common |
-| Personal Best | set a new personal best | Rare |
-| Daily Player | complete a seeded daily run | Rare |
-
-Unlock each once under the host game id and send one achievement event and one toast. Score targets must respect the selected mode’s documented multiplier.
+| Opening Roll | roll the die | Common |
+| Bump | send a rival token back to its yard | Common |
+| Home Safe | bring a token all the way home | Common |
+| Ludo Champion | win a Classic game | Common |
+| Quick Pair | win a Sprint game | Common |
+| No Mercy | win a Hunter game | Rare |
+| Slow And Sure | win a Steady Pace game | Rare |
+| Head To Head | win a Duel against the hard computer | Legendary |
+| Triple Six | roll three sixes in a row | Rare |
+| Flawless Finish | win without losing a token | Epic |
+| Sharpshooter | capture three tokens in one game | Epic |
+| Personal Best | set a new best score | Rare |
 
 ## Tutorial and controls
 
-Use a short illustrated tutorial. Teach the primary objective, legal input, one recovery or strategy tip, and the end condition. Controls shown in the menu and during play: Space or R to roll, then press 1-4 or click token to move.
-
-Support keyboard and touch. Board games must offer clear selected/active state and tap targets; action games must keep virtual controls away from hazards and the theatre launch controls. Shared menus must support gamepad focus and activation.
+The menu carries a four-step interactive tutorial: roll a 6 to leave the yard, earn extra rolls from 6s, captures, and home arrivals, capture rivals outside safe cells, then reach the mode's home target. Controls: Space, Enter, or R rolls; keys 1–4 or a click select a token when several moves are legal; N starts a new game. Local players share the device.
 
 ## Current baseline and scope
 
-Canonical page: `23-ludo/index.html`. Current family: Board Kit (No). Catalog description: “Classic 2 to 4 player race around the cross board. Roll a 6 to deploy tokens, capture rivals, and bring all 4 pieces home.” Controls: Space or R to roll, then press 1-4 or click token to move. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `23-ludo/index.html` (24.6 KB); save id `ludo`. The page is a single 600×600 canvas with a 52-cell track, four home columns, star safe cells, five modes, one to four seats, three CPU skill levels, a 12-achievement ladder, and 16 cosmetics across four slots. The front menu exposes Play, Modes, Customize, Options, More, and Exit, and hides its toolbar during live play.
+
+The `?test=1` gate exposes `window.LudoTest`: `state`, `modes`, `setMode`, `getMode`, `restart`, `setOpponents`, `setTurn`, `setPositions`, `setCounters`, `turn`, `finish`, `menuPaused`, `start`, `setDifficulty`, `level`, `colors`, `cosmetic`, `cosmeticList`, `achievements`, `stats`, `modalOpen`, `closeModal`.
+
+Regression coverage: `scripts/test-game-23.mjs` (`npm run test:game-23`) verifies the Duel lock and unlock, yard rolls, home arrivals, captures, star safety in Classic versus Hunter, the Sprint two-token target, Hunter and Duel payouts, Steady Pace's missing extra roll and 1.2× scoring, all 12 achievement paths, 16 cosmetics, and the chrome-free play view.
 
 ## Menu Identity Card
 
@@ -61,7 +93,9 @@ Canonical page: `23-ludo/index.html`. Current family: Board Kit (No). Catalog de
 - **Frame and buttons:** Per-title `dice-frame` frame and `dice-banner` button identity, using the shared table treatment.
 - **Scene recipe:** Original procedural dice mark with an accent-lit background, restrained depth bands, and a static Lite/reduced-motion frame.
 - **Music and UI sounds:** Per-title procedural motif; shared tick, select, and back cues.
-- **Menu items:** Play, Options, About, Exit. No proposed modes or cosmetics are shown as available.
+- **Menu items:** Play, Modes, Customize, Options, More, Exit.
+- **Modes shown:** Classic, Sprint, Hunter, Steady Pace, Duel (locked until a Classic win).
 - **Settings:** Shared audio, display, controls, accessibility, and difficulty options.
-- **Controls:** Choose a piece after rolling; local players share the device.
+- **Controls:** Roll, then press 1–4 or click a token; local players share the device.
+- **Cosmetics:** 16 items across token sets, boards, pick glows, and themes.
 - **Lite fallback:** Static dice composition with the title accent and scene silhouette.

@@ -2,62 +2,92 @@
 
 ## Pitch
 
-Full chess engine with legal move highlights, checkmate, stalemate, castling, en passant, promotion, and 3 AI difficulty levels. Keep the source game’s recognizable rhythm and make each run readable, quick to restart, and rewarding to master.
+A complete chess rules engine with legal-move highlights, checkmate, stalemate, castling, en passant, promotion, and draw detection. Five modes stretch the same readable board: Classic against three engine levels, a five-minute Blitz, a mating Endgame Lab, a five-board Puzzle Sprint, and the deeper Grandmaster. Persistent records, 13 achievements, and 16 cosmetics reward play without changing the rules.
 
 ## Art direction
 
-Preserve the current artwork, silhouettes, animation, and sound on the canonical page. Use the game’s existing #E2E8F0 accent as a guide for new menu and reward states. Keep gameplay objects distinct from the background; never rely on colour alone for hazards or legal moves. Lite and reduced-motion settings must reduce effects without removing gameplay feedback.
+Keep the canonical ivory-and-ebony glyphs on a warm walnut board: light `#e9dcc3`, dark `#a9805a`, and a `#2a2f45` frame. Legal targets use green dots, selection uses a cyan inset ring, the last move uses an amber wash, and check uses a red radial halo, so no state relies on colour alone. The game's routine accent is `#f59e0b` while the front menu keeps its `#d6b98c` table identity. Lite and reduced-motion modes remove decorative glow and transition motion without removing move, check, or capture feedback. Cosmetic piece and board palettes must keep both sides distinguishable.
 
 ## Modes and match structure
 
-1. **Classic:** preserve the canonical rules and scoring.
-2. **Campaign:** a sequence of short, authored stages with checkpoints.
-3. **Daily challenge:** fixed local-day seed, one scored attempt, replay available without overwriting the first result.
-4. **Master challenge:** harder rule preset using the same core mechanic.
+1. **Classic:** a full game against the computer at Easy, Medium, or Hard depth, or two players on one board. Checkmate pays 800 plus move bonuses.
+2. **Blitz:** five minutes per side. The clock starts on each side's first move; a flag ends the game immediately. A win pays 1000 plus the winner's remaining seconds.
+3. **Endgame Lab:** king and queen versus king from a fixed position. Mate within 30 moves; the payout is 600 plus 20 per unused move. An inside-20 mate unlocks Endgame Technique.
+4. **Puzzle Sprint:** five mate-in-one boards — Back rank, Corner net, Royal escort, Smothered, and Rank sweep. Each solve pays 300 plus the check bonus, a miss is counted, and a clean sweep adds 300 and unlocks First Try.
+5. **Grandmaster:** the same board against a depth-4 engine with no move noise, paying 1.5× score. Locked behind a Classic win, with the menu hint `Win a Classic game to unlock`.
 
-A mode change must reset only the state named by that mode. Pause and resume preserve the complete in-progress state. Daily seeds use the local date and produce the same starting state for every retry that day.
+Every mode resets score, clocks, puzzles, and move history through `newGame`. Pause keeps the in-progress position and clock; the Blitz clock only runs while the board is actively playing. Puzzles and the Endgame Lab always play White and disable side selection and undo.
 
 ## Settings and difficulty
 
 | Setting | Behavior |
 | --- | --- |
-| Easy | 0.8× simulation speed or a wider timing/mistake allowance; 1.0× score. |
-| Normal | Preserve the source page’s baseline rules at 1.0× speed and score. |
-| Hard | 1.35× simulation speed or a stricter opponent/puzzle target; 1.25× score. |
-| Performance | Respect Lite, Standard, and Ultra budgets; preserve essential playfield feedback. |
-| Reduced motion | Remove decorative movement, shake, and nonessential flashes; preserve input and game-state motion. |
-| Audio and palette | Inherit global settings, allow per-game overrides, and keep objects legible in colour-blind palettes. |
+| Easy | Depth-1 engine with wide move noise; 1.0× score. |
+| Medium | Depth-2 engine with light move noise; 1.0× score. |
+| Hard | Depth-3 engine with no move noise; 1.0× score. |
+| Grandmaster | Depth-4 engine, no noise, 1.5× score; unlocked by a Classic win. |
+| Performance | Respect Lite, Standard, and Ultra budgets; the DOM board repaints only on state change. |
+| Reduced motion | Remove decorative transitions; keep selection, legal-target, check, and capture feedback. |
+| Audio and palette | Inherit global settings; cosmetic piece and board palettes keep both sides legible. |
+
+## Scoring
+
+Move bonuses: captures pay the piece value ÷ 10 (pawn 10 through queen 90), check +10, castling +20, and promotion +50. Draws pay 100. Completion bonuses are **Classic 800, Blitz 1000 + remaining seconds, Endgame Lab 600 + 20 per unused move, Puzzle Sprint 300 per solve + 300 for a perfect sweep, and Grandmaster 1500**. The Grandmaster multiplier scales every gain by 1.5×, so the standard mate-in-one test finishes at 810 in Classic and 2265 in Grandmaster.
+
+## Records
+
+`GameUI.record` writes to save id `chess`:
+
+- `plays, bestScore, secondsPlayed, lastResult, lastMode`
+- `bestClassicScore, bestBlitzScore, bestEndgameLabScore, bestPuzzleSprintScore, bestGrandmasterScore`
+- `wins, classicWins, blitzWins, endgameWins, grandmasterWins, puzzlesSolved, fastestMate`
+
+`fastestMate` is min-merged across wins, and `bestScore` is also mirrored by the host bridge. Personal Best unlocks on the first record-breaking finish.
 
 ## Cosmetics
 
-Plan 15 cosmetics across palette, board/craft/object skin, effects, and scene/theme slots as applicable to this game. Keep all interactive objects distinguishable and do not change game physics. Purchases use the shared Sparks registry, charge once, and persist ownership and equip state after reload.
+16 cosmetics are registered across four slots:
+
+- **Piece skins (5):** `pieces-ivory` (default), `pieces-midnight`, `pieces-jade`, `pieces-rose`, `pieces-neon`.
+- **Boards (4):** `board-walnut` (default), `board-slate`, `board-emerald`, `board-royal`.
+- **Last-move glows (4):** `glow-amber` (default), `glow-cyan`, `glow-rose`, `glow-gold`.
+- **Themes (3):** `theme-classic`, `theme-royal`, `theme-coffee`.
+
+Piece skins repaint both sides; boards repaint light, dark, and frame tiles; glows tint the last-move wash; themes replace the page backdrop. Cosmetics never change legal moves or engine strength.
 
 ## Achievements
 
 | Achievement | Trigger | Rarity |
 | --- | --- | --- |
-| First Run | complete one session | Common |
-| Steady Hand | reach the first score milestone | Common |
-| Quick Clear | finish within the target time | Common |
-| Personal Best | set a new personal best | Rare |
-| Daily Player | complete a seeded daily run | Rare |
-| No Mistakes | finish without a mistake or lost life | Rare |
-| Long Run | reach the long-run milestone | Rare |
-| Perfect Round | complete a perfect round | Epic |
-| Mastery | clear the highest standard challenge | Epic |
-| Season Ace | meet the local season target | Legendary |
+| Opening Move | make your first move | Common |
+| First Blood | checkmate the computer | Common |
+| Safe King | castle in a game | Common |
+| Crowned | promote a pawn | Common |
+| Sneaky Capture | capture en passant | Rare |
+| Quick Study | win Classic in 20 moves or fewer | Rare |
+| Beat The Clock | win a Blitz game | Rare |
+| Time To Spare | win Blitz with two minutes left | Epic |
+| Puzzle Master | solve all five puzzle boards | Rare |
+| First Try | solve the sprint with no misses | Epic |
+| Endgame Technique | mate the lab inside 20 moves | Epic |
+| Grandmaster Slayer | beat the Grandmaster engine | Legendary |
+| Personal Best | set a new best score | Rare |
 
-Unlock each once under the host game id and send one achievement event and one toast. Score targets must respect the selected mode’s documented multiplier.
+Unlock each once under the `chess` id and send one achievement event and toast.
 
 ## Tutorial and controls
 
-Use a replayable interactive tutorial. Teach the primary objective, legal input, one recovery or strategy tip, and the end condition. Controls shown in the menu and during play: Click piece, then click highlighted square. U undo, F flip, T hint.
+The menu carries a four-step interactive tutorial: select a piece and click a highlighted square, castle and promote normally, watch the Blitz clock, then find mate in one across the puzzle sprint. Controls: click or tap to select and move, U undo, F flip, T hint, N new game, H/M help or mute.
 
-Support keyboard and touch. Board games must offer clear selected/active state and tap targets; action games must keep virtual controls away from hazards and the theatre launch controls. Shared menus must support gamepad focus and activation.
+Support keyboard and touch. The board keeps large tap targets, a visible selected square, and a legal-target overlay. The shared menu supports gamepad focus and activation.
 
 ## Current baseline and scope
 
-Canonical page: `21-chess/index.html`. Current family: Board Kit (No). Catalog description: “Full chess engine with legal move highlights, checkmate, stalemate, castling, en passant, promotion, and 3 AI difficulty levels.” Controls: Click piece, then click highlighted square. U undo, F flip, T hint. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `21-chess/index.html` (38.4 KB); save id `chess`. The page is a single 8×8 DOM grid with a full rules engine, three search levels, a depth-4 Grandmaster, five modes, five authored mate-in-one puzzles, a 13-achievement ladder, and 16 cosmetic catalog items across four slots. The front menu exposes Play, Modes, Customize, Options, More, and Exit, and hides its toolbar during live play.
+
+The `?test=1` gate exposes `window.ChessTest`: `state`, `modes`, `setMode`, `getMode`, `restart`, `setSide`, `setLevel`, `setDifficulty`, `level`, `award`, `legal`, `play`, `fen`, `setFen`, `grid`, `moves`, `clock`, `tick`, `flag`, `solvePuzzle`, `failPuzzle`, `setPuzzle`, `advancePuzzle`, `puzzleNames`, `puzzleFens`, `undo`, `hint`, `menuPaused`, `start`, `colors`, `cosmetic`, `cosmeticList`, `achievements`, `stats`, `modalOpen`, `closeModal`, `isHumanTurn`.
+
+Regression coverage: `scripts/test-game-21.mjs` (`npm run test:game-21`) verifies the Grandmaster lock, Classic mate and records, all five puzzle boards with a miss, the Endgame Lab inside-20 payout, Blitz timeout and full-clock win, the Grandmaster 1.5× payout and unlock, all 13 achievement paths reached by the run, the 16 cosmetics and their colour mapping, aggregated stats, and the chrome-free play view.
 
 ## Menu Identity Card
 
@@ -68,7 +98,9 @@ Canonical page: `21-chess/index.html`. Current family: Board Kit (No). Catalog d
 - **Frame and buttons:** Per-title `chess-frame` frame and `chess-banner` button identity, using the shared table treatment.
 - **Scene recipe:** Original procedural chess mark with an accent-lit background, restrained depth bands, and a static Lite/reduced-motion frame.
 - **Music and UI sounds:** Per-title procedural motif; shared tick, select, and back cues.
-- **Menu items:** Play, Options, About, Exit. No proposed modes or cosmetics are shown as available.
+- **Menu items:** Play, Modes, Customize, Options, More, Exit.
+- **Modes shown:** Classic, Blitz, Endgame Lab, Puzzle Sprint, Grandmaster (locked until a Classic win).
 - **Settings:** Shared audio, display, controls, accessibility, and difficulty options.
-- **Controls:** Click or tap a piece, then choose a legal square.
+- **Controls:** Click or tap a piece, then choose a legal square; U undo, F flip, T hint.
+- **Cosmetics:** 16 items across piece skins, boards, last-move glows, and themes.
 - **Lite fallback:** Static chess composition with the title accent and scene silhouette.

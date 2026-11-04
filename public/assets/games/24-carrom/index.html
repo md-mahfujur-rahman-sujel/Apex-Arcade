@@ -28,7 +28,7 @@
 <script>
 const ui = Board.shell({
   id: 'carrom', cpu: true, title: 'Carrom', subtitle: 'Flick the striker and pocket your coins before your rival',
-  rules: 'You play the light coins from the bottom edge; your rival plays the dark coins from the top. Slide the striker along your baseline, then press on the striker and drag backwards like a slingshot — the longer the pull, the harder the flick — and release. Pocket one of your own coins to shoot again. Pocketing only rival coins hands them to your rival and ends your turn. The red queen is worth taking, but you must "cover" her by pocketing one of your own coins in the same shot (or she returns to the centre). Pocketing your striker is a foul: one of your coins comes back to the centre and the turn passes. Clear all nine of your coins and the queen to win.',
+  rules: 'You play the light coins from the bottom edge; your rival plays the dark coins from the top. Slide the striker along your baseline, then press on the striker and drag backwards like a slingshot — the longer the pull, the harder the flick — and release. Pocket one of your own coins to shoot again. Pocketing only rival coins hands them to your rival and ends your turn. The red queen must be "covered" by pocketing one of your own coins in the same shot (or she returns to the centre). Pocketing your striker is a foul: one of your coins comes back to the centre and the turn passes. Classic clears nine coins and the covered queen. Quick Five races five coins with no queen. Queen Rush ends the moment the queen is legally covered. Sudden Death gives each side three coins and pays 1.2×. Grandmaster is the full board against the hard computer at 1.5×.',
   controls: [['Drag back from striker', 'Aim and set power, release to flick'], ['Click baseline / ← →', 'Slide the striker'], ['Space', 'Flick straight ahead at the last power'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
 });
 ui.main.innerHTML = `
@@ -38,7 +38,7 @@ ui.main.innerHTML = `
     <div class="bk-status" id="st"></div>
     <label class="capt">Striker position<input type="range" id="pos" min="0" max="100" value="50"></label>
     <div class="bk-row">
-      <label>Play <select class="bk-select" id="mode"><option value="a">You first vs computer</option><option value="b">Computer first</option><option value="two">Two players</option></select></label>
+      <label>Play <select class="bk-select" id="side"><option value="a">You first vs computer</option><option value="b">Computer first</option><option value="two">Two players</option></select></label>
       <label>Level <select class="bk-select" id="lvl"><option value="0">Easy</option><option value="1" selected>Medium</option><option value="2">Hard</option></select></label>
     </div>
     <div class="bk-row"><button class="bk-btn bk-primary" id="new">New game</button></div>
@@ -48,7 +48,7 @@ ui.main.innerHTML = `
 const $ = (s) => ui.main.querySelector(s);
 const cv = $('#cv'), cx = cv.getContext('2d');
 
-/* ---------- physics (shared by the live game and the computer's what-if simulations) ---------- */
+/* ---------- physics ---------- */
 const S = 640, CR = 11, SR = 15, PR = 36, FR = 0.9955, EW = 0.82, EC = 0.94, MIN2 = 0.0009;
 const POCK = [[0, 0], [S, 0], [0, S], [S, S]];
 const mk = (x, y, r, m, t) => ({ x, y, vx: 0, vy: 0, r, m, t, a: 1 });
@@ -80,53 +80,185 @@ function step(W, ev) {
 const moving = (W) => W.d.some((d) => d.a && (d.vx || d.vy));
 const clone = (W) => ({ d: W.d.map((d) => ({ ...d })) });
 function fresh() {
-  const D = [mk(S / 2, S / 2, CR, 1, 'q')];
-  for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; D.push(mk(S / 2 + Math.cos(a) * 22.6, S / 2 + Math.sin(a) * 22.6, CR, 1, k % 2 ? 'b' : 'w')); }
-  for (let k = 0; k < 12; k++) { const a = k * Math.PI / 6, r = k % 2 ? 38.9 : 45.2; D.push(mk(S / 2 + Math.cos(a) * r, S / 2 + Math.sin(a) * r, CR, 1, (k >> 1) % 2 ? (k % 2 ? 'w' : 'b') : (k % 2 ? 'b' : 'w'))); }
+  const cfg = CFG[mode], D = [];
+  if (cfg.queen) D.push(mk(S / 2, S / 2, CR, 1, 'q'));
+  const slots = [];
+  for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; slots.push([Math.cos(a) * 22.6, Math.sin(a) * 22.6]); }
+  for (let k = 0; k < 12; k++) { const a = k * Math.PI / 6, r = k % 2 ? 38.9 : 45.2; slots.push([Math.cos(a) * r, Math.sin(a) * r]); }
+  slots.slice(0, cfg.own + cfg.opp).forEach(([dx, dy], k) => D.push(mk(S / 2 + dx, S / 2 + dy, CR, 1, k % 2 ? 'b' : 'w')));
   return { d: D };
 }
 
+/* ---------- modes, records, cosmetics ---------- */
+const MODE_NAMES = { classic: 'Classic', quick: 'Quick Five', queen: 'Queen Rush', sudden: 'Sudden Death', grandmaster: 'Grandmaster' };
+const MODE_KEY = { classic: 'Classic', quick: 'Quick', queen: 'Queen', sudden: 'Sudden', grandmaster: 'Grandmaster' };
+const CFG = {
+  classic: { own: 9, opp: 9, queen: true, mult: 1, bonus: 1000 },
+  quick: { own: 5, opp: 5, queen: false, mult: 1, bonus: 600 },
+  queen: { own: 9, opp: 9, queen: true, mult: 1.1, bonus: 800, objective: 'queen' },
+  sudden: { own: 3, opp: 3, queen: false, mult: 1.2, bonus: 700 },
+  grandmaster: { own: 9, opp: 9, queen: true, mult: 1.5, bonus: 1400 },
+};
+const MODES = [
+  { id: 'classic', name: 'Classic', blurb: 'Nine coins and the covered queen.' },
+  { id: 'quick', name: 'Quick Five', blurb: 'Five coins each and no queen. A short duel.' },
+  { id: 'queen', name: 'Queen Rush', blurb: 'The first player to legally cover the queen wins. 1.1\u00d7 score.' },
+  { id: 'sudden', name: 'Sudden Death', blurb: 'Three coins each. One mistake ends the run. 1.2\u00d7 score.' },
+  { id: 'grandmaster', name: 'Grandmaster', blurb: 'The full board against the hard computer at 1.5\u00d7.', requires: { stat: 'classicWins', gte: 1 }, lockedHint: 'Win a Classic game to unlock' },
+];
+const ACHIEVEMENTS = [
+  { id: 'first-shot', name: 'First Flick', desc: 'Take your first shot.', rarity: 'common' },
+  { id: 'first-coin', name: 'Pocketed', desc: 'Pocket one of your own coins.', rarity: 'common' },
+  { id: 'first-queen', name: 'Queen Covered', desc: 'Legally cover the queen.', rarity: 'rare' },
+  { id: 'classic-clear', name: 'Carrom Champion', desc: 'Win a Classic game.', rarity: 'common' },
+  { id: 'quick-clear', name: 'Five Alive', desc: 'Win a Quick Five game.', rarity: 'common' },
+  { id: 'queen-clear', name: 'Queen Rush', desc: 'Win a Queen Rush game.', rarity: 'rare' },
+  { id: 'sudden-clear', name: 'Sudden Winner', desc: 'Win a Sudden Death game.', rarity: 'rare' },
+  { id: 'grandmaster-clear', name: 'Grandmaster', desc: 'Win a Grandmaster game.', rarity: 'legendary' },
+  { id: 'double', name: 'Double Pot', desc: 'Pocket two coins in one shot.', rarity: 'rare' },
+  { id: 'triple', name: 'Triple Pot', desc: 'Pocket three coins in one shot.', rarity: 'epic' },
+  { id: 'perfect', name: 'Clean Sweep', desc: 'Win without a foul.', rarity: 'epic' },
+  { id: 'personal-best', name: 'Personal Best', desc: 'Set a new best score.', rarity: 'rare' },
+];
+const STRIKERS = {
+  'carrom:striker-ice': { a: '#bae6fd', b: '#0284c7' },
+  'carrom:striker-onyx': { a: '#94a3b8', b: '#0f172a' },
+  'carrom:striker-rose': { a: '#fecdd3', b: '#e11d48' },
+  'carrom:striker-jade': { a: '#bbf7d0', b: '#047857' },
+  'carrom:striker-gold': { a: '#fef3c7', b: '#b45309' },
+};
+const BOARDS = {
+  'carrom:board-teak': { surface: '#e6b878', grain: 'rgba(120,70,20,.16)', line: '#7c2d12', red: '#b91c1c', pocket: '#0c0a09', frame: '#4a2c14', frameDark: '#2a1809', coins: { w: ['#fffbeb', '#d6c7a1'], b: ['#57534e', '#0c0a09'], q: ['#fb7185', '#9f1239'] } },
+  'carrom:board-maple': { surface: '#efd7a8', grain: 'rgba(140,90,30,.18)', line: '#8a4b1c', red: '#b91c1c', pocket: '#120c06', frame: '#6b4a2a', frameDark: '#3d2a16', coins: { w: ['#fffdf5', '#e5d7b5'], b: ['#6b625a', '#1c1917'], q: ['#fda4af', '#be123c'] } },
+  'carrom:board-walnut': { surface: '#c99a63', grain: 'rgba(80,40,10,.2)', line: '#5b2c10', red: '#991b1b', pocket: '#0a0705', frame: '#3d2412', frameDark: '#1f1208', coins: { w: ['#fff7e6', '#d8c39a'], b: ['#4a3527', '#140d08'], q: ['#f87171', '#7f1d1d'] } },
+  'carrom:board-slate': { surface: '#9aa7b8', grain: 'rgba(30,41,59,.15)', line: '#334155', red: '#be123c', pocket: '#0b1120', frame: '#334155', frameDark: '#111827', coins: { w: ['#f8fafc', '#cbd5e1'], b: ['#334155', '#0f172a'], q: ['#fb7185', '#9f1239'] } },
+};
+const TRAILS = { 'carrom:trail-cyan': '#38bdf8', 'carrom:trail-gold': '#fbbf24', 'carrom:trail-rose': '#fb7185', 'carrom:trail-violet': '#a78bfa' };
+const THEMES = {
+  'carrom:theme-lamplight': '',
+  'carrom:theme-night': 'radial-gradient(1100px 520px at 12% -8%, #1e3a5f, transparent 60%), radial-gradient(900px 520px at 100% 0, #3b1d4a, transparent 55%), #090a10',
+  'carrom:theme-sunset': 'radial-gradient(1000px 500px at 10% -10%, #7c2d12, transparent 60%), radial-gradient(800px 500px at 100% 0, #4c1d3d, transparent 55%), #0a0707',
+};
+const PALETTE = {
+  striker: Object.assign({}, STRIKERS['carrom:striker-ice']),
+  board: Object.assign({}, BOARDS['carrom:board-teak']),
+  trail: TRAILS['carrom:trail-cyan'],
+};
+function applyCosmetic(slot, id) {
+  if (slot === 'skin') PALETTE.striker = Object.assign({}, STRIKERS[id] || STRIKERS['carrom:striker-ice']);
+  else if (slot === 'palette') PALETTE.board = Object.assign({}, BOARDS[id] || BOARDS['carrom:board-teak']);
+  else if (slot === 'effect') PALETTE.trail = TRAILS[id] || TRAILS['carrom:trail-cyan'];
+  else if (slot === 'theme') document.body.style.background = THEMES[id] || '';
+  if (slot === 'palette') { const b = PALETTE.board; cv.style.boxShadow = '0 20px 50px -20px #000, 0 0 0 12px ' + b.frame + ', 0 0 0 15px ' + b.frameDark; }
+  if (W) draw();
+}
+
 /* ---------- game state ---------- */
-const BY = [S - 98, 98]; /* baseline y for player 0 (bottom, light) and player 1 (top, dark) */
+const BY = [S - 98, 98];
 const OWN = ['w', 'b'], NAME = ['Light', 'Dark'];
-let gen = 0, W, turn, mode, phase, sx, st, drag, msg, evs, out, qOff, over, sfxT = 0;
-const human = () => mode === 'two' || turn === (mode === 'a' ? 0 : 1);
+let gen = 0, W = null, turn = 0, side = 'a', mode = 'classic', phase = 'place', sx = S / 2, st = null, drag = null, msg = '', evs = [], out = { w: 0, b: 0 }, qOff = false, queenOwner = -1, over = null, sfxT = 0, menuPaused = true;
+let PS = [{ score: 0, shots: 0, fouls: 0 }, { score: 0, shots: 0, fouls: 0 }];
+const human = () => side === 'two' || turn === (side === 'a' ? 0 : 1);
+const addScore = (seat, n) => { PS[seat].score += Math.round(n * CFG[mode].mult); };
 const free = (x, y, W0) => !W0.d.some((d) => d.a && d.t !== 's' && Math.hypot(d.x - x, d.y - y) < SR + CR + 2);
 function newGame() {
-  gen++; mode = $('#mode').value; W = fresh(); out = { w: 0, b: 0 }; qOff = false; over = null; turn = mode === 'b' ? 1 : 0; phase = 'place'; sx = S / 2; st = null; drag = null; evs = [];
-  msg = ''; sync(); begin();
+  gen++;
+  const dlg = document.getElementById('bk-dlg'); if (dlg && dlg.open) dlg.close();
+  mode = GameUI.getMode(); side = $('#side').value;
+  W = fresh(); out = { w: 0, b: 0 }; qOff = false; queenOwner = -1; over = null; turn = side === 'b' ? 1 : 0;
+  phase = 'place'; sx = S / 2; st = null; drag = null; evs = []; msg = '';
+  PS = [{ score: 0, shots: 0, fouls: 0 }, { score: 0, shots: 0, fouls: 0 }];
+  sync(); begin();
 }
 function sync() { $('#pos').value = Math.round((sx - 110) / (S - 220) * 100); }
 function begin() {
   sx = S / 2; for (const dx of [0, 40, -40, 80, -80, 120, -120, 160, -160]) if (free(S / 2 + dx, BY[turn], W)) { sx = S / 2 + dx; break; }
-  sync(); phase = 'place'; drag = null; text(); if (!human()) { phase = 'think'; const g = gen; Board.after(Board.pace(1300), () => { if (g === gen && !Board.paused()) aiMove(); }); }
+  sync(); phase = 'place'; drag = null; text();
+  if (!human()) {
+    phase = 'think';
+    const g = gen, go = () => Board.after(Board.pace(1300), () => {
+      if (g !== gen || over) return;
+      if (Board.paused() || menuPaused) { go(); return; }
+      aiMove();
+    });
+    go();
+  }
 }
 function shoot(x, ang, pw) {
   st = mk(x, BY[turn], SR, 1.7, 's'); st.vx = Math.cos(ang) * pw; st.vy = Math.sin(ang) * pw; st.sp = pw; st.ang = ang;
-  W.d.push(st); evs = []; phase = 'run'; drag = null; Board.sfx('click'); text();
+  W.d.push(st); evs = []; phase = 'run'; drag = null;
+  PS[turn].shots += 1;
+  if (human()) GameUI.unlock('first-shot');
+  Board.sfx('click'); text();
 }
 const power = (L) => 1.3 + Math.min(1, L / 150) * 5.7;
 
 /* ---------- end of a shot ---------- */
 function resolve() {
-  W.d = W.d.filter((d) => d.t !== 's'); const p = turn, own = OWN[p]; let gotOwn = 0, gotOpp = 0, queen = false, foul = false; const say = [];
+  W.d = W.d.filter((d) => d.t !== 's'); const cfg = CFG[mode], p = turn, own = OWN[p]; let gotOwn = 0, gotOpp = 0, queen = false, foul = false; const say = [];
   for (const d of evs) { if (d.t === 's') foul = true; else if (d.t === 'q') queen = true; else if (d.t === own) { gotOwn++; out[d.t]++; } else { gotOpp++; out[d.t]++; } }
   W.d = W.d.filter((d) => d.a);
   const back = (t) => { const spot = (() => { for (let r = 0; r < 140; r += 6) for (let a = 0; a < 6.3; a += 0.6) { const x = S / 2 + Math.cos(a) * r, y = S / 2 + Math.sin(a) * r; if (free(x, y, W)) return [x, y]; } return [S / 2, S / 2]; })(); W.d.push(mk(spot[0], spot[1], CR, 1, t)); };
-  if (queen) { if (!foul && (gotOwn || out[own] === 9)) { qOff = true; say.push('queen covered'); } else { back('q'); say.push('queen returns — not covered'); } }
-  if (foul) { if (out[own] > 0) { out[own]--; back(own); say.push('foul — one of your coins returns'); } else say.push('foul — striker pocketed'); }
+  if (gotOwn) addScore(p, gotOwn * 100);
+  if (gotOwn && human()) {
+    GameUI.unlock('first-coin');
+    if (gotOwn >= 3) GameUI.unlock('triple'); else if (gotOwn >= 2) GameUI.unlock('double');
+  }
+  if (queen) {
+    if (!foul && (gotOwn || (cfg.queen && out[own] === cfg.own))) {
+      qOff = true; queenOwner = p; addScore(p, 300); say.push('queen covered');
+      if (human()) GameUI.unlock('first-queen');
+    } else { back('q'); say.push('queen returns \u2014 not covered'); }
+  }
+  if (foul) {
+    PS[p].fouls += 1;
+    PS[p].score = Math.max(0, PS[p].score - Math.round(50 * cfg.mult));
+    if (out[own] > 0) { out[own] -= 1; back(own); say.push('foul \u2014 one of your coins returns'); } else say.push('foul \u2014 striker pocketed');
+  }
   if (gotOpp) say.push(gotOpp + ' rival coin' + (gotOpp > 1 ? 's' : '') + ' pocketed for them');
   if (gotOwn) say.push(gotOwn + ' of yours pocketed');
-  const win = out.w === 9 && qOff ? 0 : out.b === 9 && qOff ? 1 : -1;
+  let winSeat = -1;
+  if (mode === 'queen') { if (queenOwner >= 0) winSeat = queenOwner; }
+  else if (out.w >= cfg.own && (!cfg.queen || qOff)) winSeat = 0;
+  else if (out.b >= cfg.own && (!cfg.queen || qOff)) winSeat = 1;
   msg = say.length ? NAME[p] + ': ' + say.join(', ') : NAME[p] + ' missed';
-  if (win >= 0) { over = NAME[win] + ' wins!'; phase = 'over'; text(); const w = mode !== 'two' && (win === 0) === (mode === 'a'); Board.sfx(mode === 'two' || w ? 'win' : 'lose'); Board.modal(mode === 'two' ? over : w ? 'You won!' : 'Computer wins', over, [['New game', newGame], ['Close']]); return; }
+  if (winSeat >= 0) { conclude(winSeat); return; }
   if (!(gotOwn || (queen && qOff)) || foul) turn = 1 - turn;
   begin();
 }
+function conclude(winSeat) {
+  if (over) return;
+  const cfg = CFG[mode];
+  addScore(winSeat, cfg.bonus);
+  over = NAME[winSeat] + ' wins!'; phase = 'over';
+  const cpu = side !== 'two';
+  const humanSeat = side === 'b' ? 1 : 0;
+  const humanWon = side === 'two' ? true : winSeat === humanSeat;
+  const humanScore = side === 'two' ? Math.max(PS[0].score, PS[1].score) : PS[humanSeat].score;
+  const achievements = [];
+  if (humanWon) {
+    achievements.push(mode + '-clear');
+    if (PS[winSeat].fouls === 0) achievements.push('perfect');
+  }
+  const records = {};
+  records['best' + MODE_KEY[mode] + 'Score'] = humanScore;
+  const counters = { coinsPocketed: out.w + out.b, shots: PS[0].shots + PS[1].shots };
+  if (humanWon) { counters.wins = 1; counters[mode + 'Wins'] = 1; }
+  if (qOff) counters.queensCovered = 1;
+  const mins = humanWon ? { fewestShots: PS[winSeat].shots } : {};
+  const prevBest = Number(GameUI.stats().bestScore) || 0;
+  GameUI.record({ score: humanScore, result: NAME[winSeat] + ' won ' + MODE_NAMES[mode], records, counters, mins, achievements });
+  if (humanScore > prevBest) GameUI.unlock('personal-best');
+  text(); draw();
+  Board.sfx(side === 'two' || humanWon ? 'win' : 'lose');
+  Board.modal(side === 'two' ? over : humanWon ? 'You won!' : 'Computer wins', over + ' \u00b7 ' + humanScore + ' pts.', [['New game', newGame], ['Close']]);
+}
 function text() {
-  const who = turn === 0 ? 'Light' : 'Dark';
-  $('#st').innerHTML = over || (phase === 'run' ? 'Rolling…' : phase === 'think' ? 'Computer is lining up a shot…' : `<span class="tag" style="background:${turn ? '#1c1917' : '#f5efe0'}"></span>${who} to play${mode !== 'two' && human() ? ' — your turn' : ''}`);
-  $('#cp').innerHTML = (msg ? '<b>' + msg + '</b><br>' : '') + `Light coins pocketed: <b>${out.w}</b> / 9<br>Dark coins pocketed: <b>${out.b}</b> / 9<br>Queen: <b>${qOff ? 'taken' : 'on the board'}</b>`;
+  const cfg = CFG[mode], who = turn === 0 ? 'Light' : 'Dark';
+  $('#st').innerHTML = over || (phase === 'run' ? 'Rolling\u2026' : phase === 'think' ? 'Computer is lining up a shot\u2026' : `<span class="tag" style="background:${turn ? '#1c1917' : '#f5efe0'}"></span>${who} to play${side !== 'two' && human() ? ' \u2014 your turn' : ''}`);
+  $('#cp').innerHTML = (msg ? '<b>' + msg + '</b><br>' : '') +
+    `Light coins: <b>${out.w}</b> / ${cfg.own} \u00b7 <b>${PS[0].score}</b> pts<br>Dark coins: <b>${out.b}</b> / ${cfg.own} \u00b7 <b>${PS[1].score}</b> pts<br>` +
+    (cfg.queen ? `Queen: <b>${qOff ? (queenOwner === 0 ? 'Light' : 'Dark') + ' covered' : 'on the board'}</b>` : 'Queen: <b>not in this mode</b>');
 }
 
 /* ---------- computer player ---------- */
@@ -140,8 +272,8 @@ function evalShot(W0, p, x, ang, pw) {
   return v;
 }
 function aiMove() {
-  if (over || phase !== 'think') return; const p = turn, L = +$('#lvl').value, own = OWN[p], y0 = BY[p], cands = [];
-  let T = W.d.filter((d) => d.a && d.t === own); if (!T.length || out[own] >= 8) T = T.concat(W.d.filter((d) => d.a && d.t === 'q'));
+  if (over || phase !== 'think') return; const cfg = CFG[mode], p = turn, L = mode === 'grandmaster' ? 2 : +$('#lvl').value, own = OWN[p], y0 = BY[p], cands = [];
+  let T = W.d.filter((d) => d.a && d.t === own); if (!T.length || out[own] >= cfg.own - 1) T = T.concat(W.d.filter((d) => d.a && d.t === 'q'));
   if (!T.length) T = W.d.filter((d) => d.a);
   for (let xi = 0; xi <= 12; xi++) {
     const x = 110 + xi * (S - 220) / 12; if (!free(x, y0, W)) continue;
@@ -164,7 +296,6 @@ function aiMove() {
       if (v > bs) { bs = v; best = { x: c.x, ang, pw }; }
     }
   }
-  /* slide the striker to the chosen spot, show the aim line, then flick */
   phase = 'aim'; drag = null;
   const x0 = sx, animDur = Board.pace(600), t0 = Board.now(), g = gen;
   (function slide() {
@@ -172,7 +303,7 @@ function aiMove() {
     const k = Math.min(1, (Board.now() - t0) / animDur); sx = x0 + (best.x - x0) * (k * k * (3 - 2 * k)); sync();
     if (k < 1) { requestAnimationFrame(slide); return; }
     drag = { ai: true, ang: best.ang, pw: best.pw };
-    Board.after(Board.pace(1200), () => { if (g === gen && !over && !Board.paused() && phase === 'aim' && drag && drag.ai) shoot(best.x, best.ang, best.pw); });
+    Board.after(Board.pace(1200), () => { if (g === gen && !over && !Board.paused() && !menuPaused && phase === 'aim' && drag && drag.ai) shoot(best.x, best.ang, best.pw); });
   })();
 }
 
@@ -192,10 +323,11 @@ cv.addEventListener('pointerup', (e) => {
 });
 cv.addEventListener('pointercancel', () => { if (drag && !drag.ai) drag = null; });
 $('#pos').oninput = (e) => { if (phase === 'place' && human()) sx = 110 + (S - 220) * e.target.value / 100; else sync(); };
-$('#new').onclick = (e) => { e.target.blur(); newGame(); }; $('#mode').onchange = (e) => { e.target.blur(); newGame(); };
+$('#new').onclick = (e) => { e.target.blur(); newGame(); };
+$('#side').onchange = (e) => { e.target.blur(); newGame(); };
 let lastPw = 4.5;
 document.addEventListener('keydown', (e) => {
-  if (/SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || Board.paused()) return; if (e.target.tagName === 'INPUT' && e.key.startsWith('Arrow')) return;
+  if (/SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || Board.paused() || menuPaused) return; if (e.target.tagName === 'INPUT' && e.key.startsWith('Arrow')) return;
   const k = e.key;
   if (k === 'n' || k === 'N') newGame();
   else if ((k === 'ArrowLeft' || k === 'ArrowRight') && phase === 'place' && human()) { sx = Math.max(110, Math.min(S - 110, sx + (k === 'ArrowLeft' ? -12 : 12))); sync(); e.preventDefault(); }
@@ -205,21 +337,25 @@ document.addEventListener('keydown', (e) => {
 /* ---------- drawing & loop ---------- */
 function disc(d) {
   const g = cx.createRadialGradient(d.x - d.r * 0.3, d.y - d.r * 0.35, 1, d.x, d.y, d.r);
-  const c = { w: ['#fffbeb', '#d6c7a1'], b: ['#57534e', '#0c0a09'], q: ['#fb7185', '#9f1239'], s: ['#bae6fd', '#0284c7'] }[d.t]; g.addColorStop(0, c[0]); g.addColorStop(1, c[1]);
+  const b = PALETTE.board;
+  const c = d.t === 's' ? [PALETTE.striker.a, PALETTE.striker.b] : b.coins[d.t]; g.addColorStop(0, c[0]); g.addColorStop(1, c[1]);
   cx.fillStyle = 'rgba(0,0,0,.28)'; cx.beginPath(); cx.arc(d.x + 2, d.y + 3, d.r, 0, 6.3); cx.fill();
   cx.fillStyle = g; cx.beginPath(); cx.arc(d.x, d.y, d.r, 0, 6.3); cx.fill();
-  cx.strokeStyle = d.t === 'b' ? '#78716c' : 'rgba(0,0,0,.35)'; cx.lineWidth = 1.5; cx.beginPath(); cx.arc(d.x, d.y, d.r * 0.62, 0, 6.3); cx.stroke();
+  cx.strokeStyle = d.t === 's' ? PALETTE.trail : d.t === 'b' ? 'rgba(255,255,255,.25)' : 'rgba(0,0,0,.35)';
+  cx.lineWidth = d.t === 's' ? 2.5 : 1.5; cx.beginPath(); cx.arc(d.x, d.y, d.t === 's' ? d.r - 1 : d.r * 0.62, 0, 6.3); cx.stroke();
 }
 function board() {
-  cx.fillStyle = '#e6b878'; cx.fillRect(0, 0, S, S);
-  cx.strokeStyle = 'rgba(120,70,20,.16)'; cx.lineWidth = 2; for (let y = 8; y < S; y += 16) { cx.beginPath(); cx.moveTo(0, y); cx.lineTo(S, y); cx.stroke(); }
-  cx.strokeStyle = '#7c2d12'; cx.lineWidth = 2;
-  for (const y of BY) { cx.beginPath(); cx.moveTo(100, y - 17); cx.lineTo(S - 100, y - 17); cx.moveTo(100, y + 17); cx.lineTo(S - 100, y + 17); cx.stroke(); for (const x of [100, S - 100]) { cx.fillStyle = '#b91c1c'; cx.beginPath(); cx.arc(x, y, 16, 0, 6.3); cx.stroke(); cx.fill(); } }
+  const b = PALETTE.board;
+  cx.fillStyle = b.surface; cx.fillRect(0, 0, S, S);
+  cx.strokeStyle = b.grain; cx.lineWidth = 2; for (let y = 8; y < S; y += 16) { cx.beginPath(); cx.moveTo(0, y); cx.lineTo(S, y); cx.stroke(); }
+  cx.strokeStyle = b.line; cx.lineWidth = 2;
+  for (const y of BY) { cx.beginPath(); cx.moveTo(100, y - 17); cx.lineTo(S - 100, y - 17); cx.moveTo(100, y + 17); cx.lineTo(S - 100, y + 17); cx.stroke(); for (const x of [100, S - 100]) { cx.fillStyle = b.red; cx.beginPath(); cx.arc(x, y, 16, 0, 6.3); cx.stroke(); cx.fill(); } }
   cx.beginPath(); cx.arc(S / 2, S / 2, 70, 0, 6.3); cx.stroke(); cx.beginPath(); cx.arc(S / 2, S / 2, 20, 0, 6.3); cx.stroke();
-  cx.strokeStyle = 'rgba(124,45,18,.6)'; for (const [a, b, sxn, syn] of [[60, 60, 1, 1], [S - 60, 60, -1, 1], [60, S - 60, 1, -1], [S - 60, S - 60, -1, -1]]) { cx.beginPath(); cx.moveTo(a, b); cx.lineTo(a + sxn * 70, b + syn * 70); cx.stroke(); cx.beginPath(); cx.arc(a + sxn * 90, b + syn * 90, 9, 0, 6.3); cx.stroke(); }
-  cx.fillStyle = '#0c0a09'; for (const p of POCK) { cx.beginPath(); cx.arc(p[0], p[1], PR, 0, 6.3); cx.fill(); }
+  cx.strokeStyle = 'rgba(124,45,18,.6)'; for (const [a, c, sxn, syn] of [[60, 60, 1, 1], [S - 60, 60, -1, 1], [60, S - 60, 1, -1], [S - 60, S - 60, -1, -1]]) { cx.beginPath(); cx.moveTo(a, c); cx.lineTo(a + sxn * 70, c + syn * 70); cx.stroke(); cx.beginPath(); cx.arc(a + sxn * 90, c + syn * 90, 9, 0, 6.3); cx.stroke(); }
+  cx.fillStyle = b.pocket; for (const p of POCK) { cx.beginPath(); cx.arc(p[0], p[1], PR, 0, 6.3); cx.fill(); }
 }
 function draw() {
+  if (!W) return;
   board();
   for (const d of W.d) if (d.a && d.t !== 's') disc(d);
   const y0 = BY[turn];
@@ -227,12 +363,12 @@ function draw() {
     const ok = free(sx, y0, W), g = mk(sx, y0, SR, 1, 's'); cx.globalAlpha = ok ? 1 : 0.4; disc(g); cx.globalAlpha = 1;
     if (!ok) { cx.strokeStyle = '#dc2626'; cx.lineWidth = 3; cx.beginPath(); cx.arc(sx, y0, SR + 4, 0, 6.3); cx.stroke(); }
     let ang = null;
-    if (drag && drag.ai) ang = drag.ang; else if (drag) { const vx = sx - drag.cur[0], vy = y0 - drag.cur[1], L = Math.hypot(vx, vy); if (L > 6) { ang = Math.atan2(vy, vx); lastPw = power(L); cx.strokeStyle = 'rgba(30,20,10,.55)'; cx.lineWidth = 4; cx.lineCap = 'round'; cx.beginPath(); cx.moveTo(sx, y0); cx.lineTo(drag.cur[0], drag.cur[1]); cx.stroke(); } }
+    if (drag && drag.ai) ang = drag.ang; else if (drag) { const vx = sx - drag.cur[0], vy = y0 - drag.cur[1], L = Math.hypot(vx, vy); if (L > 6) { ang = Math.atan2(vy, vx); lastPw = power(L); cx.strokeStyle = PALETTE.trail; cx.lineWidth = 4; cx.lineCap = 'round'; cx.beginPath(); cx.moveTo(sx, y0); cx.lineTo(drag.cur[0], drag.cur[1]); cx.stroke(); } }
     if (ang !== null) {
       const dx = Math.cos(ang), dy = Math.sin(ang); let t = 1e9;
-      for (const d of W.d) if (d.a && d.t !== 's') { const fx = sx - d.x, fy = y0 - d.y, b = fx * dx + fy * dy, c = fx * fx + fy * fy - (SR + d.r) ** 2, q = b * b - c; if (q >= 0) { const tt = -b - Math.sqrt(q); if (tt > 0 && tt < t) t = tt; } }
+      for (const d of W.d) if (d.a && d.t !== 's') { const fx = sx - d.x, fy = y0 - d.y, bb = fx * dx + fy * dy, c = fx * fx + fy * fy - (SR + d.r) ** 2, q = bb * bb - c; if (q >= 0) { const tt = -bb - Math.sqrt(q); if (tt > 0 && tt < t) t = tt; } }
       for (const [w, o, dd] of [[dx, sx, SR], [dy, y0, SR]]) { if (w > 0) t = Math.min(t, (S - dd - o) / w); else if (w < 0) t = Math.min(t, (dd - o) / w); }
-      cx.setLineDash([6, 7]); cx.strokeStyle = 'rgba(30,20,10,.7)'; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(sx + dx * SR, y0 + dy * SR); cx.lineTo(sx + dx * t, y0 + dy * t); cx.stroke(); cx.setLineDash([]);
+      cx.setLineDash([6, 7]); cx.strokeStyle = PALETTE.trail; cx.globalAlpha = 0.75; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(sx + dx * SR, y0 + dy * SR); cx.lineTo(sx + dx * t, y0 + dy * t); cx.stroke(); cx.globalAlpha = 1; cx.setLineDash([]);
     }
   }
   if (st && phase === 'run' && st.a) disc(st);
@@ -240,14 +376,100 @@ function draw() {
 let prev = 0, acc = 0;
 function frame(t) {
   requestAnimationFrame(frame); acc += Math.min(0.05, (t - prev) / 1000 || 0); prev = t;
-  if (Board.paused()) return;
+  if (Board.paused() || menuPaused) return;
   while (acc >= 1 / 240) {
     acc -= 1 / 240;
     if (phase === 'run') { const h = step(W, evs); if (h > 0.6 && t - sfxT > 60) { Board.sfx('step'); sfxT = t; } if (evs.length && evs.at(-1)._s !== 1) { evs.at(-1)._s = 1; Board.sfx('capture'); } if (!moving(W)) { resolve(); break; } }
   }
   draw();
 }
+
+/* ---------- shared menu contract ---------- */
+const GameUI = Board.ui({
+  id: 'carrom', title: 'Carrom', subtitle: 'Five boards, one striker.', accent: '#f59e0b',
+  modes: MODES, achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Slide the striker along your baseline, then drag back and release to flick.' },
+    { text: 'Pocket your own coin to shoot again. Rival coins count for them.' },
+    { text: 'Cover the queen by pocketing one of your coins in the same shot.' },
+    { text: 'Pocketing the striker is a foul: a coin returns and the turn passes.' },
+  ] },
+  hooks: {
+    applyMode: (nextMode) => {
+      mode = MODES.some((m) => m.id === nextMode) ? nextMode : 'classic';
+      if (W) newGame();
+    },
+    applyCosmetic,
+    onStart: () => { menuPaused = false; if (phase === 'think' && !over) aiMove(); },
+  },
+});
+window.ApexGameMenuActions = {
+  play: function () { menuPaused = false; if (phase === 'think' && !over) aiMove(); },
+  pause: function (value) { menuPaused = !!value; },
+  resume: function () { menuPaused = false; if (phase === 'think' && !over) aiMove(); },
+  restart: function () { menuPaused = false; newGame(); }
+};
+
 newGame(); requestAnimationFrame(frame);
+
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  const snap = () => ({
+    mode, side, turn, phase, over, menuPaused, qOff, queenOwner,
+    out: Object.assign({}, out), scores: PS.map((p) => p.score), shots: PS.map((p) => p.shots), fouls: PS.map((p) => p.fouls),
+    discs: W.d.filter((d) => d.a).length, target: CFG[mode].own,
+    best: Number(GameUI.stats().bestScore) || 0,
+  });
+  window.CarromTest = {
+    state: snap,
+    modes: () => MODES.map((m) => m.id),
+    setMode: (id) => GameUI.setMode(id),
+    getMode: () => GameUI.getMode(),
+    restart: () => { newGame(); return true; },
+    setSide: (value) => {
+      const sel = $('#side');
+      if (!Array.from(sel.options).some((o) => o.value === value)) return false;
+      sel.value = value; newGame(); return true;
+    },
+    setTurn: (i) => { turn = i ? 1 : 0; phase = 'place'; begin(); return turn; },
+    setStriker: (x) => { sx = Math.max(110, Math.min(S - 110, Number(x) || S / 2)); sync(); return sx; },
+    discs: () => W.d.filter((d) => d.a).map((d) => ({ t: d.t, x: d.x, y: d.y })),
+    simulate: (x, ang, pw) => {
+      if (over || phase !== 'place') return null;
+      const seat = turn, before = snap();
+      sx = Math.max(110, Math.min(S - 110, Number(x) || S / 2));
+      if (!free(sx, BY[turn], W)) return { blocked: true };
+      shoot(sx, Number(ang) || 0, Math.max(0.4, Number(pw) || 3));
+      let n = 0; while (moving(W) && n++ < 8000) step(W, evs);
+      if (phase === 'run') resolve();
+      return { seat, before, after: snap() };
+    },
+    settle: (types) => {
+      if (over) return null;
+      evs = (types || []).map((t) => {
+        const d = W.d.find((x) => x.a && x.t === t);
+        if (!d) return { t };
+        d.a = 0;
+        return d;
+      });
+      resolve();
+      return snap();
+    },
+    finish: (seat) => { conclude(Number(seat) ? 1 : 0); return snap(); },
+    award: (n) => { addScore(side === 'b' ? 1 : 0, Number(n) || 0); text(); return PS[side === 'b' ? 1 : 0].score; },
+    setDifficulty: (d) => Board.setDifficulty(d),
+    level: () => Board.level(),
+    setLevel: (n) => { $('#lvl').value = String(n); return $('#lvl').value; },
+    menuPaused: (value) => { menuPaused = !!value; return menuPaused; },
+    start: () => { menuPaused = false; },
+    colors: () => ({ striker: Object.assign({}, PALETTE.striker), board: JSON.parse(JSON.stringify(PALETTE.board)), trail: PALETTE.trail, theme: document.body.style.background || 'auto' }),
+    cosmetic: (slot, id) => { applyCosmetic(slot, id); return window.CarromTest.colors(); },
+    cosmeticList: () => (window.Meta && Meta.getCosmetics ? Meta.getCosmetics('carrom') : []).map((item) => ({ id: item.id, slot: item.slot })),
+    achievements: () => (Save.load('carrom').achievements || []).slice(),
+    stats: () => Save.load('carrom').stats || {},
+    modalOpen: () => { const d = document.getElementById('bk-dlg'); return !!(d && d.open); },
+    closeModal: () => { const d = document.getElementById('bk-dlg'); if (d && d.open) d.close(); },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

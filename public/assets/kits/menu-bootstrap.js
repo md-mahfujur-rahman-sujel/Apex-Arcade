@@ -101,7 +101,9 @@
         var item = byFile[folder] || byFile[last];
     if (!item || !global.Menu || global.document.querySelector('.apex-menu-root')) return;
     var title = item.title, game = global.Arcade && global.Arcade.G;
-    var gameUi = game && game.ui, uiConfig = gameUi && gameUi.config;
+    var gameUi = game && game.ui;
+    if (!gameUi && global.ApexBoardUI) gameUi = global.ApexBoardUI;
+    var uiConfig = gameUi && gameUi.config;
     var menuGameId = uiConfig && uiConfig.id || item.id;
     if (game) game.inputLocked = true;
     item.scene = item.id === 'clockwork-dawn' && typeof global.ClockworkDawnMenuScene === 'function' ? global.ClockworkDawnMenuScene : function (ctx, frame) { drawMotif(ctx, frame, item.id, item.motif, item.accent); };
@@ -204,7 +206,8 @@
           game.inputLocked = false;
           if (game.ui && typeof game.ui.start === 'function') game.ui.start();
           else if (game.state === 'ready' && typeof game.begin === 'function') game.begin();
-        } else if (global.ApexGameMenuActions && typeof global.ApexGameMenuActions.play === 'function') global.ApexGameMenuActions.play();
+        } else if (gameUi && typeof gameUi.start === 'function') gameUi.start();
+        else if (global.ApexGameMenuActions && typeof global.ApexGameMenuActions.play === 'function') global.ApexGameMenuActions.play();
       },
       onRestart: function () {
         if (game && typeof game.restart === 'function') game.restart(true);
