@@ -8,17 +8,17 @@
 <style>
   .rv { display: grid; grid-template-columns: auto minmax(240px, 1fr); gap: 22px; align-items: start; }
   @media (max-width: 860px) { .rv { grid-template-columns: 1fr; } }
-  #bd { --s: max(290px, min(100vw - 40px, 640px)); width: var(--s); aspect-ratio: 1; background: #064229; border-radius: 14px; padding: 8px; display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); gap: 3px; box-shadow: 0 20px 50px -20px #000, 0 0 0 6px #0b5d3b; user-select: none; touch-action: manipulation; }
-  .sq { position: relative; background: #117a4d; border-radius: 4px; }
+  #bd { --s: max(290px, min(100vw - 40px, 640px)); --n: 8; width: var(--s); aspect-ratio: 1; background: var(--rv-board, #064229); border-radius: 14px; padding: 8px; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); grid-template-rows: repeat(var(--n), minmax(0, 1fr)); gap: 3px; box-shadow: 0 20px 50px -20px #000, 0 0 0 6px var(--rv-frame, #0b5d3b); user-select: none; touch-action: manipulation; }
+  .sq { position: relative; background: var(--rv-sq, #117a4d); border-radius: 4px; }
   .sq.ok { cursor: pointer; }
-  .sq.ok:hover { background: #16905c; }
+  .sq.ok:hover { filter: brightness(1.18); }
   .sq.ok::after { content: ""; position: absolute; inset: 38%; border-radius: 50%; background: rgba(255,255,255,.35); }
-  .sq.hint::after { inset: 26%; background: rgba(245,158,11,.8); animation: hp .7s ease-in-out infinite alternate; }
+  .sq.hint::after { inset: 26%; background: var(--rv-accent, #f59e0b); animation: hp .7s ease-in-out infinite alternate; }
   @keyframes hp { to { transform: scale(1.25); } }
-  .sq.last { box-shadow: inset 0 0 0 3px #f59e0b; }
+  .sq.last { box-shadow: inset 0 0 0 3px var(--rv-accent, #f59e0b); }
   .dk { position: absolute; inset: 9%; border-radius: 50%; box-shadow: 0 3px 6px rgba(0,0,0,.5); }
-  .dk.b { background: radial-gradient(circle at 35% 30%, #52525b, #09090b); }
-  .dk.w { background: radial-gradient(circle at 35% 30%, #ffffff, #cbd5e1); }
+  .dk.b { background: var(--rv-black, radial-gradient(circle at 35% 30%, #52525b, #09090b)); }
+  .dk.w { background: var(--rv-white, radial-gradient(circle at 35% 30%, #ffffff, #cbd5e1)); }
   .dk.new { animation: pop .4s ease-out; }
   .dk.fl { animation: f1 .28s ease-in forwards; }
   .dk.fl2 { animation: f2 .28s ease-out; }
@@ -27,6 +27,7 @@
   @keyframes f2 { from { transform: scaleX(.05); } }
   .side { display: grid; gap: 12px; }
   .capt { color: var(--muted); line-height: 1.8; }
+  .capt b { color: #e6e9f5; }
   .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; border: 1px solid rgba(255,255,255,.35); }
   .dot.b { background: #111; }
   .dot.w { background: #eee; }
@@ -34,7 +35,10 @@
   .score { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .score div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 13px; color: var(--muted); }
   .score b { display: block; font-size: 28px; color: var(--text); }
-  .score .on { border-color: var(--cyan); }
+  .score .on { border-color: var(--rv-accent, #22d3ee); }
+  .clock { font: 700 15px ui-monospace, Consolas, monospace; color: #fde047; }
+  .clock.low { color: #fb7185; }
+  #md { color: var(--muted); font-size: 13px; line-height: 1.6; }
 </style>
 <script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
 </head>
@@ -49,8 +53,8 @@
 <script src="../../kits/ui-kit.js"></script>
 <script>
 const ui = Board.shell({
-  id: 'reversi', cpu: true, title: 'Reversi', subtitle: 'Outflank your rival to flip their discs — own the most when the board fills',
-  rules: 'Black moves first. On your turn place a disc on a square (shown as a dot) where it traps one or more of your rival\'s discs in a straight line — across, up and down, or diagonally — between the new disc and another of your own. Every trapped disc flips to your colour. If you have no legal move you pass. The game ends when neither player can move; whoever has more discs wins. Corners can never be flipped, so they are worth fighting for.',
+  id: 'reversi', cpu: true, title: 'Reversi', subtitle: 'Outflank your rival to flip their discs \u2014 own the most when the board fills',
+  rules: 'Black moves first. On your turn place a disc on a square (shown as a dot) where it traps one or more of your rival\'s discs in a straight line \u2014 across, up and down, or diagonally \u2014 between the new disc and another of your own. Every trapped disc flips to your colour. If you have no legal move you pass. The game ends when neither player can move; whoever has more discs wins. Corners can never be flipped, so they are worth fighting for. Blitz adds a ninety-second clock; Corner Rush ends as soon as one side holds three corners; Mini plays on a 4\u00d74 board; Grandmaster is a 1.5\u00d7 match against the deepest search.',
   controls: [['Click a dot', 'Place a disc'], ['T', 'Show a hint'], ['U', 'Undo'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
 });
 ui.main.innerHTML = `
@@ -60,63 +64,137 @@ ui.main.innerHTML = `
     <div class="bk-status" id="st"></div>
     <div class="score" id="sc"></div>
     <div class="bk-row">
-      <label>Play <select class="bk-select" id="mode"><option value="1">Black (first) vs computer</option><option value="2">White vs computer</option><option value="two">Two players</option></select></label>
+      <label>Play <select class="bk-select" id="seat"><option value="1">Black (first) vs computer</option><option value="2">White vs computer</option><option value="two">Two players</option></select></label>
       <label>Level <select class="bk-select" id="lvl"><option value="0">Easy</option><option value="1" selected>Medium</option><option value="2">Hard</option></select></label>
     </div>
     <div class="bk-row"><button class="bk-btn bk-primary" id="new">New game</button><button class="bk-btn" id="undo">Undo</button><button class="bk-btn" id="hint">Hint</button></div>
     <div class="capt" id="cp"></div>
+    <div id="md"></div>
   </div>
 </div>`;
 const $ = (s) => ui.main.querySelector(s);
-const NAME = { 1: 'Black', 2: 'White' };
-const DIRS = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
-/* positional values: corners great, squares next to corners bad */
-const WT = [
-  120, -20, 20, 5, 5, 20, -20, 120,
-  -20, -40, -5, -5, -5, -5, -40, -20,
-  20, -5, 15, 3, 3, 15, -5, 20,
-  5, -5, 3, 3, 3, 3, -5, 5,
-  5, -5, 3, 3, 3, 3, -5, 5,
-  20, -5, 15, 3, 3, 15, -5, 20,
-  -20, -40, -5, -5, -5, -5, -40, -20,
-  120, -20, 20, 5, 5, 20, -20, 120,
+
+/* ---------------- modes, records, cosmetics ---------------- */
+const MODE_NAMES = { classic: 'Classic', blitz: 'Blitz', corners: 'Corner Rush', mini: 'Mini 4\u00d74', grandmaster: 'Grandmaster' };
+const MODE_KEY = { classic: 'Classic', blitz: 'Blitz', corners: 'Corners', mini: 'Mini', grandmaster: 'Grandmaster' };
+const CFG = {
+  classic: { size: 8, clock: 0, corners: 0, mult: 1, bonus: 1000 },
+  blitz: { size: 8, clock: 90000, corners: 0, mult: 1.1, bonus: 900 },
+  corners: { size: 8, clock: 0, corners: 3, mult: 1.2, bonus: 1000 },
+  mini: { size: 4, clock: 0, corners: 0, mult: 1.3, bonus: 1100 },
+  grandmaster: { size: 8, clock: 0, corners: 0, mult: 1.5, bonus: 1500 },
+};
+const MODES = [
+  { id: 'classic', name: 'Classic', blurb: 'The full 8\u00d78 board with standard rules.' },
+  { id: 'blitz', name: 'Blitz', blurb: 'Ninety seconds each. Run out of time and you lose. 1.1\u00d7 score.' },
+  { id: 'corners', name: 'Corner Rush', blurb: 'The first side to hold three corners wins immediately. 1.2\u00d7 score.' },
+  { id: 'mini', name: 'Mini 4\u00d74', blurb: 'A short, sharp board where every square matters. 1.3\u00d7 score.' },
+  { id: 'grandmaster', name: 'Grandmaster', blurb: 'The deepest search at 1.5\u00d7 score.', requires: { stat: 'classicWins', gte: 1 }, lockedHint: 'Win a Classic game to unlock' },
 ];
+const ACHIEVEMENTS = [
+  { id: 'first-place', name: 'First Placement', desc: 'Place a disc.', rarity: 'common' },
+  { id: 'first-flip', name: 'Turncoat', desc: 'Flip an enemy disc.', rarity: 'common' },
+  { id: 'classic-clear', name: 'Board Owner', desc: 'Win a Classic game.', rarity: 'common' },
+  { id: 'blitz-clear', name: 'Quick Thinker', desc: 'Win a Blitz game.', rarity: 'rare' },
+  { id: 'corners-clear', name: 'Corner Rusher', desc: 'Win a Corner Rush game.', rarity: 'rare' },
+  { id: 'mini-clear', name: 'Mini Master', desc: 'Win a Mini 4\u00d74 game.', rarity: 'rare' },
+  { id: 'grandmaster-clear', name: 'Grandmaster', desc: 'Win a Grandmaster game.', rarity: 'legendary' },
+  { id: 'big-flip', name: 'Mass Flip', desc: 'Flip six or more discs in one move.', rarity: 'epic' },
+  { id: 'corner-lord', name: 'Corner Lord', desc: 'Win with all four corners.', rarity: 'epic' },
+  { id: 'shutout', name: 'Shutout', desc: 'Win with every disc on the board.', rarity: 'legendary' },
+  { id: 'dominant', name: 'Dominant', desc: 'Win by thirty discs or more.', rarity: 'rare' },
+  { id: 'personal-best', name: 'Personal Best', desc: 'Set a new best score.', rarity: 'rare' },
+];
+const DISC_SETS = {
+  'reversi:discs-onyx': { w: 'radial-gradient(circle at 35% 30%, #ffffff, #cbd5e1)', b: 'radial-gradient(circle at 35% 30%, #52525b, #09090b)' },
+  'reversi:discs-ruby': { w: 'radial-gradient(circle at 35% 30%, #fecdd3, #e11d48)', b: 'radial-gradient(circle at 35% 30%, #7f1d1d, #1f0707)' },
+  'reversi:discs-gold': { w: 'radial-gradient(circle at 35% 30%, #fef9c3, #facc15)', b: 'radial-gradient(circle at 35% 30%, #713f12, #1c1206)' },
+  'reversi:discs-jade': { w: 'radial-gradient(circle at 35% 30%, #d9f99d, #65a30d)', b: 'radial-gradient(circle at 35% 30%, #14532d, #03130a)' },
+  'reversi:discs-ice': { w: 'radial-gradient(circle at 35% 30%, #e0f2fe, #7dd3fc)', b: 'radial-gradient(circle at 35% 30%, #0c4a6e, #04121c)' },
+};
+const BOARD_SETS = {
+  'reversi:board-forest': { sq: '#117a4d', board: '#064229', frame: '#0b5d3b' },
+  'reversi:board-slate': { sq: '#3f4b5f', board: '#20293a', frame: '#111827' },
+  'reversi:board-walnut': { sq: '#8a5a35', board: '#4a2f1d', frame: '#2b1a0f' },
+  'reversi:board-plum': { sq: '#6d3f6f', board: '#38203c', frame: '#221028' },
+};
+const ACCENTS = { 'reversi:accent-amber': '#f59e0b', 'reversi:accent-cyan': '#22d3ee', 'reversi:accent-rose': '#fb7185', 'reversi:accent-lime': '#a3e635' };
+const THEMES = {
+  'reversi:theme-night': '',
+  'reversi:theme-forest': 'radial-gradient(1000px 500px at 10% -10%, #14532d, transparent 60%), radial-gradient(800px 500px at 100% 0, #1e3a5f, transparent 55%), #070d09',
+  'reversi:theme-sunset': 'radial-gradient(1000px 500px at 12% -8%, #7c2d12, transparent 60%), radial-gradient(800px 500px at 100% 0, #4c1d3d, transparent 55%), #0b0705',
+};
+const PALETTE = {
+  discs: Object.assign({}, DISC_SETS['reversi:discs-onyx']),
+  board: Object.assign({}, BOARD_SETS['reversi:board-forest']),
+  accent: ACCENTS['reversi:accent-amber'],
+};
+function paintPalette() {
+  const el = document.getElementById('bd'); if (!el) return;
+  el.style.setProperty('--rv-sq', PALETTE.board.sq);
+  el.style.setProperty('--rv-board', PALETTE.board.board);
+  el.style.setProperty('--rv-frame', PALETTE.board.frame);
+  el.style.setProperty('--rv-accent', PALETTE.accent);
+  el.style.setProperty('--rv-black', PALETTE.discs.b);
+  el.style.setProperty('--rv-white', PALETTE.discs.w);
+}
+function applyCosmetic(slot, id) {
+  if (slot === 'skin' && DISC_SETS[id]) PALETTE.discs = Object.assign({}, DISC_SETS[id]);
+  else if (slot === 'palette' && BOARD_SETS[id]) PALETTE.board = Object.assign({}, BOARD_SETS[id]);
+  else if (slot === 'effect' && ACCENTS[id]) PALETTE.accent = ACCENTS[id];
+  else if (slot === 'theme' && THEMES[id] !== undefined) document.body.style.background = THEMES[id];
+  paintPalette(); if (B) render();
+}
 
 /* ---- rules ---- */
-function flipsAt(b, i, s) {
-  if (b[i]) return [];
-  const r = i >> 3, c = i & 7, out = [];
+const NAME = { 1: 'Black', 2: 'White' };
+const DIRS = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
+let N = 8;
+function flipsAt(b, i, s, n) {
+  n = n || N; if (b[i]) return [];
+  const r = Math.floor(i / n), c = i % n, out = [];
   for (const [dr, dc] of DIRS) {
     let rr = r + dr, cc = c + dc; const line = [];
-    while (rr >= 0 && rr < 8 && cc >= 0 && cc < 8 && b[rr * 8 + cc] === 3 - s) { line.push(rr * 8 + cc); rr += dr; cc += dc; }
-    if (line.length && rr >= 0 && rr < 8 && cc >= 0 && cc < 8 && b[rr * 8 + cc] === s) out.push(...line);
+    while (rr >= 0 && rr < n && cc >= 0 && cc < n && b[rr * n + cc] === 3 - s) { line.push(rr * n + cc); rr += dr; cc += dc; }
+    if (line.length && rr >= 0 && rr < n && cc >= 0 && cc < n && b[rr * n + cc] === s) out.push(...line);
   }
   return out;
 }
-function movesOf(b, s) { const m = []; for (let i = 0; i < 64; i++) { const f = flipsAt(b, i, s); if (f.length) m.push([i, f]); } return m; }
-function count(b, s) { let n = 0; for (let i = 0; i < 64; i++) if (b[i] === s) n++; return n; }
+function movesOf(b, s, n) { n = n || N; const m = []; for (let i = 0; i < n * n; i++) { const f = flipsAt(b, i, s, n); if (f.length) m.push([i, f]); } return m; }
+function count(b, s) { let v = 0; for (let i = 0; i < b.length; i++) if (b[i] === s) v++; return v; }
 function applyMove(b, i, f, s) { const nb = b.slice(); nb[i] = s; for (const j of f) nb[j] = s; return nb; }
+function weightsFor(n) {
+  const w = [];
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+    const edge = Math.min(r, c, n - 1 - r, n - 1 - c);
+    const corner = (r === 0 || r === n - 1) && (c === 0 || c === n - 1);
+    const nearCorner = !corner && (r === 0 || r === n - 1) && (c === 1 || c === n - 2) || !corner && (c === 0 || c === n - 1) && (r === 1 || r === n - 2);
+    w.push(corner ? 120 : nearCorner ? -40 : edge === 0 ? 20 : edge === 1 ? 3 : 8);
+  }
+  return w;
+}
+const WT = {};
+function wtFor(n) { return WT[n] || (WT[n] = weightsFor(n)); }
 
 /* ---- computer ---- */
-function evalB(b, s) {
-  let v = 0, empt = 0;
-  for (let i = 0; i < 64; i++) { if (b[i] === s) v += WT[i]; else if (b[i]) v -= WT[i]; else empt++; }
-  v += 4 * (movesOf(b, s).length - movesOf(b, 3 - s).length);
+function evalB(b, s, n) {
+  const wt = wtFor(n); let v = 0, empt = 0;
+  for (let i = 0; i < b.length; i++) { if (b[i] === s) v += wt[i]; else if (b[i]) v -= wt[i]; else empt++; }
+  v += 4 * (movesOf(b, s, n).length - movesOf(b, 3 - s, n).length);
   if (empt <= 8) v += 8 * (count(b, s) - count(b, 3 - s));
   return v;
 }
-/* negamax from the view of s, who is to move */
-function nm(b, s, d, a, be, passed) {
-  const m = movesOf(b, s);
+function nm(b, s, d, a, be, passed, n) {
+  const m = movesOf(b, s, n);
   if (!m.length) {
     if (passed) return (count(b, s) - count(b, 3 - s)) * 1000;
-    return -nm(b, 3 - s, d, -be, -a, true);
+    return -nm(b, 3 - s, d, -be, -a, true, n);
   }
-  if (!d) return evalB(b, s);
-  m.sort((x, y) => WT[y[0]] - WT[x[0]]);
+  if (!d) return evalB(b, s, n);
+  const wt = wtFor(n); m.sort((x, y) => wt[y[0]] - wt[x[0]]);
   let best = -1e9;
   for (const [i, f] of m) {
-    const v = -nm(applyMove(b, i, f, s), 3 - s, d - 1, -be, -a, false);
+    const v = -nm(applyMove(b, i, f, s), 3 - s, d - 1, -be, -a, false, n);
     if (v > best) best = v; if (best > a) a = best; if (a >= be) break;
   }
   return best;
@@ -125,94 +203,267 @@ function pick(b, s, L) {
   const m = movesOf(b, s); if (!m.length) return -1;
   let bm = -1, bv = -1e9;
   if (L === 0) { for (const [i, f] of m) { const v = f.length + Math.random() * 14; if (v > bv) { bv = v; bm = i; } } return bm; }
-  const d = L === 1 ? 2 : 4;
+  const d = mode === 'grandmaster' ? 5 : L === 1 ? 2 : 4;
   for (const [i, f] of m) {
-    const v = -nm(applyMove(b, i, f, s), 3 - s, d - 1, -1e9, 1e9, false) + Math.random() * 0.5;
+    const v = -nm(applyMove(b, i, f, s), 3 - s, d - 1, -1e9, 1e9, false, N) + Math.random() * 0.5;
     if (v > bv) { bv = v; bm = i; }
   }
   return bm;
 }
 
 /* ---- state & UI ---- */
-let B, turn, over, mode, busy, hist, last, note, hint, gen = 0;
+let B, turn, over, overSide, mode = 'classic', seat = '1', busy, hist, last, note, hint, menuPaused = true, gen = 0, plies = 0;
+let PS = { 1: { score: 0, flips: 0, biggest: 0 }, 2: { score: 0, flips: 0, biggest: 0 } };
+let cornersHeld = { 1: 0, 2: 0 }, clocks = { 1: 0, 2: 0 }, clockTimer = null, clockLast = 0;
 const bd = $('#bd'), sq = [];
-for (let i = 0; i < 64; i++) { const d = document.createElement('div'); d.className = 'sq'; d.dataset.i = i; bd.appendChild(d); sq.push(d); }
-const human = () => mode === 'two' || turn === mode;
+const humanTurn = () => seat === 'two' || String(turn) === seat;
+const humanSide = () => (seat === 'two' ? 1 : +seat);
+const fmt = (ms) => { const t = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
+const cornerIdx = () => [0, N - 1, N * (N - 1), N * N - 1];
+const hud = (s) => PS[s] && PS[s].score;
+function countCorners(b, s) { let v = 0; for (const i of cornerIdx()) if (b[i] === s) v++; return v; }
+function buildGrid() {
+  bd.style.setProperty('--n', N);
+  while (sq.length) { sq.pop().remove(); }
+  for (let i = 0; i < N * N; i++) { const d = document.createElement('div'); d.className = 'sq'; d.dataset.i = i; bd.appendChild(d); sq.push(d); }
+}
 function newGame() {
-  gen++; mode = $('#mode').value === 'two' ? 'two' : +$('#mode').value;
-  B = Array(64).fill(0); B[27] = 2; B[28] = 1; B[35] = 1; B[36] = 2;
-  turn = 1; over = ''; busy = false; hist = []; last = -1; note = ''; hint = -1;
-  render(); cpu();
+  gen++; if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  mode = ['classic', 'blitz', 'corners', 'mini', 'grandmaster'].includes(mode) ? mode : 'classic';
+  seat = $('#seat').value; N = CFG[mode].size;
+  B = Array(N * N).fill(0);
+  const m = N / 2; B[(m - 1) * N + (m - 1)] = 2; B[(m - 1) * N + m] = 1; B[m * N + (m - 1)] = 1; B[m * N + m] = 2;
+  turn = 1; over = null; overSide = null; busy = false; hist = []; last = -1; note = ''; hint = -1; plies = 0;
+  PS = { 1: { score: 0, flips: 0, biggest: 0 }, 2: { score: 0, flips: 0, biggest: 0 } };
+  cornersHeld = { 1: 0, 2: 0 };
+  clocks = { 1: CFG[mode].clock, 2: CFG[mode].clock }; clockLast = Date.now();
+  buildGrid(); paintPalette(); render();
+  if (CFG[mode].clock) clockTimer = setInterval(tickClock, 250);
+  cpu();
+}
+function tickClock(step) {
+  if (over) return;
+  if (step == null) {
+    const now = Date.now(), dt = now - clockLast; clockLast = now;
+    if (menuPaused || Board.paused()) return;
+    clocks[turn] = Math.max(0, clocks[turn] - dt);
+  } else clocks[turn] = Math.max(0, clocks[turn] - step);
+  if (clocks[turn] <= 0) { conclude(3 - turn, 'on time'); return; }
+  render();
 }
 function render(info) {
-  const legal = (!over && !busy && human()) ? movesOf(B, turn).map((m) => m[0]) : [];
+  if (!B) return;
+  const legal = (!over && !busy && humanTurn()) ? movesOf(B, turn).map((m) => m[0]) : [];
   sq.forEach((d, i) => {
     const p = B[i]; let h = '';
-    if (p) { const fl = info && info.flipped.includes(i), an = info && info.placed === i ? ' new' : ''; h = `<div class="dk ${fl ? (p === 1 ? 'w' : 'b') : (p === 1 ? 'b' : 'w')}${an}"></div>`; }
+    if (p) {
+      const fl = info && info.flipped.indexOf(i) >= 0;
+      const base = fl ? (p === 1 ? 'w' : 'b') : (p === 1 ? 'b' : 'w');
+      const an = info && info.placed === i ? ' new' : '';
+      h = `<div class="dk ${base}${an}"></div>`;
+    }
     d.innerHTML = h;
-    d.className = 'sq' + (legal.includes(i) ? ' ok' : '') + (i === hint ? ' hint' : '') + (i === last && !over ? ' last' : '');
+    d.className = 'sq' + (legal.indexOf(i) >= 0 ? ' ok' : '') + (i === hint ? ' hint' : '') + (i === last && !over ? ' last' : '');
   });
   const nb = count(B, 1), nw = count(B, 2);
-  $('#st').innerHTML = over || (busy ? (human() ? 'Discs are flipping…' : 'Computer is thinking…') : `<span class="dot ${turn === 1 ? 'b' : 'w'}"></span>${NAME[turn]} to move${mode !== 'two' && human() ? ' — your turn' : ''}`) + (!over && note ? `<div class="note">${note}</div>` : '');
+  $('#st').innerHTML = (over || (busy ? (humanTurn() ? 'Discs are flipping\u2026' : 'Computer is thinking\u2026') : `<span class="dot ${turn === 1 ? 'b' : 'w'}"></span>${NAME[turn]} to move${seat !== 'two' && humanTurn() ? ' \u2014 your turn' : ''}`)) + (!over && note ? `<div class="note">${note}</div>` : '');
   $('#sc').innerHTML = `<div class="${turn === 1 && !over ? 'on' : ''}"><span class="dot b"></span>Black<b>${nb}</b></div><div class="${turn === 2 && !over ? 'on' : ''}"><span class="dot w"></span>White<b>${nw}</b></div>`;
-  $('#cp').innerHTML = `Empty squares: <b>${64 - nb - nw}</b><br>Moves played: <b>${hist.length}</b>`;
-  /* flipped discs start in their old colour and turn over one after another */
+  const clock = CFG[mode].clock ? `<div class="clock${clocks[1] < 20000 || clocks[2] < 20000 ? ' low' : ''}" style="margin-bottom:6px">Black ${fmt(clocks[1])} \u00b7 White ${fmt(clocks[2])}</div>` : '';
+  $('#cp').innerHTML = clock + `Empty squares: <b>${N * N - nb - nw}</b><br>Moves played: <b>${plies}</b><br>Flipped: Black <b>${PS[1].flips}</b> \u00b7 White <b>${PS[2].flips}</b>`;
+  const aim = CFG[mode].corners ? ` \u00b7 first to ${CFG[mode].corners} corners` : '';
+  $('#md').textContent = MODE_NAMES[mode] + aim + (CFG[mode].clock ? ' \u00b7 ninety seconds each' : '') + (mode === 'mini' ? ' \u00b7 4\u00d74 board' : '');
   if (info) info.flipped.forEach((i, k) => {
-    const e = sq[i].firstChild, nc = B[i] === 1 ? 'b' : 'w', oc = nc === 'b' ? 'w' : 'b';
-    Board.after(Board.pace(300) + k * Board.pace(150), () => { e.className = 'dk ' + oc + ' fl'; Board.after(280, () => { e.className = 'dk ' + nc + ' fl2'; Board.sfx('step'); }); });
+    const e = sq[i] && sq[i].firstChild; if (!e) return;
+    const nc = B[i] === 1 ? 'b' : 'w', oc = nc === 'b' ? 'w' : 'b';
+    Board.after(Board.pace(260) + k * Board.pace(140), () => {
+      const live = sq[i] && sq[i].firstChild; if (!live || live !== e) return;
+      e.className = 'dk ' + oc + ' fl';
+      Board.after(280, () => { if (sq[i] && sq[i].firstChild === e) { e.className = 'dk ' + nc + ' fl2'; Board.sfx('step'); } });
+    });
   });
 }
-function play(i) {
+function play(i, fromCpu) {
+  if (over || busy) return;
+  if (!fromCpu && !humanTurn()) return;
   const f = flipsAt(B, i, turn); if (!f.length) return;
-  hist.push({ B: B.slice(), turn, last, note });
-  B = applyMove(B, i, f, turn); last = i; hint = -1; Board.sfx(f.length > 2 ? 'capture' : 'move');
-  const nx = 3 - turn; note = '';
-  if (movesOf(B, nx).length) turn = nx;
-  else if (movesOf(B, turn).length) { note = NAME[nx] + ' has no legal move and passes.'; }
-  else {
-    const a = count(B, 1), b = count(B, 2);
-    over = a > b ? `Black wins ${a}–${b}` : b > a ? `White wins ${b}–${a}` : `Draw ${a}–${b}`;
+  hist.push({ B: B.slice(), turn, last, note, PS: { 1: Object.assign({}, PS[1]), 2: Object.assign({}, PS[2]) }, plies });
+  const mover = turn, opp = 3 - mover;
+  B = applyMove(B, i, f, mover); last = i; hint = -1; plies += 1;
+  PS[mover].score += 10 + 20 * f.length; PS[mover].flips += f.length; PS[mover].biggest = Math.max(PS[mover].biggest, f.length);
+  Board.sfx(f.length > 2 ? 'capture' : 'move');
+  if (seat === 'two' || mover === humanSide()) {
+    GameUI.unlock('first-place');
+    if (f.length) GameUI.unlock('first-flip');
+    if (f.length >= 6) GameUI.unlock('big-flip');
   }
-  busy = true; const g0 = gen, settle = Board.pace(300) + Board.pace(150) * f.length + 700;
+  const nx = opp; note = '';
+  const nxMoves = movesOf(B, nx);
+  const myMoves = movesOf(B, mover);
+  if (nxMoves.length) turn = nx;
+  else if (myMoves.length) { turn = mover; note = NAME[nx] + ' has no legal move and passes.'; }
+  else { turn = nx; }
+  busy = true;
+  const g0 = gen, settle = Board.pace(300) + Board.pace(150) * f.length + 650;
   render({ placed: i, flipped: f });
-  if (over) {
-    const a = count(B, 1), b = count(B, 2), w = a > b ? 1 : b > a ? 2 : 0;
-    Board.sfx(!w ? 'move' : mode === 'two' || w === mode ? 'win' : 'lose');
-    const title = !w ? 'Draw' : mode === 'two' ? NAME[w] + ' wins!' : w === mode ? 'You won!' : 'Computer wins';
-    Board.after(settle + 300, () => { if (g0 !== gen) return; busy = false; render(); Board.modal(title, over, [['New game', newGame], ['Close']]); });
-  } else Board.after(settle, () => { if (g0 !== gen) return; busy = false; render(); cpu(); });
+  if (!nxMoves.length && !myMoves.length) {
+    Board.after(settle, () => { if (g0 === gen) finishNatural(); });
+    return;
+  }
+  if (CFG[mode].corners) {
+    const held = countCorners(B, mover);
+    if (held >= CFG[mode].corners) { Board.after(settle, () => { if (g0 === gen) conclude(mover, 'corners'); }); return; }
+  }
+  Board.after(settle, () => { if (g0 !== gen) return; busy = false; render(); cpu(); });
+}
+function finishNatural() {
+  const nb = count(B, 1), nw = count(B, 2);
+  if (nb === nw) conclude(null, 'draw'); else conclude(nb > nw ? 1 : 2, 'discs');
+}
+function conclude(winner, reason) {
+  if (over) return;
+  over = !winner ? `Draw ${count(B, 1)}\u2013${count(B, 2)}` : `${NAME[winner]} wins ${count(B, winner)}\u2013${count(B, 3 - winner)}`;
+  overSide = winner; busy = false; gen++;
+  if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  const cfg = CFG[mode], h = humanSide();
+  const humanWon = !!winner && winner === h;
+  const base = PS[h].score + (humanWon ? cfg.bonus : 0);
+  const finalScore = Math.round(base * cfg.mult);
+  const corners = countCorners(B, h);
+  const oppDiscs = count(B, 3 - h), myDiscs = count(B, h);
+  const records = {}; records['best' + MODE_KEY[mode] + 'Score'] = finalScore;
+  records.biggestFlip = PS[h].biggest;
+  const counters = { discsFlipped: PS[h].flips, movesPlayed: plies };
+  if (humanWon) { counters.wins = 1; counters[mode + 'Wins'] = 1; }
+  const achievements = [];
+  if (!winner) {
+    GameUI.record({ score: finalScore, result: 'Draw ' + MODE_NAMES[mode], records, counters, mins: {}, achievements });
+    render();
+    Board.sfx('move');
+    Board.modal('Draw', `Equal discs in ${MODE_NAMES[mode]} \u00b7 ${finalScore} pts`, [['Play again', newGame], ['Close']]);
+    return;
+  }
+  if (humanWon) achievements.push(mode + '-clear');
+  if (humanWon && corners === 4) achievements.push('corner-lord');
+  if (humanWon && oppDiscs === 0) achievements.push('shutout');
+  if (humanWon && myDiscs - oppDiscs >= 30) achievements.push('dominant');
+  const prevBest = Number(GameUI.stats().bestScore) || 0;
+  GameUI.record({
+    score: finalScore,
+    result: (winner === 1 ? 'Black' : 'White') + ' won ' + MODE_NAMES[mode] + (reason === 'on time' ? ' on time' : ''),
+    records, counters, mins: humanWon ? { fewestMoves: plies } : {}, achievements,
+  });
+  if (finalScore > prevBest) GameUI.unlock('personal-best');
+  render();
+  const title = seat === 'two' ? (winner === 1 ? 'Black wins!' : 'White wins!') : humanWon ? 'You won!' : 'Computer wins';
+  const detail = `${over} \u00b7 ${finalScore} pts \u00b7 ${MODE_NAMES[mode]}${reason === 'on time' ? ' \u00b7 won on time' : ''}`;
+  Board.sfx(seat === 'two' || humanWon ? 'win' : 'lose');
+  Board.modal(title, detail, [['Play again', newGame], ['Close']]);
 }
 function cpu() {
-  if (over || human()) return; busy = true; render();
-  const g = gen;
-  Board.think(() => pick(B, turn, +$('#lvl').value), 1000).then(async (m) => {
-    if (g !== gen || m < 0) return;
-    sq[m].classList.add('hint'); await Board.sleep(Board.pace(500));   /* mark the square it chose before placing */
-    if (g !== gen) return;
-    busy = false; play(m);
-  });
+  if (over || humanTurn()) return;
+  const g = gen, s = turn; busy = true; render();
+  const go = () => {
+    if (g !== gen || over) return;
+    if (menuPaused || Board.paused()) { Board.after(250, go); return; }
+    Board.think(() => pick(B, s, +$('#lvl').value), 900).then(async (m) => {
+      if (g !== gen || m < 0) return;
+      if (sq[m]) sq[m].classList.add('hint');
+      await Board.sleep(Board.pace(420));
+      if (g !== gen) return;
+      busy = false; play(m, true);
+    });
+  };
+  go();
 }
 function undo() {
   if (busy || !hist.length) return;
-  let h;
-  do { h = hist.pop(); B = h.B; turn = h.turn; last = h.last; note = h.note; } while (hist.length && mode !== 'two' && !human());
-  over = ''; hint = -1; gen++; busy = false; render(); cpu();
+  const pop = () => { const h = hist.pop(); B = h.B; turn = h.turn; last = h.last; note = h.note; PS = h.PS; plies = h.plies; };
+  pop(); while (seat !== 'two' && hist.length && !humanTurn()) pop();
+  over = null; overSide = null; hint = -1; gen++; busy = false; render(); cpu();
 }
 function showHint() {
-  if (over || busy || !human()) return;
+  if (over || busy || !humanTurn()) return;
   const m = pick(B, turn, 2); if (m < 0) return; hint = m; render();
 }
 bd.addEventListener('click', (e) => {
-  const d = e.target.closest('.sq'); if (!d || over || busy || !human()) return;
-  const i = +d.dataset.i; if (!flipsAt(B, i, turn).length) { Board.sfx('error'); return; } play(i);
+  const d = e.target.closest('.sq'); if (!d || over || busy || !humanTurn()) return;
+  const i = +d.dataset.i;
+  if (!flipsAt(B, i, turn).length) { Board.sfx('error'); return; }
+  play(i);
 });
-$('#new').onclick = newGame; $('#undo').onclick = undo; $('#hint').onclick = showHint; $('#mode').onchange = newGame;
+$('#new').onclick = newGame; $('#undo').onclick = undo; $('#hint').onclick = showHint; $('#seat').onchange = newGame;
 document.addEventListener('keydown', (e) => {
   if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.toLowerCase();
   if (k === 'n') newGame(); else if (k === 'u') undo(); else if (k === 't') showHint();
 });
-newGame();
+
+/* ---------------- shared menu contract ---------------- */
+const GameUI = Board.ui({
+  id: 'reversi', title: 'Reversi', subtitle: 'Five ways to outflank the board.', accent: '#22d3ee',
+  modes: MODES, achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Place a disc on a highlighted dot so it traps enemy discs in a line.' },
+    { text: 'Every trapped disc flips to your colour; corners can never flip.' },
+    { text: 'Pass when you have no move; the game ends when neither side can move.' },
+    { text: 'Corner Rush ends at three corners, Mini shrinks the board, Blitz adds a clock.' },
+  ] },
+  hooks: {
+    applyMode: (next) => { mode = MODES.some((m) => m.id === next) ? next : 'classic'; if (B) newGame(); },
+    applyCosmetic,
+    onStart: () => { menuPaused = false; clockLast = Date.now(); },
+  },
+});
+window.ApexGameMenuActions = {
+  play: function () { menuPaused = false; clockLast = Date.now(); },
+  pause: function (value) { menuPaused = !!value; clockLast = Date.now(); },
+  resume: function () { menuPaused = false; clockLast = Date.now(); },
+  restart: function () { menuPaused = false; newGame(); }
+};
+
+paintPalette(); newGame();
+
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  const snap = () => ({
+    mode, seat, size: N, turn, over, overSide, busy, plies, last, menuPaused,
+    board: B.slice(), black: count(B, 1), white: count(B, 2), empty: B.filter((v) => !v).length,
+    scores: { 1: PS[1].score, 2: PS[2].score }, flips: { 1: PS[1].flips, 2: PS[2].flips }, biggest: { 1: PS[1].biggest, 2: PS[2].biggest },
+    clocks: Object.assign({}, clocks), corners: { 1: countCorners(B, 1), 2: countCorners(B, 2) },
+    legal: over ? [] : movesOf(B, turn).map((m) => ({ at: m[0], flips: m[1].slice() })),
+  });
+  window.ReversiTest = {
+    state: snap,
+    modes: () => MODES.map((m) => m.id),
+    setMode: (id) => GameUI.setMode(id),
+    getMode: () => GameUI.getMode(),
+    restart: () => { newGame(); return true; },
+    setSeat: (value) => { const s = $('#seat'); if (!Array.from(s.options).some((o) => o.value === value)) return false; s.value = value; newGame(); return true; },
+    setLevel: (n) => { const s = $('#lvl'); s.value = String(Math.max(0, Math.min(2, Number(n) || 0))); return +s.value; },
+    setDifficulty: (d) => Board.setDifficulty(d),
+    level: () => Board.level(),
+    setBoard: (cells) => {
+      if (Array.isArray(cells) && (cells.length === 16 || cells.length === 64)) {
+        N = Math.sqrt(cells.length); B = cells.map((p) => p || 0); buildGrid();
+      } else { N = CFG[mode].size; B = Array(N * N).fill(0); buildGrid(); }
+      over = null; overSide = null; last = -1; note = ''; hint = -1; render(); return B.slice();
+    },
+    setTurn: (s) => { turn = s === 2 || s === '2' || s === 'w' ? 2 : 1; hint = -1; render(); return turn; },
+    play: (i) => { play(Number(i), true); return snap(); },
+    finish: (s) => { conclude(s === 'draw' ? null : Number(s), 'test'); return snap(); },
+    setScore: (s, n) => { PS[s].score = Math.max(0, Number(n) || 0); render(); return PS[s].score; },
+    setClock: (s, ms) => { clocks[s] = Math.max(0, Number(ms) || 0); render(); return clocks[s]; },
+    tick: (ms) => { tickClock(Number(ms) || 0); return snap(); },
+    menuPaused: (value) => { menuPaused = !!value; clockLast = Date.now(); return menuPaused; },
+    start: () => { menuPaused = false; clockLast = Date.now(); },
+    colors: () => ({ discs: Object.assign({}, PALETTE.discs), board: Object.assign({}, PALETTE.board), accent: PALETTE.accent, theme: document.body.style.background || 'auto' }),
+    cosmetic: (slot, id) => { applyCosmetic(slot, id); return window.ReversiTest.colors(); },
+    cosmeticList: () => (window.Meta && Meta.getCosmetics ? Meta.getCosmetics('reversi') : []).map((item) => ({ id: item.id, slot: item.slot })),
+    achievements: () => (Save.load('reversi').achievements || []).slice(),
+    stats: () => Save.load('reversi').stats || {},
+    modalOpen: () => { const d = document.getElementById('bk-dlg'); return !!(d && d.open); },
+    closeModal: () => { const d = document.getElementById('bk-dlg'); if (d && d.open) d.close(); },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

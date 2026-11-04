@@ -8,23 +8,24 @@
 <style>
   .c4 { display: grid; grid-template-columns: auto minmax(240px, 1fr); gap: 22px; align-items: start; }
   @media (max-width: 860px) { .c4 { grid-template-columns: 1fr; } }
-  #bd { --s: max(280px, min(100vw - 40px, 640px)); width: var(--s); aspect-ratio: 7 / 6.4; background: #1d4ed8; border-radius: 16px; padding: 10px; box-shadow: 0 20px 50px -20px #000, 0 0 0 6px #1e3a8a; display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: auto repeat(6, 1fr); gap: 6px; user-select: none; touch-action: manipulation; }
+  #bd { --s: max(280px, min(100vw - 40px, 640px)); width: var(--s); aspect-ratio: 7 / 6.4; background: var(--c4-board, #1d4ed8); border-radius: 16px; padding: 10px; box-shadow: 0 20px 50px -20px #000, 0 0 0 6px var(--c4-frame, #1e3a8a); display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: auto repeat(6, 1fr); gap: 6px; user-select: none; touch-action: manipulation; }
   .hd { display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 10px; min-height: 0; }
   .hd.on:hover, .hd.hov { background: rgba(255,255,255,.14); }
   .hd i { width: 56%; aspect-ratio: 1; border-radius: 50%; opacity: 0; }
   .hd.hov i { opacity: .8; }
-  .cell { background: #0b1b52; border-radius: 50%; position: relative; box-shadow: inset 0 4px 8px rgba(0,0,0,.6); aspect-ratio: 1; overflow: visible; cursor: pointer; }
+  .cell { background: var(--c4-cell, #0b1b52); border-radius: 50%; position: relative; box-shadow: inset 0 4px 8px rgba(0,0,0,.6); aspect-ratio: 1; overflow: visible; cursor: pointer; }
   .disc { position: absolute; inset: 7%; border-radius: 50%; box-shadow: inset 0 -5px 0 rgba(0,0,0,.25), inset 0 4px 0 rgba(255,255,255,.3); }
-  .disc.y, .hd i.y { background: radial-gradient(circle at 35% 30%, #fde68a, #f59e0b); }
-  .disc.r, .hd i.r { background: radial-gradient(circle at 35% 30%, #fb7185, #be123c); }
   .disc.drop { animation: fall calc(.3s + var(--r) * .07s) cubic-bezier(.5, 0, 1, .6); }
   @keyframes fall { from { transform: translateY(calc(var(--r) * -112% - 130%)); } }
-  .disc.win { animation: pulse .7s ease-in-out infinite alternate; outline: 4px solid #fff; }
+  .disc.win { animation: pulse .7s ease-in-out infinite alternate; outline: 4px solid var(--c4-win, #fff); }
   @keyframes pulse { to { transform: scale(1.12); } }
   .disc.last::after { content: ""; position: absolute; inset: 36%; border-radius: 50%; background: rgba(0,0,0,.35); }
   .side { display: grid; gap: 12px; }
   .capt { color: var(--muted); line-height: 1.7; }
+  .capt b { color: #e6e9f5; }
   .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+  .clock { font: 700 15px ui-monospace, Consolas, monospace; color: #fde047; }
+  .clock.low { color: #fb7185; }
 </style>
 <script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
 </head>
@@ -40,8 +41,8 @@
 <script>
 const ui = Board.shell({
   id: 'connect-four', cpu: true, title: 'Connect Four', subtitle: 'Drop discs and line up four before your rival does',
-  rules: 'Players take turns dropping a disc into one of the seven columns; it falls to the lowest free slot. Make a straight line of four of your own discs — across, up and down, or diagonally — to win. If all 42 slots fill with no line, the game is a draw. Gold moves first.',
-  controls: [['Click column', 'Drop a disc'], ['1 – 7', 'Drop in that column'], ['← → + Enter', 'Move the pointer, then drop'], ['U', 'Undo'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
+  rules: 'Players take turns dropping a disc into one of the seven columns; it falls to the lowest free slot. Make a straight line of your own discs \u2014 across, up and down, or diagonally \u2014 to win. Classic and Blitz need four; Triple Threat needs three; Marathon needs five. If every slot fills with no line, the game is a draw. Gold moves first.',
+  controls: [['Click column', 'Drop a disc'], ['1 \u2013 7', 'Drop in that column'], ['\u2190 \u2192 + Enter', 'Move the pointer, then drop'], ['U', 'Undo'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
 });
 ui.main.innerHTML = `
 <div class="c4">
@@ -49,33 +50,109 @@ ui.main.innerHTML = `
   <div class="side">
     <div class="bk-status" id="st"></div>
     <div class="bk-row">
-      <label>Play <select class="bk-select" id="mode"><option value="y">Gold (first) vs computer</option><option value="r">Crimson vs computer</option><option value="two">Two players</option></select></label>
+      <label>Play <select class="bk-select" id="seat"><option value="y">Gold (first) vs computer</option><option value="r">Crimson vs computer</option><option value="two">Two players</option></select></label>
       <label>Level <select class="bk-select" id="lvl"><option value="0">Easy</option><option value="1" selected>Medium</option><option value="2">Hard</option></select></label>
     </div>
     <div class="bk-row"><button class="bk-btn bk-primary" id="new">New game</button><button class="bk-btn" id="undo">Undo</button></div>
     <div class="capt" id="cp"></div>
+    <div id="md" style="color:var(--muted);font-size:13px;line-height:1.6"></div>
   </div>
 </div>`;
 const $ = (s) => ui.main.querySelector(s);
 const W = 7, H = 6, opp = (s) => (s === 'y' ? 'r' : 'y'), NAME = { y: 'Gold', r: 'Crimson' };
 const ORDER = [3, 2, 4, 1, 5, 0, 6];
 
-/* ---- rules ---- */
-const LINES = []; /* every 4-in-a-row as index quadruples */
-for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) for (const [dr, dc] of [[0, 1], [1, 0], [1, 1], [1, -1]]) {
-  const r2 = r + 3 * dr, c2 = c + 3 * dc; if (r2 < H && c2 >= 0 && c2 < W) LINES.push([0, 1, 2, 3].map((k) => (r + k * dr) * W + c + k * dc));
+/* ---------------- modes, records, cosmetics ---------------- */
+const MODE_NAMES = { classic: 'Classic', triple: 'Triple Threat', marathon: 'Marathon', blitz: 'Blitz', grandmaster: 'Grandmaster' };
+const MODE_KEY = { classic: 'Classic', triple: 'Triple', marathon: 'Marathon', blitz: 'Blitz', grandmaster: 'Grandmaster' };
+const CFG = {
+  classic: { target: 4, clock: 0, mult: 1, bonus: 1000 },
+  triple: { target: 3, clock: 0, mult: 1.1, bonus: 900 },
+  marathon: { target: 5, clock: 0, mult: 1.2, bonus: 1100 },
+  blitz: { target: 4, clock: 60000, mult: 1.3, bonus: 1100 },
+  grandmaster: { target: 4, clock: 0, mult: 1.5, bonus: 1500 },
+};
+const MODES = [
+  { id: 'classic', name: 'Classic', blurb: 'Seven columns, six rows, four in a row.' },
+  { id: 'triple', name: 'Triple Threat', blurb: 'Three in a row wins. Games end fast. 1.1\u00d7 score.' },
+  { id: 'marathon', name: 'Marathon', blurb: 'Five in a row on the full board. 1.2\u00d7 score.' },
+  { id: 'blitz', name: 'Blitz', blurb: 'Sixty seconds each. Flag and you lose. 1.3\u00d7 score.' },
+  { id: 'grandmaster', name: 'Grandmaster', blurb: 'The deepest search at 1.5\u00d7 score.', requires: { stat: 'classicWins', gte: 1 }, lockedHint: 'Win a Classic game to unlock' },
+];
+const ACHIEVEMENTS = [
+  { id: 'first-drop', name: 'First Drop', desc: 'Drop a disc.', rarity: 'common' },
+  { id: 'first-win', name: 'Connected', desc: 'Win any game.', rarity: 'common' },
+  { id: 'classic-clear', name: 'Classic Line', desc: 'Win a Classic game.', rarity: 'common' },
+  { id: 'triple-clear', name: 'Quick Three', desc: 'Win a Triple Threat game.', rarity: 'rare' },
+  { id: 'marathon-clear', name: 'Five Alive', desc: 'Win a Marathon game.', rarity: 'epic' },
+  { id: 'blitz-clear', name: 'Beat The Clock', desc: 'Win a Blitz game.', rarity: 'rare' },
+  { id: 'grandmaster-clear', name: 'Grandmaster', desc: 'Win a Grandmaster game.', rarity: 'legendary' },
+  { id: 'diagonal-win', name: 'Crossed Lines', desc: 'Win on a diagonal.', rarity: 'rare' },
+  { id: 'vertical-win', name: 'Stacked', desc: 'Win on a vertical line.', rarity: 'rare' },
+  { id: 'quick-win', name: 'Lightning Line', desc: 'Win within ten discs.', rarity: 'epic' },
+  { id: 'center-stage', name: 'Center Stage', desc: 'Win with the final disc in the centre column.', rarity: 'rare' },
+  { id: 'personal-best', name: 'Personal Best', desc: 'Set a new best score.', rarity: 'rare' },
+];
+const DISC_SETS = {
+  'c4:discs-classic': { y: 'radial-gradient(circle at 35% 30%, #fde68a, #f59e0b)', r: 'radial-gradient(circle at 35% 30%, #fb7185, #be123c)' },
+  'c4:discs-ocean': { y: 'radial-gradient(circle at 35% 30%, #a5f3fc, #0891b2)', r: 'radial-gradient(circle at 35% 30%, #c4b5fd, #6d28d9)' },
+  'c4:discs-neon': { y: 'radial-gradient(circle at 35% 30%, #bef264, #4d7c0f)', r: 'radial-gradient(circle at 35% 30%, #f0abfc, #a21caf)' },
+  'c4:discs-emerald': { y: 'radial-gradient(circle at 35% 30%, #86efac, #15803d)', r: 'radial-gradient(circle at 35% 30%, #fda4af, #9f1239)' },
+  'c4:discs-mono': { y: 'radial-gradient(circle at 35% 30%, #f8fafc, #94a3b8)', r: 'radial-gradient(circle at 35% 30%, #64748b, #0f172a)' },
+};
+const BOARD_SETS = {
+  'c4:board-classic': { board: '#1d4ed8', frame: '#1e3a8a', cell: '#0b1b52' },
+  'c4:board-navy': { board: '#172554', frame: '#0f172a', cell: '#020617' },
+  'c4:board-charcoal': { board: '#334155', frame: '#111827', cell: '#0b1120' },
+  'c4:board-violet': { board: '#5b21b6', frame: '#3b0764', cell: '#1e1038' },
+};
+const ACCENTS = { 'c4:accent-white': '#ffffff', 'c4:accent-cyan': '#22d3ee', 'c4:accent-lime': '#a3e635', 'c4:accent-rose': '#fb7185' };
+const THEMES = {
+  'c4:theme-night': '',
+  'c4:theme-space': 'radial-gradient(1100px 520px at 12% -8%, #1e3a5f, transparent 60%), radial-gradient(900px 520px at 100% 0, #3b1d4a, transparent 55%), #090a10',
+  'c4:theme-sunset': 'radial-gradient(1000px 500px at 10% -10%, #7c2d12, transparent 60%), radial-gradient(800px 500px at 100% 0, #4c1d3d, transparent 55%), #0a0707',
+};
+const PALETTE = {
+  discs: Object.assign({}, DISC_SETS['c4:discs-classic']),
+  board: Object.assign({}, BOARD_SETS['c4:board-classic']),
+  accent: ACCENTS['c4:accent-white'],
+};
+function paintPalette() {
+  const el = document.getElementById('bd'); if (!el) return;
+  el.style.setProperty('--c4-board', PALETTE.board.board);
+  el.style.setProperty('--c4-frame', PALETTE.board.frame);
+  el.style.setProperty('--c4-cell', PALETTE.board.cell);
+  el.style.setProperty('--c4-win', PALETTE.accent);
 }
+function applyCosmetic(slot, id) {
+  if (slot === 'skin' && DISC_SETS[id]) PALETTE.discs = Object.assign({}, DISC_SETS[id]);
+  else if (slot === 'palette' && BOARD_SETS[id]) PALETTE.board = Object.assign({}, BOARD_SETS[id]);
+  else if (slot === 'effect' && ACCENTS[id]) PALETTE.accent = ACCENTS[id];
+  else if (slot === 'theme' && THEMES[id] !== undefined) document.body.style.background = THEMES[id];
+  paintPalette(); if (B) render();
+}
+
+/* ---- rules ---- */
+function linesFor(n) {
+  const out = [];
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) for (const [dr, dc] of [[0, 1], [1, 0], [1, 1], [1, -1]]) {
+    const r2 = r + (n - 1) * dr, c2 = c + (n - 1) * dc; if (r2 < H && c2 >= 0 && c2 < W) out.push(Array.from({ length: n }, (_, k) => (r + k * dr) * W + c + k * dc));
+  }
+  return out;
+}
+let WLINES = linesFor(4);
 const drop = (b, c) => { for (let r = H - 1; r >= 0; r--) if (!b[r * W + c]) return r; return -1; };
-const winLine = (b) => { for (const L of LINES) { const p = b[L[0]]; if (p && p === b[L[1]] && p === b[L[2]] && p === b[L[3]]) return L; } return null; };
+const winLine = (b) => { for (const L of WLINES) { const p = b[L[0]]; if (p && L.every((i) => b[i] === p)) return L; } return null; };
+const WEIGHTS = { 3: [0, 1, 8, 60], 4: [0, 1, 4, 24, 120], 5: [0, 1, 3, 12, 60, 300] };
 function ev(b, s) {
-  let v = 0; for (let r = 0; r < H; r++) if (b[r * W + 3] === s) v += 3; else if (b[r * W + 3]) v -= 3;
-  for (const L of LINES) {
+  const wt = WEIGHTS[WLINES[0].length] || WEIGHTS[4]; let v = 0;
+  for (let r = 0; r < H; r++) if (b[r * W + 3] === s) v += 3; else if (b[r * W + 3]) v -= 3;
+  for (const L of WLINES) {
     let a = 0, o = 0; for (const i of L) { if (b[i] === s) a++; else if (b[i]) o++; }
-    if (a && o) continue; if (a) v += [0, 1, 4, 24][a] || 0; else if (o) v -= [0, 1, 4, 24][o] || 0;
+    if (a && o) continue; if (a) v += wt[a] || 0; else if (o) v -= wt[o] || 0;
   }
   return v;
 }
-/* negamax from the point of view of s (who is to move); the previous mover may already have won */
 function nm(b, s, d, a, be, last) {
   if (last >= 0) { const L = winLine(b); if (L) return -1e5 - d; }
   if (!d) return ev(b, s);
@@ -89,66 +166,144 @@ function nm(b, s, d, a, be, last) {
 }
 
 /* ---- state & UI ---- */
-let B, turn, over, mode, busy, hist, last, wl, hov = 3, gen = 0;
+let B, turn, over, mode = 'classic', seat = 'y', busy, hist, last, wl, hov = 3, menuPaused = true, gen = 0;
+let PS = { y: { score: 0, drops: 0 }, r: { score: 0, drops: 0 } };
+let clocks = { y: 0, r: 0 }, clockTimer = null, clockLast = 0;
 const bd = $('#bd'), heads = [], cells = [];
 for (let c = 0; c < W; c++) { const d = document.createElement('div'); d.className = 'hd'; d.dataset.c = c; d.innerHTML = '<i></i>'; bd.appendChild(d); heads.push(d); }
 for (let k = 0; k < W * H; k++) { const d = document.createElement('div'); d.className = 'cell'; d.dataset.c = k % W; bd.appendChild(d); cells.push(d); }
-const human = () => mode === 'two' || turn === mode;
-function newGame() { gen++; mode = $('#mode').value; B = Array(W * H).fill(0); turn = 'y'; over = null; busy = false; hist = []; last = -1; wl = null; render(); cpu(); }
+const humanTurn = () => seat === 'two' || turn === seat;
+const humanSeatFor = (s) => seat === 'two' || seat === s;
+const humanSide = () => (seat === 'two' ? 'y' : seat);
+const addScore = (s, n) => { if (PS[s]) PS[s].score += Math.max(0, Math.round(n)); };
+const fmt = (ms) => { const t = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
+
+function newGame() {
+  gen++; if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  mode = ['classic', 'triple', 'marathon', 'blitz', 'grandmaster'].includes(mode) ? mode : 'classic';
+  seat = $('#seat').value;
+  WLINES = linesFor(CFG[mode].target);
+  B = Array(W * H).fill(0); turn = 'y'; over = null; busy = false; hist = []; last = -1; wl = null;
+  PS = { y: { score: 0, drops: 0 }, r: { score: 0, drops: 0 } };
+  clocks = { y: CFG[mode].clock, r: CFG[mode].clock }; clockLast = Date.now();
+  paintPalette(); render();
+  if (CFG[mode].clock) clockTimer = setInterval(tickClock, 250);
+  cpu();
+}
+function tickClock(step) {
+  if (over) return;
+  if (step == null) {
+    const now = Date.now(), dt = now - clockLast; clockLast = now;
+    if (menuPaused || Board.paused()) return;
+    clocks[turn] = Math.max(0, clocks[turn] - dt);
+  } else clocks[turn] = Math.max(0, clocks[turn] - step);
+  if (clocks[turn] <= 0) { conclude(opp(turn), 'on time'); return; }
+  render();
+}
 function render(dropped) {
+  if (!B) return;
   cells.forEach((d, i) => {
     const p = B[i]; const keep = d.firstChild && d.firstChild.className.includes(' ' + p) && i !== dropped;
     if (!p) { d.innerHTML = ''; return; }
-    if (!keep) d.innerHTML = `<div class="disc ${p}${i === dropped ? ' drop' : ''}" style="--r:${i === dropped ? (i / W | 0) : 0}"></div>`;
+    if (!keep) d.innerHTML = `<div class="disc ${p}${i === dropped ? ' drop' : ''}" style="background:${PALETTE.discs[p]};--r:${i === dropped ? (i / W | 0) : 0}"></div>`;
     const e = d.firstChild; e.classList.toggle('win', !!wl && wl.includes(i)); e.classList.toggle('last', i === last && !over);
   });
-  heads.forEach((h, c) => { const on = !over && !busy && human() && drop(B, c) >= 0; h.classList.toggle('on', on); h.classList.toggle('hov', on && c === hov); h.firstChild.className = turn; });
-  $('#st').innerHTML = over || (busy ? 'Computer is thinking…' : `<span class="dot" style="background:${turn === 'y' ? '#f59e0b' : '#be123c'}"></span>${NAME[turn]} to move${mode !== 'two' && human() ? ' — your turn' : ''}`);
+  heads.forEach((h, c) => { const on = !over && !busy && humanTurn() && drop(B, c) >= 0; h.classList.toggle('on', on); h.classList.toggle('hov', on && c === hov); h.firstChild.className = turn; h.firstChild.style.background = PALETTE.discs[turn]; });
+  $('#st').textContent = over || (busy ? 'Computer is thinking\u2026' : `${NAME[turn]} to move${seat !== 'two' && humanTurn() ? ' \u2014 your turn' : ''}`);
   const n = (s) => B.filter((p) => p === s).length;
-  $('#cp').innerHTML = `Gold discs: <b>${n('y')}</b><br>Crimson discs: <b>${n('r')}</b><br>Moves played: <b>${hist.length}</b>`;
+  const clock = CFG[mode].clock ? `<div class="clock${clocks.y < 15000 || clocks.r < 15000 ? ' low' : ''}">Gold ${fmt(clocks.y)} \u00b7 Crimson ${fmt(clocks.r)}</div>` : '';
+  $('#cp').innerHTML = `${clock}Gold discs: <b>${n('y')}</b><br>Crimson discs: <b>${n('r')}</b><br>Moves played: <b>${hist.length}</b>`;
+  $('#md').textContent = MODE_NAMES[mode] + ' \u00b7 ' + CFG[mode].target + ' in a row' + (CFG[mode].clock ? ' \u00b7 sixty seconds each' : '');
 }
 function play(c) {
-  const r = drop(B, c); if (r < 0) return; hist.push({ c, last });
-  const i = r * W + c; B[i] = turn; last = i; Board.sfx('move');
+  if (over || busy) return;
+  const r = drop(B, c); if (r < 0) return;
+  hist.push({ c, last });
+  const mover = turn, i = r * W + c; B[i] = mover; last = i; Board.sfx('move');
+  addScore(mover, 20); PS[mover].drops += 1;
+  if (humanSeatFor(mover)) GameUI.unlock('first-drop');
   wl = winLine(B);
-  if (wl) over = NAME[turn] + ' wins!'; else if (B.every(Boolean)) over = 'Draw — the board is full';
-  else turn = opp(turn);
   render(i);
-  if (over) {
-    const w = mode !== 'two' && wl && B[wl[0]] === mode; Board.sfx(!wl ? 'move' : mode === 'two' || w ? 'win' : 'lose');
-    Board.after(700, () => Board.modal(!wl ? 'Draw' : mode === 'two' ? over : w ? 'You won!' : 'Computer wins', over, [['New game', newGame], ['Close']]));
-  } else cpu();
+  if (wl) { conclude(mover, 'line'); return; }
+  if (B.every(Boolean)) { conclude(null, 'full'); return; }
+  turn = opp(mover);
+  render();
+  cpu();
+}
+function conclude(winner, reason) {
+  if (over) return;
+  over = !winner ? 'Draw \u2014 the board is full' : NAME[winner] + ' wins!';
+  busy = false; gen++;
+  if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  const cfg = CFG[mode], h = humanSide();
+  const humanWon = !!winner && (seat === 'two' ? winner === 'y' : winner === seat);
+  const base = PS[h].score + (humanWon ? cfg.bonus : 0);
+  const finalScore = Math.round(base * cfg.mult);
+  const records = {}; records['best' + MODE_KEY[mode] + 'Score'] = finalScore;
+  const counters = { discsDropped: PS[h].drops };
+  if (humanWon) { counters.wins = 1; counters[mode + 'Wins'] = 1; }
+  const achievements = [];
+  if (humanWon) {
+    achievements.push(mode + '-clear', 'first-win');
+    if (wl) {
+      const r0 = (wl[0] / W) | 0, c0 = wl[0] % W, r1 = (wl[1] / W) | 0, c1 = wl[1] % W;
+      if (r0 !== r1 && c0 !== c1) achievements.push('diagonal-win');
+      if (c0 === c1) achievements.push('vertical-win');
+    }
+    if (hist.length <= 10) achievements.push('quick-win');
+    if (last % W === 3) achievements.push('center-stage');
+  }
+  const prevBest = Number(GameUI.stats().bestScore) || 0;
+  GameUI.record({
+    score: finalScore,
+    result: (!winner ? 'Draw' : NAME[winner] + ' won') + ' ' + MODE_NAMES[mode] + (reason === 'on time' ? ' on time' : ''),
+    records, counters,
+    mins: humanWon ? { fewestMoves: hist.length } : {},
+    achievements,
+  });
+  if (finalScore > prevBest) GameUI.unlock('personal-best');
+  render();
+  const title = seat === 'two' ? (winner ? NAME[winner] + ' wins!' : 'Draw') : humanWon ? 'You won!' : winner ? 'Computer wins' : 'Draw';
+  const detail = finalScore + ' pts \u00b7 ' + MODE_NAMES[mode] + (reason === 'on time' ? ' \u00b7 won on time' : '');
+  Board.sfx(seat === 'two' || humanWon ? 'win' : winner ? 'lose' : 'move');
+  Board.modal(title, detail, [['New game', newGame], ['Close']]);
 }
 function cpu() {
-  if (over || human()) return; busy = true; render();
-  const g = gen;
-  Board.think(() => {
-    const s = turn, L = +$('#lvl').value, d = [2, 5, 7][L], b = B.slice(); let bm = -1, bs = -1e9;
-    const cols = ORDER.filter((c) => drop(b, c) >= 0);
-    for (const c of cols) {
-      const r = drop(b, c); b[r * W + c] = s; let v = -nm(b, opp(s), d - 1, -1e9, 1e9, c); b[r * W + c] = 0;
-      if (L === 0) v += Math.random() * 30;
-      if (v > bs) { bs = v; bm = c; }
-    }
-    return bm;
-  }, 950).then(async (bm) => {
-    if (g !== gen) return;
-    heads[bm].classList.add('hov'); await Board.sleep(Board.pace(450));   /* hover over the chosen column first */
-    if (g !== gen) return;
-    busy = false; play(bm);
-  });
+  if (over || humanTurn()) return;
+  const g = gen, s = turn; busy = true; render();
+  const go = () => {
+    if (g !== gen || over) return;
+    if (menuPaused || Board.paused()) { Board.after(250, go); return; }
+    Board.think(() => {
+      const L = +$('#lvl').value, d = mode === 'grandmaster' ? 7 : [2, 5, 7][L], b = B.slice(); let bm = -1, bs = -1e9;
+      const cols = ORDER.filter((c) => drop(b, c) >= 0);
+      for (const c of cols) {
+        const r = drop(b, c); b[r * W + c] = s; let v = -nm(b, opp(s), d - 1, -1e9, 1e9, c); b[r * W + c] = 0;
+        if (L === 0 && mode !== 'grandmaster') v += Math.random() * 30;
+        if (v > bs) { bs = v; bm = c; }
+      }
+      return bm;
+    }, 950).then(async (bm) => {
+      if (g !== gen || bm < 0) return;
+      heads[bm].classList.add('hov'); await Board.sleep(Board.pace(450));
+      if (g !== gen) return;
+      busy = false; play(bm);
+    });
+  };
+  go();
 }
-function go(c) { if (over || busy || !human() || c < 0 || c >= W) return; if (drop(B, c) < 0) { Board.sfx('error'); return; } play(c); }
+function go(c) { if (over || busy || !humanTurn() || c < 0 || c >= W) return; if (drop(B, c) < 0) { Board.sfx('error'); return; } play(c); }
 bd.addEventListener('click', (e) => { const d = e.target.closest('[data-c]'); if (d) go(+d.dataset.c); });
 bd.addEventListener('mouseover', (e) => { const d = e.target.closest('[data-c]'); if (d && +d.dataset.c !== hov) { hov = +d.dataset.c; render(); } });
 function undo() {
   if (busy || !hist.length) return;
   const pop = () => { const h = hist.pop(), r = (() => { for (let q = 0; q < H; q++) if (B[q * W + h.c]) return q; })(); B[r * W + h.c] = 0; last = h.last; };
-  pop(); if (mode !== 'two' && hist.length && !(B.filter(Boolean).length % 2 ? 'r' : 'y').startsWith(mode)) pop();
+  pop();
+  if (seat !== 'two' && hist.length && (B.filter(Boolean).length % 2 ? 'r' : 'y') !== seat) pop();
   turn = B.filter(Boolean).length % 2 ? 'r' : 'y';
   over = null; wl = null; render(); cpu();
 }
-$('#new').onclick = newGame; $('#undo').onclick = undo; $('#mode').onchange = newGame;
+$('#new').onclick = newGame; $('#undo').onclick = undo; $('#seat').onchange = newGame;
 document.addEventListener('keydown', (e) => {
   if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey) return;
   const k = e.key.toLowerCase();
@@ -158,7 +313,66 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'arrowright') { hov = (hov + 1) % W; render(); e.preventDefault(); }
   else if (k === 'enter' || k === 'arrowdown') { go(hov); e.preventDefault(); }
 });
-newGame();
+
+/* ---------------- shared menu contract ---------------- */
+const GameUI = Board.ui({
+  id: 'connect-four', title: 'Connect Four', subtitle: 'Five line lengths, one grid.', accent: '#facc15',
+  modes: MODES, achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Pick a column and your disc falls to the lowest free slot.' },
+    { text: 'Build an unbroken line of your colour across, down or diagonally.' },
+    { text: 'Triple Threat needs three; Classic and Blitz need four; Marathon needs five.' },
+    { text: 'Blitz adds a clock, and a full board with no line is a draw.' },
+  ] },
+  hooks: {
+    applyMode: (next) => { mode = MODES.some((m) => m.id === next) ? next : 'classic'; if (B) newGame(); },
+    applyCosmetic,
+    onStart: () => { menuPaused = false; clockLast = Date.now(); },
+  },
+});
+window.ApexGameMenuActions = {
+  play: function () { menuPaused = false; clockLast = Date.now(); },
+  pause: function (value) { menuPaused = !!value; clockLast = Date.now(); },
+  resume: function () { menuPaused = false; clockLast = Date.now(); },
+  restart: function () { menuPaused = false; newGame(); }
+};
+
+paintPalette(); newGame();
+
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  const snap = () => ({
+    mode, seat, turn, over, hist: hist.length, last, hov, busy, menuPaused, target: CFG[mode].target,
+    board: B.slice(), scores: { y: PS.y.score, r: PS.r.score }, drops: { y: PS.y.drops, r: PS.r.drops },
+    clocks: Object.assign({}, clocks), winLine: wl ? wl.slice() : null, legal: Array.from({ length: W }, (_, c) => drop(B, c) >= 0),
+  });
+  window.ConnectTest = {
+    state: snap,
+    modes: () => MODES.map((m) => m.id),
+    setMode: (id) => GameUI.setMode(id),
+    getMode: () => GameUI.getMode(),
+    restart: () => { newGame(); return true; },
+    setSeat: (value) => { const s = $('#seat'); if (!Array.from(s.options).some((o) => o.value === value)) return false; s.value = value; newGame(); return true; },
+    setLevel: (n) => { const s = $('#lvl'); s.value = String(Math.max(0, Math.min(2, Number(n) || 0))); return +s.value; },
+    setDifficulty: (d) => Board.setDifficulty(d),
+    level: () => Board.level(),
+    setBoard: (cells) => { B = Array.isArray(cells) && cells.length === W * H ? cells.map((p) => p || 0) : Array(W * H).fill(0); over = null; wl = null; last = -1; hist = []; render(); return B.slice(); },
+    setTurn: (s) => { turn = s === 'r' ? 'r' : 'y'; render(); return turn; },
+    drop: (c) => { play(Number(c)); return snap(); },
+    finish: (s) => { conclude(s === 'draw' ? null : s, 'test'); return snap(); },
+    setScore: (s, n) => { PS[s].score = Math.max(0, Number(n) || 0); render(); return PS[s].score; },
+    setClock: (s, ms) => { clocks[s] = Math.max(0, Number(ms) || 0); render(); return clocks[s]; },
+    tick: (ms) => { tickClock(Number(ms) || 0); return snap(); },
+    menuPaused: (value) => { menuPaused = !!value; clockLast = Date.now(); return menuPaused; },
+    start: () => { menuPaused = false; clockLast = Date.now(); },
+    colors: () => ({ discs: Object.assign({}, PALETTE.discs), board: Object.assign({}, PALETTE.board), accent: PALETTE.accent, theme: document.body.style.background || 'auto' }),
+    cosmetic: (slot, id) => { applyCosmetic(slot, id); return window.ConnectTest.colors(); },
+    cosmeticList: () => (window.Meta && Meta.getCosmetics ? Meta.getCosmetics('connect-four') : []).map((item) => ({ id: item.id, slot: item.slot })),
+    achievements: () => (Save.load('connect-four').achievements || []).slice(),
+    stats: () => Save.load('connect-four').stats || {},
+    modalOpen: () => { const d = document.getElementById('bk-dlg'); return !!(d && d.open); },
+    closeModal: () => { const d = document.getElementById('bk-dlg'); if (d && d.open) d.close(); },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

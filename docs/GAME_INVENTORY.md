@@ -31,11 +31,11 @@ Technical inventory of all 50 canonical HTML games in `public/assets/games/`. Th
 | 23 | Ludo | `23-ludo/index.html` | 24.6 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Canvas 600×600 | Yes | Board Kit |
 | 24 | Carrom | `24-carrom/index.html` | 30.1 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Canvas 640×640 | Yes | Board Kit |
 | 25 | Tycoon Town | `25-tycoon-town/index.html` | 34.9 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / Grid | Yes | Board Kit |
-| 26 | Checkers | `26-checkers/index.html` | 10.1 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
-| 27 | Connect Four | `27-connect-four/index.html` | 9.6 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
-| 28 | Mancala | `28-mancala/index.html` | 10.8 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
-| 29 | Reversi | `29-reversi/index.html` | 11.2 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
-| 30 | Tic-Tac-Toe | `30-tic-tac-toe/index.html` | 8.7 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, board-art.js, music-kit.js | Board DOM / SVG Grid | No | Board Kit |
+| 26 | Checkers | `26-checkers/index.html` | 24.9 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / Grid | Yes | Board Kit |
+| 27 | Connect Four | `27-connect-four/index.html` | 22.3 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / Grid | Yes | Board Kit |
+| 28 | Mancala | `28-mancala/index.html` | 23.8 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM | Yes | Board Kit |
+| 29 | Reversi | `29-reversi/index.html` | 26.9 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / Grid | Yes | Board Kit |
+| 30 | Tic-Tac-Toe | `30-tic-tac-toe/index.html` | 50.4 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, board-art.js, music-kit.js | Board DOM / Grid | Yes | Board Kit |
 | 31 | Backgammon | `31-backgammon/index.html` | 19.6 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
 | 32 | Dots & Boxes | `32-dots-boxes/index.html` | 10.2 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
 | 33 | Go 9×9 | `33-go/index.html` | 16.3 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |

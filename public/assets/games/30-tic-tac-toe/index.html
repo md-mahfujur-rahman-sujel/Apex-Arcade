@@ -8,7 +8,7 @@
 <style>
   .tt { display: grid; grid-template-columns: auto minmax(240px, 1fr); gap: 22px; align-items: start; }
   @media (max-width: 860px) { .tt { grid-template-columns: 1fr; } }
-  #bd { --s: max(270px, min(100vw - 40px, 480px)); width: var(--s); aspect-ratio: 1; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 8px; padding: 8px; background: #0f121c; border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 20px 50px -20px #000; user-select: none; touch-action: manipulation; }
+  #bd { --s: max(270px, min(100vw - 40px, 480px)); width: var(--s); aspect-ratio: 1; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 8px; padding: 8px; background: var(--tt-bg, #0f121c); border: 1px solid var(--tt-line, var(--line)); border-radius: 16px; box-shadow: 0 20px 50px -20px #000; user-select: none; touch-action: manipulation; }
   #bd.four { gap: 5px; }
   #bd.ultimate { gap: 3px; padding: 6px; }
   #bd.ultimate .cl { border-radius: 7px; font-size: calc(var(--s) / 13); }
@@ -16,28 +16,31 @@
   #bd.ultimate .cl.sub-left { border-left: 2px solid rgba(167,139,250,.55); }
   #bd.ultimate .cl.sub-win { background: rgba(16,185,129,.22); border-color: var(--emerald); }
   #bd.four .cl { border-radius: 9px; font-size: calc(var(--s) / 5); }
-  .cl { position: relative; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; display: flex; align-items: center; justify-content: center; font: 800 calc(var(--s) / 4) / 1 "Segoe UI", system-ui, sans-serif; }
-  .cl.free:hover { background: #1b2133; border-color: rgba(255,255,255,.25); }
+  .cl { position: relative; border-radius: 12px; background: var(--tt-panel, var(--panel)); border: 1px solid var(--tt-line, var(--line)); cursor: pointer; display: flex; align-items: center; justify-content: center; font: 800 calc(var(--s) / 4) / 1 "Segoe UI", system-ui, sans-serif; }
+  .cl.free:hover { background: var(--tt-hover, #1b2133); border-color: rgba(255,255,255,.25); }
   .cl.free:focus-visible { outline: 3px solid #f8fafc; outline-offset: 2px; z-index: 2; }
   .cl.free { transition: background .18s ease, border-color .18s ease, transform .18s ease, box-shadow .18s ease; }
   .cl.free:active { transform: scale(.97); }
   .cl:not(.free) { cursor: default; }
   .cl .n { position: absolute; left: 9px; top: 6px; font: 600 11px ui-monospace, Consolas, monospace; color: var(--muted); opacity: .55; }
   .cl .m { animation: pop .38s ease-out; }
-  .cl.x .m { color: #22d3ee; text-shadow: 0 0 18px rgba(34,211,238,.45); }
-  .cl.o .m { color: #f59e0b; text-shadow: 0 0 18px rgba(245,158,11,.45); }
-  .cl.pick { background: #1b2133; border-color: var(--amber); }
-  .cl.hint { border-color: #32d5ef; box-shadow: inset 0 0 0 2px rgba(50,213,239,.38), 0 0 20px rgba(50,213,239,.22); }
-  .cl.win { background: rgba(16,185,129,.22); border-color: var(--emerald); }
+  .cl.x .m { color: var(--tt-x, #22d3ee); text-shadow: 0 0 18px color-mix(in srgb, var(--tt-x, #22d3ee) 45%, transparent); }
+  .cl.o .m { color: var(--tt-o, #f59e0b); text-shadow: 0 0 18px color-mix(in srgb, var(--tt-o, #f59e0b) 45%, transparent); }
+  .cl.pick { background: var(--tt-hover, #1b2133); border-color: var(--tt-accent, var(--amber)); }
+  .cl.hint { border-color: var(--tt-accent, #32d5ef); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--tt-accent, #32d5ef) 38%, transparent), 0 0 20px color-mix(in srgb, var(--tt-accent, #32d5ef) 22%, transparent); }
+  .cl.win { background: color-mix(in srgb, var(--tt-accent, #10b981) 22%, transparent); border-color: var(--tt-accent, var(--emerald)); }
   .cl.win .m { animation: pulse .6s ease-in-out infinite alternate; }
   @keyframes pop { from { transform: scale(.3); opacity: 0; } }
   @keyframes pulse { to { transform: scale(1.12); } }
   .side { display: grid; gap: 12px; }
+  .clock { font: 700 15px ui-monospace, Consolas, monospace; color: #fde047; }
+  .clock.low { color: #fb7185; }
+  .clock.idle { display: none; }
   .sb { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   .sb div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 13px; color: var(--muted); }
   .sb b { display: block; font-size: 28px; color: var(--text); }
-  .sb .xx b { color: #22d3ee; }
-  .sb .oo b { color: #f59e0b; }
+  .sb .xx b { color: var(--tt-x, #22d3ee); }
+  .sb .oo b { color: var(--tt-o, #f59e0b); }
   .capt { color: var(--muted); line-height: 1.7; font-size: 13px; }
   .achievement-toast { position: fixed; z-index: 20; left: 50%; bottom: 22px; transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 11px 16px; border: 1px solid rgba(34,211,238,.55); border-radius: 12px; background: rgba(12,18,31,.96); color: #e6e9f5; box-shadow: 0 12px 36px rgba(0,0,0,.42); font-weight: 700; animation: toast-in .24s ease-out; }
   .achievement-toast small { display: block; margin-top: 3px; color: #8b93b3; font-weight: 500; }
@@ -83,6 +86,7 @@ ui.main.innerHTML = `
   <div id="bd"></div>
   <div class="side">
     <div class="bk-status" id="st"></div>
+    <div class="clock idle" id="ck"></div>
     <div class="sb" id="sb"></div>
     <div class="bk-row">
       <label>Board <select class="bk-select" id="format"><option value="classic">Classic 3×3</option><option value="four">Four in a row 4×4</option><option value="ultimate">Ultimate 3×3</option></select></label>
@@ -94,6 +98,79 @@ ui.main.innerHTML = `
   </div>
 </div>`;
 const $ = (s) => ui.main.querySelector(s);
+
+/* ---------------- modes, records, cosmetics ---------------- */
+const MODE_NAMES = { classic: 'Classic 3\u00d73', four: 'Four in a Row', ultimate: 'Ultimate', blitz: 'Blitz', grandmaster: 'Grandmaster' };
+const MODE_KEY = { classic: 'Classic', four: 'Four', ultimate: 'Ultimate', blitz: 'Blitz', grandmaster: 'Grandmaster' };
+const CFG = {
+  classic: { format: 'classic', clock: 0, mult: 1, bonus: 200 },
+  four: { format: 'four', clock: 0, mult: 1.2, bonus: 320 },
+  ultimate: { format: 'ultimate', clock: 0, mult: 1.3, bonus: 500 },
+  blitz: { format: 'classic', clock: 60000, mult: 1.4, bonus: 260 },
+  grandmaster: { format: 'classic', clock: 0, mult: 1.5, bonus: 400 },
+};
+const MODES = [
+  { id: 'classic', name: 'Classic 3\u00d73', blurb: 'Line up three marks on the familiar grid.' },
+  { id: 'four', name: 'Four in a Row', blurb: 'A 4\u00d74 grid, four marks needed. 1.2\u00d7 score.' },
+  { id: 'ultimate', name: 'Ultimate', blurb: 'Win small boards to claim the big one. 1.3\u00d7 score.' },
+  { id: 'blitz', name: 'Blitz', blurb: 'Sixty seconds each on the classic grid. 1.4\u00d7 score.' },
+  { id: 'grandmaster', name: 'Grandmaster', blurb: 'Perfect defence and a 1.5\u00d7 score.', requires: { stat: 'classicWins', gte: 1 }, lockedHint: 'Win a Classic game to unlock' },
+];
+const ACHIEVEMENTS = [
+  { id: 'first-mark', name: 'Opening Mark', desc: 'Place a mark.', rarity: 'common' },
+  { id: 'first-line', name: 'First Line', desc: 'Win your first game.', rarity: 'common' },
+  { id: 'corner-start', name: 'Corner Start', desc: 'Open on a corner square.', rarity: 'common' },
+  { id: 'classic-clear', name: 'Classic Winner', desc: 'Win a Classic game.', rarity: 'common' },
+  { id: 'four-clear', name: 'Four Across', desc: 'Win a Four in a Row game.', rarity: 'rare' },
+  { id: 'ultimate-clear', name: 'Ultimate Strategist', desc: 'Win an Ultimate game.', rarity: 'epic' },
+  { id: 'blitz-clear', name: 'Beat The Clock', desc: 'Win a Blitz game.', rarity: 'rare' },
+  { id: 'grandmaster-clear', name: 'Grandmaster', desc: 'Win a Grandmaster game.', rarity: 'legendary' },
+  { id: 'clean-sweep', name: 'Clean Sweep', desc: 'Win without facing a threat.', rarity: 'rare' },
+  { id: 'comeback', name: 'Comeback', desc: 'Win after facing a threat.', rarity: 'epic' },
+  { id: 'perfect-defense', name: 'Perfect Defense', desc: 'Draw against the perfect computer.', rarity: 'epic' },
+  { id: 'personal-best', name: 'Personal Best', desc: 'Set a new best score.', rarity: 'rare' },
+];
+const MARK_SETS = {
+  'tic-tac-toe:marks-cool': { x: '#22d3ee', o: '#f59e0b' },
+  'tic-tac-toe:marks-neon': { x: '#f472b6', o: '#a3e635' },
+  'tic-tac-toe:marks-gold': { x: '#fde047', o: '#fb923c' },
+  'tic-tac-toe:marks-ice': { x: '#93c5fd', o: '#f0abfc' },
+  'tic-tac-toe:marks-mono': { x: '#f8fafc', o: '#94a3b8' },
+};
+const BOARD_SETS = {
+  'tic-tac-toe:board-slate': { panel: '#101827', line: '#2a3448', bg: '#0f121c', hover: '#1b2133' },
+  'tic-tac-toe:board-ink': { panel: '#101010', line: '#2e2e2e', bg: '#0a0a0a', hover: '#1b1b1b' },
+  'tic-tac-toe:board-paper': { panel: '#20304a', line: '#3b4d6b', bg: '#121a28', hover: '#263a58' },
+  'tic-tac-toe:board-plum': { panel: '#241a33', line: '#3f3057', bg: '#150f1f', hover: '#2f2244' },
+};
+const ACCENTS = { 'tic-tac-toe:accent-cyan': '#22d3ee', 'tic-tac-toe:accent-amber': '#f59e0b', 'tic-tac-toe:accent-rose': '#fb7185', 'tic-tac-toe:accent-lime': '#a3e635' };
+const THEMES = {
+  'tic-tac-toe:theme-night': '',
+  'tic-tac-toe:theme-dusk': 'radial-gradient(1000px 500px at 12% -8%, #4c1d3d, transparent 60%), radial-gradient(800px 500px at 100% 0, #1e3a5f, transparent 55%), #0b070d',
+  'tic-tac-toe:theme-forest': 'radial-gradient(1000px 500px at 10% -10%, #14532d, transparent 60%), radial-gradient(800px 500px at 100% 0, #134e4a, transparent 55%), #070d09',
+};
+const PALETTE = {
+  marks: Object.assign({}, MARK_SETS['tic-tac-toe:marks-cool']),
+  board: Object.assign({}, BOARD_SETS['tic-tac-toe:board-slate']),
+  accent: ACCENTS['tic-tac-toe:accent-cyan'],
+};
+function paintPalette() {
+  const el = document.getElementById('bd'); if (!el) return;
+  el.style.setProperty('--tt-x', PALETTE.marks.x);
+  el.style.setProperty('--tt-o', PALETTE.marks.o);
+  el.style.setProperty('--tt-panel', PALETTE.board.panel);
+  el.style.setProperty('--tt-line', PALETTE.board.line);
+  el.style.setProperty('--tt-bg', PALETTE.board.bg);
+  el.style.setProperty('--tt-hover', PALETTE.board.hover);
+  el.style.setProperty('--tt-accent', PALETTE.accent);
+}
+function applyCosmetic(slot, id) {
+  if (slot === 'skin' && MARK_SETS[id]) PALETTE.marks = Object.assign({}, MARK_SETS[id]);
+  else if (slot === 'palette' && BOARD_SETS[id]) PALETTE.board = Object.assign({}, BOARD_SETS[id]);
+  else if (slot === 'effect' && ACCENTS[id]) PALETTE.accent = ACCENTS[id];
+  else if (slot === 'theme' && THEMES[id] !== undefined) document.body.style.background = THEMES[id];
+  paintPalette(); if (B) render();
+}
 const LINES = {};
 function linesFor(n, need) {
   const key = `${n}:${need}`; if (LINES[key]) return LINES[key];
@@ -200,25 +277,56 @@ function cpuMove(state, s, L) {
 
 /* ---- state & UI ---- */
 let B, turn, over, mode, gameFormat, busy, paused = false, hist, wl, gen = 0, levelOverride = null, boardWins, forcedBoard, size, target, hintIndex = null;
+let gmode = 'classic', PS = { x: 0, o: 0 }, marksPlaced = 0, firstMove = true, clocks = { x: 0, o: 0 }, clockTimer = null, clockLast = 0, menuPaused = true;
 const prior = readSave().stats.ticTacToe || {};
 const score = { x: prior.x || 0, o: prior.o || 0, d: prior.draws || 0 };
 let threatenedThisGame = false;
 const bd = $('#bd'), cells = [];
 if (window.BoardArt) BoardArt.frame(bd, { material: 'slate', accent: '#8b5cf6' });
 const human = () => mode === 'two' || turn === mode;
-const activeLevel = () => levelOverride == null ? (window.Board && Board.level ? Board.level() : 3) : levelOverride;
+const activeLevel = () => gmode === 'grandmaster' ? 5 : levelOverride == null ? (window.Board && Board.level ? Board.level() : 3) : levelOverride;
+const fmtClock = (ms) => { const t = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 function syncContractLevel() {
   if (levelOverride == null) $('#lvl').value = 'auto';
 }
 function newGame() {
-  const restart = gen > 0; gen++; paused = false; $('#pause').textContent = 'Pause'; hintIndex = null; mode = $('#mode').value; gameFormat = $('#format').value; size = gameFormat === 'four' ? 4 : gameFormat === 'ultimate' ? 9 : 3; target = gameFormat === 'four' ? 4 : 3;
+  const restart = gen > 0; gen++; paused = false; Board.setPaused(false); $('#pause').textContent = 'Pause'; hintIndex = null;
+  mode = $('#mode').value; gameFormat = CFG[gmode].format; $('#format').value = gameFormat;
+  size = gameFormat === 'four' ? 4 : gameFormat === 'ultimate' ? 9 : 3; target = gameFormat === 'four' ? 4 : 3;
   B = Array(size * size).fill(''); boardWins = Array(9).fill(''); forcedBoard = null; turn = 'x'; over = ''; busy = false; hist = []; wl = null; threatenedThisGame = false;
+  PS = { x: 0, o: 0 }; marksPlaced = 0; firstMove = true;
+  clocks = { x: CFG[gmode].clock, o: CFG[gmode].clock }; clockLast = Date.now();
+  if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  if (CFG[gmode].clock) clockTimer = setInterval(tickClock, 250);
   if (restart) Board.sfx('start'); if (window.Music) Music.setIntensity(0.2);
   bd.classList.remove('four', 'ultimate'); if (gameFormat !== 'classic') bd.classList.add(gameFormat);
   bd.style.gridTemplateColumns = `repeat(${size}, minmax(0, 1fr))`; bd.style.gridTemplateRows = `repeat(${size}, minmax(0, 1fr))`;
   while (cells.length > 0) cells.pop().remove();
   for (let i = 0; i < B.length; i++) { const d = document.createElement('div'); d.className = 'cl'; d.dataset.i = i; cells.push(d); bd.appendChild(d); }
   render(); cpu();
+}
+function tickClock(step) {
+  if (over) return;
+  if (step == null) {
+    const now = Date.now(), dt = now - clockLast; clockLast = now;
+    if (menuPaused || paused || Board.paused()) return;
+    clocks[turn] = Math.max(0, clocks[turn] - dt);
+  } else clocks[turn] = Math.max(0, clocks[turn] - step);
+  if (clocks[turn] <= 0) { concludeByClock(other(turn)); return; }
+  render();
+}
+function concludeByClock(winner) {
+  if (over) return;
+  gen++;
+  over = `${winner.toUpperCase()} wins on time!`;
+  wl = null;
+  score[winner]++;
+  recordMatch({ p: winner, line: [] });
+  render();
+  const t = mode === 'two' ? over : winner === mode ? 'You won!' : 'Computer wins';
+  Board.sfx(mode === 'two' || winner === mode ? 'win' : 'lose');
+  const g = gen;
+  Board.after(500, () => { if (g === gen) Board.modal(t, over + ' \u00b7 ' + finalScoreLabel(), [['New game', newGame], ['Close']]); });
 }
 function render(dropped) {
   cells.forEach((d, i) => {
@@ -239,7 +347,10 @@ function render(dropped) {
   let turnInfo = `${turn.toUpperCase()} to move${you && human() ? ' — your turn' : ''}`;
   if (gameFormat === 'ultimate' && forcedBoard != null) turnInfo += ` · play in board ${forcedBoard + 1}`;
   if (gameFormat === 'ultimate' && forcedBoard == null) turnInfo += ' · choose any open board';
-  $('#st').innerHTML = over || (busy ? `Computer is thinking… <small>(strength ${strength})</small>` : `${turnInfo} <small>(AI strength ${strength}${levelOverride == null ? ', contract' : ', manual'})</small>`);
+  $('#st').innerHTML = over || (busy ? `Computer is thinking… <small>(strength ${strength})</small>` : `${turnInfo} <small>(AI strength ${strength}${levelOverride == null ? ', contract' : ', manual'} \u00b7 ${MODE_NAMES[gmode]})</small>`);
+  const ck = $('#ck');
+  if (CFG[gmode].clock) { ck.classList.remove('idle'); ck.classList.toggle('low', clocks[turn] < 15000); ck.textContent = `X ${fmtClock(clocks.x)} \u00b7 O ${fmtClock(clocks.o)}`; }
+  else ck.classList.add('idle');
   const who = (s) => (!you ? 'Player ' + (s === 'x' ? 'X' : 'O') : (s === mode ? 'You' : 'Computer') + ' (' + s.toUpperCase() + ')');
   $('#sb').innerHTML = `<div class="xx">${who('x')}<b>${score.x}</b></div><div>Draws<b>${score.d}</b></div><div class="oo">${who('o')}<b>${score.o}</b></div>`;
   $('#hint').disabled = !Board.hints() || levelOverride != null || !human() || busy || !!over;
@@ -272,6 +383,11 @@ function play(i, fromCpu = false) {
   const opponentThreat = gameFormat !== 'ultimate' && lines.some((line) => line.filter((cell) => B[cell] === opponent).length === target - 1 && line.includes(i) && !B[i] && line.filter((cell) => !B[cell]).length === 1);
   if (opponentThreat || gameFormat === 'ultimate' && boardWins.filter((v) => v === opponent).length >= 2) threatenedThisGame = true;
   if (!applyMove(i)) return; hintIndex = null; hist.push(i); Board.sfx(opponentThreat ? 'block' : 'place');
+  PS[mover] = (PS[mover] || 0) + 10; marksPlaced += 1;
+  if (mode === 'two' || mover === mode) {
+    GameUI.unlock('first-mark');
+    if (firstMove) { firstMove = false; if ([0, 2, 6, 8].includes(i)) GameUI.unlock('corner-start'); }
+  }
   const w = winnerFromState();
   if (w) { if (window.Music) Music.setIntensity(1); }
   else if (over) { Board.sfx('draw'); if (window.Music) Music.setIntensity(0.35); }
@@ -285,51 +401,55 @@ function play(i, fromCpu = false) {
     if (w && window.BoardArt) BoardArt.celebrate(bd, { color: w.p === 'x' ? '#32d5ef' : '#ffbd4a' });
     const t = !w ? 'Draw' : mode === 'two' ? over : w.p === mode ? 'You won!' : 'Computer wins';
     if (w) Board.sfx(mode === 'two' || w.p === mode ? 'win' : 'lose');
-    Board.after(650, () => Board.modal(t, over, [['New game', newGame], ['Close']]));
+    const g = gen;
+    Board.after(650, () => { if (g === gen) Board.modal(t, finalScoreLabel(), [['New game', newGame], ['Close']]); });
   } else cpu();
 }
-function announceAchievement(id, label) {
-  const saved = readSave(), current = saved.achievements || [];
-  if (current.includes(id)) return;
-  if (window.Save && Save.update) Save.update(GAME_ID, { achievements: [id] });
-  if (window.Apex && Apex.report) Apex.report({ gameId: GAME_ID, type: 'achievement', achievementId: id });
-  let toast = document.getElementById('tt-achievement');
-  if (!toast) { toast = document.createElement('div'); toast.id = 'tt-achievement'; toast.className = 'achievement-toast'; document.body.appendChild(toast); }
-  toast.innerHTML = `Achievement unlocked: ${label}<small>${id.replace(/-/g, ' ')}</small>`;
-  if (toast._timer) Board.cancel(toast._timer); toast._timer = Board.after(3000, () => toast.remove());
-}
+let lastFinal = 0;
+function finalScoreLabel() { return `${lastFinal} pts \u00b7 ${MODE_NAMES[gmode]}${over ? ' \u00b7 ' + over : ''}`; }
 function recordMatch(w) {
   const saved = readSave(), old = saved.stats.ticTacToe || { x: 0, o: 0, draws: 0, wins: 0, losses: 0, streak: 0, bestStreak: 0 };
-  const humanSide = mode === 'o' ? 'o' : 'x', humanWon = !!w && w.p === humanSide, loss = !!w && !humanWon;
-  const wins = (old.wins || 0) + (humanWon ? 1 : 0), losses = (old.losses || 0) + (loss ? 1 : 0), draws = (old.draws || 0) + (!w ? 1 : 0);
+  const cfg = CFG[gmode], humanSide = mode === 'o' ? 'o' : 'x';
+  const humanWon = !!w && w.p === humanSide, draw = !w;
+  const wins = (old.wins || 0) + (humanWon ? 1 : 0), losses = (old.losses || 0) + (w && !humanWon ? 1 : 0), draws = (old.draws || 0) + (draw ? 1 : 0);
   const streak = humanWon ? (old.streak || 0) + 1 : 0, bestStreak = Math.max(old.bestStreak || 0, streak);
   const rounds = (old.rounds || 0) + 1;
-  if (window.Save && Save.update) Save.update(GAME_ID, { stats: { plays: (saved.stats.plays || 0) + 1, bestScore: Math.max(saved.stats.bestScore || 0, wins), ticTacToe: { x: score.x, o: score.o, draws, wins, losses, streak, bestStreak, rounds, lastResult: w ? w.p === humanSide ? 'win' : 'loss' : 'draw', lastMode: gameFormat } } });
-  if (window.Apex && Apex.report) Apex.report({ gameId: GAME_ID, type: 'score', score: wins });
+  const base = PS[humanSide] + (humanWon ? cfg.bonus : draw ? Math.round(cfg.bonus / 2) : 0);
+  const finalScore = Math.round(base * cfg.mult);
+  lastFinal = finalScore;
+  const records = {}; records['best' + MODE_KEY[gmode] + 'Score'] = finalScore; records.bestStreak = bestStreak;
+  const counters = { marksPlaced, draws: draw ? 1 : 0, wins: humanWon ? 1 : 0 };
+  if (humanWon) counters[gmode + 'Wins'] = 1;
+  const achievements = [];
   if (humanWon) {
-    announceAchievement('first-line', 'First Line');
-    if (!threatenedThisGame) announceAchievement('clean-sweep', 'Clean Sweep');
-    if (threatenedThisGame) announceAchievement('comeback', 'Comeback');
-    if (gameFormat === 'four') announceAchievement('four-across', 'Four Across');
-    if (gameFormat === 'ultimate') announceAchievement('ultimate-strategist', 'Ultimate Strategist');
-    if (streak >= 3) announceAchievement('win-streak', 'Win Streak');
+    achievements.push('first-line', gmode + '-clear');
+    achievements.push(threatenedThisGame ? 'comeback' : 'clean-sweep');
   }
-  if (!w && draws >= 3) announceAchievement('draw-specialist', 'Draw Specialist');
-  if (!w && mode !== 'two' && activeLevel() === 5) announceAchievement('perfect-defense', 'Perfect Defense');
+  if (draw && mode !== 'two' && activeLevel() === 5) achievements.push('perfect-defense');
+  const prevBest = Number(GameUI.stats().bestScore) || 0;
+  if (window.Save && Save.update) Save.update(GAME_ID, { stats: { ticTacToe: { x: score.x, o: score.o, draws, wins, losses, streak, bestStreak, rounds, lastResult: w ? (humanWon ? 'win' : 'loss') : 'draw', lastMode: gmode } } });
+  GameUI.record({ score: finalScore, result: (w ? (humanWon ? 'win' : 'loss') : 'draw') + ' ' + MODE_NAMES[gmode], records, counters, mins: humanWon ? { fewestMoves: marksPlaced } : {}, achievements });
+  if (finalScore > prevBest) GameUI.unlock('personal-best');
+  if (window.Apex && Apex.report) Apex.report({ gameId: GAME_ID, type: 'score', score: finalScore, mode: gmode });
 }
 function cpu() {
-  if (paused || over || human()) return; busy = true; render();
+  if (busy || paused || over || human()) return; busy = true; render();
   const g = gen;
-  const state = { board: B.slice(), boardWins: boardWins.slice(), forcedBoard, format: gameFormat, size, need: target };
-  Board.think(() => cpuMove(state, turn, activeLevel()), 850).then(async (m) => {
-    if (g !== gen) return;
-    if (paused) { busy = false; render(); return; }
-    if (m < 0 || !cells[m]) { busy = false; render(); return; }
-    cells[m].classList.add('pick'); await Board.sleep(Board.pace(450));   /* highlight the square it chose before marking it */
-    if (g !== gen) return;
-    if (paused) { busy = false; render(); return; }
-    busy = false; play(m, true);
-  });
+  const go = () => {
+    if (g !== gen || over) return;
+    if (menuPaused || Board.paused()) { Board.after(250, go); return; }
+    const state = { board: B.slice(), boardWins: boardWins.slice(), forcedBoard, format: gameFormat, size, need: target };
+    Board.think(() => cpuMove(state, turn, activeLevel()), 850).then(async (m) => {
+      if (g !== gen) return;
+      if (paused || menuPaused) { busy = false; render(); return; }
+      if (m < 0 || !cells[m]) { busy = false; render(); return; }
+      cells[m].classList.add('pick'); await Board.sleep(Board.pace(450));   /* highlight the square it chose before marking it */
+      if (g !== gen) return;
+      if (paused || menuPaused) { busy = false; render(); return; }
+      busy = false; play(m, true);
+    });
+  };
+  go();
 }
 function showHint() {
   if (!Board.hints() || levelOverride != null || !human() || busy || over) { Board.sfx('error'); return; }
@@ -361,9 +481,10 @@ function togglePause() {
   const dialog = document.getElementById('bk-dlg');
   if (dialog) dialog.addEventListener('cancel', (event) => { event.preventDefault(); resumeMatch(); }, { once: true });
 }
-function go(i) { if (paused || over || busy || !human()) return; if (B[i] || gameFormat === 'ultimate' && forcedBoard != null && Math.floor(Math.floor(i / 9) / 3) * 3 + Math.floor((i % 9) / 3) !== forcedBoard) { Board.sfx('error'); return; } play(i); }
+function go(i) { if (paused || menuPaused || over || busy || !human()) return; if (B[i] || gameFormat === 'ultimate' && forcedBoard != null && Math.floor(Math.floor(i / 9) / 3) * 3 + Math.floor((i % 9) / 3) !== forcedBoard) { Board.sfx('error'); return; } play(i); }
 bd.addEventListener('click', (e) => { const d = e.target.closest('.cl'); if (d) go(+d.dataset.i); });
-$('#new').onclick = newGame; $('#pause').onclick = togglePause; $('#undo').onclick = undo; $('#hint').onclick = showHint; $('#mode').onchange = () => { Board.sfx('click'); newGame(); }; $('#format').onchange = () => { Board.sfx('click'); newGame(); };
+$('#new').onclick = newGame; $('#pause').onclick = togglePause; $('#undo').onclick = undo; $('#hint').onclick = showHint; $('#mode').onchange = () => { Board.sfx('click'); newGame(); };
+$('#format').onchange = () => { Board.sfx('click'); const f = $('#format').value; gmode = f === 'four' ? 'four' : f === 'ultimate' ? 'ultimate' : 'classic'; newGame(); };
 $('#stats').onclick = () => { const s = readSave().stats.ticTacToe || {}; Board.modal('Match statistics', `Matches: ${s.rounds || 0}<br>Wins: ${s.wins || 0} · Losses: ${s.losses || 0} · Draws: ${s.draws || 0}<br>Current streak: ${s.streak || 0} · Best streak: ${s.bestStreak || 0}<br>Achievements: ${(readSave().achievements || []).length}`, [['Close']]); };
 $('#lvl').onchange = () => { levelOverride = $('#lvl').value === 'auto' ? null : +$('#lvl').value; syncContractLevel(); render(); };
 window.addEventListener('apex:board-difficulty', () => { if (levelOverride == null) { syncContractLevel(); render(); } });
@@ -378,9 +499,84 @@ document.addEventListener('keydown', (e) => {
   if (k === 'n') newGame(); else if (k === 'u') undo();
   else if (k >= '1' && k <= '9') go(KEY2IDX[+k]);
 });
-syncContractLevel();
-newGame();
+/* ---------------- shared menu contract ---------------- */
+const GameUI = Board.ui({
+  id: 'tic-tac-toe', title: 'Tic-Tac-Toe', subtitle: 'Five ways to claim a line.', accent: '#22d3ee',
+  modes: MODES, achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Click a square, or press 1\u20139 using the numpad layout printed on the board.' },
+    { text: 'Line up three marks on Classic, four on the 4\u00d74 board, or win small boards in Ultimate.' },
+    { text: 'Blitz adds a sixty-second clock; Grandmaster defends perfectly.' },
+    { text: 'U undoes your last turn; N starts a new match.' },
+  ] },
+  hooks: {
+    applyMode: (next) => { gmode = MODES.some((m) => m.id === next) ? next : 'classic'; if (B) newGame(); },
+    applyCosmetic,
+    onStart: () => { menuPaused = false; clockLast = Date.now(); paintPalette(); if (B && !over && !human()) cpu(); },
+  },
+});
+window.ApexGameMenuActions = {
+  play: function () { menuPaused = false; clockLast = Date.now(); if (B && !over && !human()) cpu(); },
+  pause: function (value) { menuPaused = !!value; clockLast = Date.now(); },
+  resume: function () { menuPaused = false; clockLast = Date.now(); if (B && !over && !human()) cpu(); },
+  restart: function () { menuPaused = false; newGame(); }
+};
+
+syncContractLevel(); paintPalette(); newGame();
 window.ApexMenuActive = true;
+
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  const snap = () => ({
+    mode: gmode, seat: mode, format: gameFormat, size, target, turn, over, busy, paused, menuPaused, marksPlaced,
+    board: B.slice(), boardWins: boardWins.slice(), forcedBoard, scores: { x: PS.x, o: PS.o },
+    clocks: Object.assign({}, clocks), wins: { x: score.x, o: score.o, draws: score.d }, lastFinal,
+  });
+  window.TicTacToeTest = {
+    state: snap,
+    modes: () => MODES.map((m) => m.id),
+    setMode: (id) => GameUI.setMode(id),
+    getMode: () => GameUI.getMode(),
+    restart: () => { newGame(); return true; },
+    setFormat: (f) => { if (['classic', 'four', 'ultimate'].indexOf(f) < 0) return false; $('#format').value = f; gmode = f; newGame(); return true; },
+    setSeat: (v) => { const s = $('#mode'); if (!Array.from(s.options).some((o) => o.value === v)) return false; s.value = v; newGame(); return true; },
+    setLevel: (n) => { const s = $('#lvl'); s.value = String(Math.max(1, Math.min(5, Number(n) || 3))); levelOverride = +s.value; render(); return levelOverride; },
+    setLevelAuto: () => { levelOverride = null; syncContractLevel(); render(); return activeLevel(); },
+    setDifficulty: (d) => Board.setDifficulty(d),
+    level: () => activeLevel(),
+    setBoard: (values) => {
+      const arr = Array.isArray(values) ? values : [];
+      if (arr.length !== 9 && arr.length !== 16 && arr.length !== 81) return false;
+      gmode = arr.length === 16 ? 'four' : arr.length === 81 ? 'ultimate' : 'classic';
+      gameFormat = CFG[gmode].format; $('#format').value = gameFormat;
+      size = Math.sqrt(arr.length); target = gameFormat === 'four' ? 4 : 3;
+      B = Array(size * size).fill(''); boardWins = Array(9).fill(''); forcedBoard = null; over = ''; wl = null; hist = []; busy = false; paused = false;
+      PS = { x: 0, o: 0 }; marksPlaced = 0; firstMove = true;
+      while (cells.length) cells.pop().remove();
+      for (let i = 0; i < B.length; i++) { const d = document.createElement('div'); d.className = 'cl'; d.dataset.i = i; cells.push(d); bd.appendChild(d); }
+      arr.forEach((p, i) => { if (p === 'x' || p === 'o') B[i] = p; });
+      render(); return B.slice();
+    },
+    setTurn: (s) => { turn = s === 'o' ? 'o' : 'x'; hintIndex = null; render(); return turn; },
+    play: (i) => { play(Number(i), true); return snap(); },
+    finish: (s) => {
+      if (s === 'x' || s === 'o') { score[s]++; over = s.toUpperCase() + ' wins!'; wl = wl || []; recordMatch({ p: s, line: wl }); }
+      else { score.d++; over = 'Draw \u2014 the board is full'; wl = null; recordMatch(null); }
+      render(); return snap();
+    },
+    setScore: (s, n) => { PS[s === 'o' ? 'o' : 'x'] = Math.max(0, Number(n) || 0); render(); return PS; },
+    setClock: (s, ms) => { clocks[s === 'o' ? 'o' : 'x'] = Math.max(0, Number(ms) || 0); render(); return clocks; },
+    tick: (ms) => { tickClock(Number(ms) || 0); return snap(); },
+    menuPaused: (value) => { menuPaused = !!value; clockLast = Date.now(); return menuPaused; },
+    start: () => { menuPaused = false; clockLast = Date.now(); if (B && !over && !human()) cpu(); },
+    colors: () => ({ marks: Object.assign({}, PALETTE.marks), board: Object.assign({}, PALETTE.board), accent: PALETTE.accent, theme: document.body.style.background || 'auto' }),
+    cosmetic: (slot, id) => { applyCosmetic(slot, id); return window.TicTacToeTest.colors(); },
+    cosmeticList: () => (window.Meta && Meta.getCosmetics ? Meta.getCosmetics('tic-tac-toe') : []).map((item) => ({ id: item.id, slot: item.slot })),
+    achievements: () => (Save.load('tic-tac-toe').achievements || []).slice(),
+    stats: () => Save.load('tic-tac-toe').stats || {},
+    modalOpen: () => { const d = document.getElementById('bk-dlg'); return !!(d && d.open); },
+    closeModal: () => { const d = document.getElementById('bk-dlg'); if (d && d.open) d.close(); },
+  };
+}
 Board.setSfxVolume((Save.load(GAME_ID).settings || {}).sfxVol);
 Board.setDifficulty((Save.load(GAME_ID).settings || {}).difficulty || Board.difficulty());
 
@@ -427,7 +623,7 @@ function menuChoice(doc, label, controlId, value) {
 }
 const ticTacToeMenu = Menu.mount({
   gameId: GAME_ID, title: 'Tic-Tac-Toe', tagline: 'A pencil-drawn challenge for the cafe table.',
-  archetype: 'paper', items: ['play', 'modes', 'options', 'about', 'stats', 'exit'],
+  archetype: 'paper', items: ['play', 'modes', 'customize', 'options', 'about', 'stats', 'exit'],
   theme: {
     frame: 'notebook-rule', button: 'paper-banner',
     palette: { bg: '#111923', panel: '#172630', accent: '#67e8f9', button: '#f3dfb5', buttonText: '#18242b', text: '#f5f7fa' },
@@ -440,8 +636,10 @@ const ticTacToeMenu = Menu.mount({
   onSettingChange: function (key, value) { if (key === 'difficulty') Board.setDifficulty(value); },
   onPlay: function () {
     window.ApexMenuActive = false;
+    menuPaused = false; clockLast = Date.now();
     const help = document.getElementById('bk-help'); if (help) help.open = false;
     Music.play(MUSIC);
+    if (B && !over && !human()) cpu();
   },
   onPause: function (shouldPause) {
     if (shouldPause && !paused) togglePause();
@@ -459,6 +657,39 @@ const ticTacToeMenu = Menu.mount({
       const playLabel = doc.createElement('p'); playLabel.className = 'apex-menu-caption'; playLabel.textContent = 'PLAY STYLE'; view.panel.appendChild(playLabel);
       const playStyles = doc.createElement('div'); playStyles.className = 'apex-menu-choice-list'; view.panel.appendChild(playStyles);
       [['Play as X', 'x'], ['Play as O', 'o'], ['Two players', 'two']].forEach(function (item) { playStyles.appendChild(menuChoice(doc, item[0], 'mode', item[1])); });
+      const specialLabel = doc.createElement('p'); specialLabel.className = 'apex-menu-caption'; specialLabel.textContent = 'SPECIAL MODES'; view.panel.appendChild(specialLabel);
+      const specials = doc.createElement('div'); specials.className = 'apex-menu-choice-list'; view.panel.appendChild(specials);
+      [['Blitz \u00b7 60-second clock', 'blitz'], ['Grandmaster \u00b7 perfect defence', 'grandmaster']].forEach(function (item) {
+        const b = doc.createElement('button'); b.type = 'button'; b.className = 'apex-menu-control-button'; b.textContent = item[0];
+        b.setAttribute('aria-pressed', String(gmode === item[1]));
+        b.addEventListener('click', function () { if (GameUI.setMode(item[1])) view.refresh(); });
+        specials.appendChild(b);
+      });
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    },
+    customize: function (view) {
+      const doc = view.panel.ownerDocument, heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Customize'; view.panel.appendChild(heading);
+      const note = doc.createElement('p'); note.className = 'apex-menu-tagline'; note.textContent = 'Earn sparks by playing, then equip marks, boards, accents and themes.'; view.panel.appendChild(note);
+      const list = window.Meta && Meta.getCosmetics ? Meta.getCosmetics(GAME_ID) : [];
+      [['skin', 'MARKS'], ['palette', 'BOARD'], ['effect', 'ACCENT'], ['theme', 'THEME']].forEach(function (pair) {
+        const cap = doc.createElement('p'); cap.className = 'apex-menu-caption'; cap.textContent = pair[1]; view.panel.appendChild(cap);
+        const wrap = doc.createElement('div'); wrap.className = 'apex-menu-choice-list'; view.panel.appendChild(wrap);
+        list.filter(function (c) { return c.slot === pair[0]; }).forEach(function (item) {
+          const b = doc.createElement('button'); b.type = 'button'; b.className = 'apex-menu-control-button';
+          b.textContent = item.name + (item.equipped ? ' \u2713' : item.owned ? '' : item.achievementUnlocked ? ' \u00b7 unlock' : ' \u00b7 ' + (item.cost || 0) + ' sparks');
+          b.setAttribute('aria-pressed', String(!!item.equipped));
+          b.addEventListener('click', function () {
+            if (!item.owned && window.Meta) {
+              const buy = Meta.purchaseCosmetic(GAME_ID, item.id);
+              if (!buy.ok) { b.textContent = item.name + (buy.reason === 'insufficient-sparks' ? ' \u00b7 need sparks' : ' \u00b7 locked'); return; }
+            }
+            const eq = window.Meta ? Meta.equipCosmetic(GAME_ID, item.id) : { ok: false };
+            if (eq.ok) applyCosmetic(item.slot, item.id);
+            view.refresh();
+          });
+          wrap.appendChild(b);
+        });
+      });
       const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back', 'true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
     },
     about: function (view) {
