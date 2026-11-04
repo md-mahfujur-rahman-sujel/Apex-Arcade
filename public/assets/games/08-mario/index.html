@@ -19,121 +19,682 @@
 <script src="../../kits/score-bridge.js"></script>
 <script src="../../kits/ui-kit.js"></script>
 <script>
-/* Fox Courier — original side-scrolling platformer: three courses, stomp enemies, hit crates,
-   bounce on springs, light checkpoints, reach the flag. Built on platform-kit.js. */
-const A = Arcade, P = Plat, TAU = Math.PI * 2;
+/* Fox Courier — run the parcel routes: stomp grubs, bust crates, ride springs, light checkpoints,
+   and reach the flag. Five modes share one engine with seeded daily/endless routes. */
+(function () {
+  'use strict';
+  const A = Arcade, P = Plat, T = 32, W = 800, H = 480, TAU = Math.PI * 2;
+  const GAME_ID = 'fox-courier';
+  const MODE_LABEL = { campaign: 'CAMPAIGN', dash: 'PARCEL DASH', daily: 'DAILY ROUTE', endless: 'ENDLESS', midnight: 'MIDNIGHT RUN' };
+  const MODES = {
+    campaign: { lives: 3, hp: 3, timer: 0, mult: 1, speed: 1 },
+    dash: { lives: 2, hp: 3, timer: 150, mult: 1, speed: 1.05 },
+    daily: { lives: 3, hp: 3, timer: 0, mult: 1.25, speed: 1 },
+    endless: { lives: 3, hp: 3, timer: 0, mult: 1.1, speed: 1 },
+    midnight: { lives: 1, hp: 2, timer: 0, mult: 1.5, speed: 1.28 },
+  };
+  const FORCED_SEED = (() => { try { return Number(new URLSearchParams(location.search).get('seed')) || 0; } catch (e) { return 0; } })();
 
-/* ---- course 1: Meadow Run ---- */
-const L1 = P.make('1 \u00b7 Meadow Run', 100, (g) => {
-  g.ground(0, 22); g.set(2, 11, 'P'); g.coins(7, 10, 5);
-  g.set(10, 8, '?'); g.set(11, 8, '?'); g.set(12, 8, '?'); g.set(16, 11, 'w');
-  g.ground(25, 52); g.set(29, 11, 'w'); g.plat(32, 9, 4); g.coins(32, 8, 4);
-  g.set(38, 11, 'h'); g.set(44, 11, 'C'); g.set(47, 11, 'w');
-  g.ground(55, 78); g.set(58, 11, 'S'); g.plat(58, 6, 5); g.coins(58, 5, 5);
-  g.set(66, 11, '^'); g.set(67, 11, '^'); g.coins(65, 8, 4);
-  g.set(72, 11, 'h'); g.set(75, 11, 'w');
-  g.ground(81, 100); g.stairs(84, 5); g.set(95, 11, 'F');
-});
-L1.hint = 'Stomp the grubs, grab the crates, spring up high';
+  let grid, rows, cols, p, en, plats, cam, check, doneT, banner, route, courseIndex, courseOffset, spawnPoint;
+  let lives, startLives, coins, hpMax, timer, timerMode;
+  let activeMode = 'campaign', difficulty = 'normal', rngState = 0, runSeed = 0, lastInitMode = null;
+  let runRecorded = false, runHit = false, runLostLife = false, totalCrates = 0, maxCourse = 0, pendingEnd = null;
+  let shakeScale = 1, pal = null, themeOverride = null;
+  let fox = { body: '#fb923c', scarf: '#ef4444', satchel: '#92400e' };
+  let trailColor = '#ef4444', coinColor = '#facc15', springColor = '#f472b6';
 
-/* ---- course 2: Canyon Crossing ---- */
-const L2 = P.make('2 \u00b7 Canyon Crossing', 110, (g) => {
-  g.ground(0, 14); g.set(2, 11, 'P'); g.coins(6, 10, 4);
-  g.plat(17, 10, 3); g.plat(22, 9, 3); g.coins(22, 8, 3);
-  g.ground(26, 40, 11); g.set(30, 10, 'w'); g.set(33, 7, 'b'); g.set(36, 10, '?');
-  g.set(44, 11, 'M'); g.coins(44, 9, 3);
-  g.ground(52, 70, 11); g.set(55, 10, 'w'); g.set(60, 10, 'h'); g.set(64, 10, 'C');
-  g.coins(57, 8, 6); g.set(61, 7, 'b'); g.set(67, 10, '^');
-  g.plat(72, 10, 3); g.plat(77, 9, 3); g.plat(82, 8, 3); g.coins(77, 7, 3); g.set(79, 6, 'b');
-  g.ground(86, 110, 11); g.set(90, 10, 's'); g.set(95, 10, 'w'); g.set(100, 10, 'h'); g.set(106, 10, 'F');
-});
-L2.hint = 'Ride the moving platform across the gap';
-
-/* ---- course 3: Sunset Rooftops ---- */
-const L3 = P.make('3 \u00b7 Sunset Rooftops', 120, (g) => {
-  g.ground(0, 12, 11); g.set(2, 10, 'P');
-  g.ground(15, 26, 10); g.set(18, 9, 'w'); g.coins(17, 7, 4);
-  g.ground(29, 38, 11); g.set(32, 10, 's'); g.set(34, 10, 'C');
-  g.ground(41, 52, 9); g.set(44, 8, 'h'); g.set(48, 8, 'S'); g.plat(48, 3, 4); g.coins(48, 2, 4);
-  g.ground(55, 70, 11); g.set(58, 10, '^'); g.set(59, 10, '^'); g.coins(57, 8, 4);
-  g.set(62, 10, 'w'); g.set(66, 10, 'h'); g.set(68, 10, 'C');
-  g.set(73, 10, 'M'); g.coins(73, 8, 3);
-  g.ground(80, 92, 10); g.stairs(83, 4, 10); g.set(88, 9, 'w');
-  g.ground(95, 120, 11); g.set(100, 10, 'b'); g.set(104, 10, 's'); g.set(108, 10, 'h'); g.set(112, 10, '?'); g.set(116, 10, 'F');
-});
-L3.hint = 'Last delivery: the rooftops at dusk';
-
-const PAL = [
-  { sky: ['#38bdf8', '#bae6fd', '#fef9c3'], far: '#7dd3fc', mid: '#86efac', solid: '#92400e', top: '#4ade80', plat: '#c08457' },
-  { sky: ['#f59e0b', '#fdba74', '#fef3c7'], far: '#fb923c', mid: '#c2410c', solid: '#9a3412', top: '#fbbf24', plat: '#7c2d12' },
-  { sky: ['#1e1b4b', '#be185d', '#fb923c'], far: '#4c1d95', mid: '#1e1b4b', solid: '#374151', top: '#f472b6', plat: '#6b7280' },
-];
-L1.theme = PAL[0]; L2.theme = PAL[1]; L3.theme = PAL[2];
-
-function ridge(c, W, H, base, amp, seed, off, color) {
-  c.fillStyle = color; c.beginPath(); c.moveTo(0, H);
-  for (let x = 0; x <= W; x += 16) { const X = x + off; c.lineTo(x, base + Math.sin(X * 0.01 + seed) * amp + Math.sin(X * 0.027 + seed * 2.1) * amp * 0.5); }
-  c.lineTo(W, H); c.closePath(); c.fill();
-}
-function bg(c, cam, t, lvl) {
-  const pal = PAL[lvl], W = 800, H = 480;
-  A.sky(c, W, H, pal.sky);
-  c.save(); c.globalAlpha = 0.9; c.fillStyle = lvl === 2 ? '#fde68a' : '#fff7d6';
-  c.beginPath(); c.arc(620 - cam.x * 0.02, lvl === 2 ? 300 : 90, lvl === 2 ? 60 : 38, 0, TAU); c.fill(); c.restore();
-  if (lvl === 2) {
-    for (let i = 0; i < 18; i++) {
-      const x = ((i * 90 - cam.x * 0.25) % 1700 + 1700) % 1700 - 60, h = 90 + A.hash(i, 3) * 170;
-      c.fillStyle = i % 2 ? '#2e1065' : '#3b0764'; c.fillRect(x, 400 - h, 70, h + 80);
-      for (let wy = 410 - h; wy < 390; wy += 18) for (let wx = x + 8; wx < x + 62; wx += 14) if (A.hash(wx, wy) > 0.6) { c.fillStyle = '#fde68a'; c.fillRect(wx, wy, 5, 8); }
-    }
-  } else {
-    ridge(c, W, H, 330, 30, 1, cam.x * 0.2, pal.far);
-    ridge(c, W, H, 380, 26, 4, cam.x * 0.45, pal.mid);
-    c.fillStyle = 'rgba(255,255,255,.75)';
-    for (let i = 0; i < 6; i++) { const x = ((i * 220 - cam.x * 0.1 + t * 0.15) % 1400 + 1400) % 1400 - 150, y = 50 + (i % 3) * 40; c.beginPath(); c.ellipse(x, y, 46, 14, 0, 0, TAU); c.ellipse(x + 26, y - 8, 30, 12, 0, 0, TAU); c.fill(); }
+  function random() { if (!rngState) return Math.random(); rngState = (Math.imul(rngState, 1664525) + 1013904223) >>> 0; return rngState / 4294967296; }
+  function randRange(a, b) { return a + random() * (b - a); }
+  function randInt(a, b) { return Math.floor(randRange(a, b + 1)); }
+  function dailySeed() {
+    const d = new Date(), key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate() + ':fox-courier'; let hash = 2166136261;
+    for (let i = 0; i < key.length; i++) { hash ^= key.charCodeAt(i); hash = Math.imul(hash, 16777619); }
+    return (hash >>> 0) || 1;
   }
-}
+  function modeCfg() { return MODES[activeMode] || MODES.campaign; }
+  function diffMult() { return difficulty === 'hard' ? 1.15 : difficulty === 'easy' ? 0.85 : 1; }
+  function enemySpeedScale() { return modeCfg().speed * diffMult(); }
+  function modeMult() {
+    if (activeMode === 'daily') return 1.25;
+    if (activeMode === 'midnight') return 1.5;
+    if (activeMode === 'endless') return Math.min(1.6, 1.1 + Math.max(0, absoluteCourse() - 1) * 0.05);
+    return 1;
+  }
+  function award(points) { Arcade.G.addScore(Math.round(points * modeMult())); }
+  function statsOf() { const save = window.Save && Save.load ? Save.load(GAME_ID) : {}; return save.stats || {}; }
+  function savePatch(patch, extra) { if (window.Save && Save.update) Save.update(GAME_ID, Object.assign({ stats: patch }, extra || {})); }
+  function unlock(id) {
+    const save = window.Save && Save.load ? Save.load(GAME_ID) : {};
+    if ((Array.isArray(save.achievements) ? save.achievements : []).includes(id)) return;
+    if (window.Save && Save.update) Save.update(GAME_ID, { achievements: [id] });
+    if (window.Apex && Apex.unlockAchievement) Apex.unlockAchievement(id, GAME_ID);
+    if (window.UI && UI.toast) UI.toast(id.replace(/-/g, ' '), { color: '#fbbf24' });
+  }
+  function absoluteCourse() { return courseOffset + courseIndex + 1; }
+  function courseTotalLabel() { return activeMode === 'endless' ? '\u221e' : activeMode === 'campaign' ? '3' : String(route ? route.length : 3); }
 
-/* the courier: an original fox with a red scarf and a parcel satchel */
-function drawFox(c, p, G) {
-  const cx = p.x + p.w / 2, base = p.y + p.h, f = p.face, t = G.clock;
-  const run = p.ground ? Math.sin(p.walk) : 0, air = !p.ground;
-  A.shadow(c, cx, base + 1, 11, 3, 0.25);
-  c.save(); c.translate(cx, base); c.scale(f * (1 + p.sq * 0.5), 1 - p.sq * 0.5);
-  // tail
-  const wag = Math.sin(t * 0.15) * 3 + (air ? -4 : run * 2);
-  c.fillStyle = '#f97316'; c.beginPath(); c.ellipse(-12, -13 + wag * 0.3, 9, 5, -0.7 + wag * 0.04, 0, TAU); c.fill();
-  c.fillStyle = '#fff'; c.beginPath(); c.ellipse(-17, -17 + wag * 0.3, 4, 3, -0.7, 0, TAU); c.fill();
-  // legs
-  c.fillStyle = '#7c2d12';
-  const l1 = air ? 3 : run * 5, l2 = air ? -3 : -run * 5;
-  c.fillRect(-6 + l1, -6, 5, 6); c.fillRect(2 + l2, -6, 5, 6);
-  // body + chest
-  c.fillStyle = '#fb923c'; A.roundRect(c, -8, -20, 16, 16, 6); c.fill();
-  c.fillStyle = '#fff7ed'; c.beginPath(); c.ellipse(3, -11, 4, 6, 0, 0, TAU); c.fill();
-  // satchel
-  c.fillStyle = '#92400e'; A.roundRect(c, -11, -15, 8, 8, 2); c.fill();
-  c.strokeStyle = '#78350f'; c.lineWidth = 2; c.beginPath(); c.moveTo(-7, -20); c.lineTo(5, -6); c.stroke();
-  // head
-  c.fillStyle = '#fb923c'; c.beginPath(); c.arc(3, -23, 8, 0, TAU); c.fill();
-  c.beginPath(); c.moveTo(-2, -29); c.lineTo(-3, -38); c.lineTo(4, -31); c.fill();
-  c.beginPath(); c.moveTo(5, -30); c.lineTo(9, -38); c.lineTo(11, -27); c.fill();
-  c.fillStyle = '#fff7ed'; c.beginPath(); c.ellipse(8, -21, 5, 4, 0, 0, TAU); c.fill();
-  c.fillStyle = '#111'; c.beginPath(); c.arc(11, -22, 1.6, 0, TAU); c.fill();
-  c.beginPath(); c.arc(5, -25, 1.6, 0, TAU); c.fill();
-  // scarf streaming behind
-  c.strokeStyle = '#ef4444'; c.lineWidth = 4; c.lineCap = 'round'; c.beginPath(); c.moveTo(-2, -16);
-  c.quadraticCurveTo(-12, -16 + Math.sin(t * 0.3) * 3 - (air ? 4 : 0), -18 - Math.abs(p.vx) * 1.5, -14 + Math.sin(t * 0.3 + 1) * 3); c.stroke();
-  c.restore();
-}
+  /* ---------- course definitions ---------- */
+  const L1 = P.make('1 \u00b7 Meadow Run', 100, (g) => {
+    g.ground(0, 22); g.set(2, 11, 'P'); g.coins(7, 10, 5);
+    g.set(10, 8, '?'); g.set(11, 8, '?'); g.set(12, 8, '?'); g.set(16, 11, 'w');
+    g.ground(25, 52); g.set(29, 11, 'w'); g.plat(32, 9, 4); g.coins(32, 8, 4);
+    g.set(38, 11, 'h'); g.set(44, 11, 'C'); g.set(47, 11, 'w');
+    g.ground(55, 78); g.set(58, 11, 'S'); g.plat(58, 6, 5); g.coins(58, 5, 5);
+    g.set(66, 11, '^'); g.set(67, 11, '^'); g.coins(65, 8, 4);
+    g.set(72, 11, 'h'); g.set(75, 11, 'w');
+    g.ground(81, 100); g.stairs(84, 5); g.set(95, 11, 'F');
+  });
+  L1.hint = 'Stomp the grubs, grab the crates, spring up high';
+  const L2 = P.make('2 \u00b7 Canyon Crossing', 110, (g) => {
+    g.ground(0, 14); g.set(2, 11, 'P'); g.coins(6, 10, 4);
+    g.plat(17, 10, 3); g.plat(22, 9, 3); g.coins(22, 8, 3);
+    g.ground(26, 40, 11); g.set(30, 10, 'w'); g.set(33, 7, 'b'); g.set(36, 10, '?');
+    g.set(44, 11, 'M'); g.coins(44, 9, 3);
+    g.ground(52, 70, 11); g.set(55, 10, 'w'); g.set(60, 10, 'h'); g.set(64, 10, 'C');
+    g.coins(57, 8, 6); g.set(61, 7, 'b'); g.set(67, 10, '^');
+    g.plat(72, 10, 3); g.plat(77, 9, 3); g.plat(82, 8, 3); g.coins(77, 7, 3); g.set(79, 6, 'b');
+    g.ground(86, 110, 11); g.set(90, 10, 's'); g.set(95, 10, 'w'); g.set(100, 10, 'h'); g.set(106, 10, 'F');
+  });
+  L2.hint = 'Ride the moving platform across the gap';
+  const L3 = P.make('3 \u00b7 Sunset Rooftops', 120, (g) => {
+    g.ground(0, 12, 11); g.set(2, 10, 'P');
+    g.ground(15, 26, 10); g.set(18, 9, 'w'); g.coins(17, 7, 4);
+    g.ground(29, 38, 11); g.set(32, 10, 's'); g.set(34, 10, 'C');
+    g.ground(41, 52, 9); g.set(44, 8, 'h'); g.set(48, 8, 'S'); g.plat(48, 3, 4); g.coins(48, 2, 4);
+    g.ground(55, 70, 11); g.set(58, 10, '^'); g.set(59, 10, '^'); g.coins(57, 8, 4);
+    g.set(62, 10, 'w'); g.set(66, 10, 'h'); g.set(68, 10, 'C');
+    g.set(73, 10, 'M'); g.coins(73, 8, 3);
+    g.ground(80, 92, 10); g.stairs(83, 4, 10); g.set(88, 9, 'w');
+    g.ground(95, 120, 11); g.set(100, 10, 'b'); g.set(104, 10, 's'); g.set(108, 10, 'h'); g.set(112, 10, '?'); g.set(116, 10, 'F');
+  });
+  L3.hint = 'Last delivery: the rooftops at dusk';
 
-P.game({
-  id: 'fox-courier', title: 'Fox Courier', subtitle: 'Deliver the parcels across three courses', color: '#fb923c',
-  controls: [['\u2190 \u2192  /  A D', 'Run'], ['Space  /  \u2191  /  W', 'Jump (hold for height)'], ['\u2193 + Jump', 'Drop through thin platforms'], ['Land on enemies', 'Stomp them (spikes hurt)'], ['Reach the flag', 'Checkpoints save your spot']],
-  help: '\u2190 \u2192 or A D run \u00b7 Space, \u2191 or W jump (hold for height) \u00b7 \u2193 + jump drops through thin platforms \u00b7 stomp enemies, avoid spikes \u00b7 hit crates for coins \u00b7 springs launch you \u00b7 reach the flag',
-  levels: [L1, L2, L3], bg, drawHero: drawFox, winTitle: 'Parcels Delivered!',
-  phys: { run: 3.5, jump: 10.8 },
-});
+  const PAL = [
+    { sky: ['#38bdf8', '#bae6fd', '#fef9c3'], far: '#7dd3fc', mid: '#86efac', solid: '#92400e', top: '#4ade80', plat: '#c08457' },
+    { sky: ['#f59e0b', '#fdba74', '#fef3c7'], far: '#fb923c', mid: '#c2410c', solid: '#9a3412', top: '#fbbf24', plat: '#7c2d12' },
+    { sky: ['#1e1b4b', '#be185d', '#fb923c'], far: '#4c1d95', mid: '#1e1b4b', solid: '#374151', top: '#f472b6', plat: '#6b7280' },
+    { sky: ['#0ea5e9', '#bfdbfe', '#f0fdf4'], far: '#38bdf8', mid: '#22c55e', solid: '#166534', top: '#86efac', plat: '#a16207' },
+    { sky: ['#312e81', '#7e22ce', '#f0abfc'], far: '#4338ca', mid: '#4c1d95', solid: '#3f3f46', top: '#c084fc', plat: '#52525b' },
+  ];
+  L1.pal = PAL[0]; L2.pal = PAL[1]; L3.pal = PAL[2];
+  const STATIC_ROUTE = [L1, L2, L3];
+  const NIGHT = { sky: ['#050816', '#1e1b4b', '#7c3aed'], far: '#312e81', mid: '#1e1b4b' };
+
+  function buildRoute(index) {
+    const cols = 126 + Math.min(60, index * 8);
+    const course = P.make('Route ' + (index + 1), cols, (g) => {
+      g.ground(0, 5, 12); g.set(2, 11, 'P');
+      let x = 6;
+      while (x < cols - 16) {
+        const len = 9 + Math.floor(random() * 10), end = Math.min(cols, x + len);
+        g.ground(x, end, 12);
+        if (random() < 0.55) g.set(x + 1 + Math.floor(random() * Math.max(1, len - 3)), 11, random() < 0.4 ? 'h' : 'w');
+        if (index >= 1 && random() < 0.16) g.set(x + Math.max(1, len - 2), 11, 's');
+        if (random() < 0.5) g.coins(x + 1, 9, Math.min(4, Math.max(2, len - 2)), 1);
+        if (random() < 0.3) g.set(x + Math.max(1, len - 2), 11, '?');
+        if (random() < 0.35) g.plat(x + 1, 8, 3);
+        if (random() < 0.24) g.set(x + 1, 7, 'b');
+        if (random() < 0.22) g.plat(x + Math.max(1, len - 3), 6, 3);
+        if (random() < 0.18) g.set(x + 2, 11, 'S');
+        x = end + 2 + Math.floor(random() * 2);
+        if (x < cols - 16 && random() < 0.28) g.set(x - 1, 11, '^');
+      }
+      g.ground(cols - 16, cols, 12);
+      const mid = Math.floor(cols / 2);
+      g.ground(mid - 2, mid + 3, 12); g.set(mid, 11, 'C'); g.coins(mid - 4, 9, 5, 1);
+      g.stairs(cols - 12, 4, 12); g.set(cols - 6, 11, 'F');
+    });
+    course.pal = PAL[(index + (runSeed % PAL.length)) % PAL.length];
+    course.hint = index === 0 ? 'Fresh route: read the gaps before you leap' : 'The route keeps growing';
+    return course;
+  }
+
+  /* ---------- world ---------- */
+  function activePal() {
+    const base = (route && route[courseIndex] && route[courseIndex].pal) || PAL[0];
+    if (activeMode === 'midnight') return Object.assign({}, base, NIGHT);
+    if (themeOverride) return Object.assign({}, base, { sky: themeOverride.slice() });
+    return base;
+  }
+  function tile(x, y) { if (x < 0 || x >= cols) return '#'; if (y < 0 || y >= rows) return ' '; return grid[y][x]; }
+  function solid(x, y) { return '#?u'.includes(tile(x, y)); }
+
+  function addEnemy(ch, c, r) {
+    const scale = enemySpeedScale();
+    const d = { w: { w: 26, h: 24, vx: -0.8 }, h: { w: 26, h: 26, vx: 0 }, b: { w: 28, h: 20, vx: 0 }, s: { w: 28, h: 22, vx: -1 } }[ch];
+    const x = c * T + (T - d.w) / 2, y = r * T + T - d.h;
+    en.push({ kind: ch, x, y, w: d.w, h: d.h, vx: d.vx * scale, vy: 0, x0: x, y0: y, t: Math.floor(random() * 60), ground: false, dead: false });
+  }
+  function loadCourse(def) {
+    rows = def.rows.length; cols = def.rows[0].length;
+    plats = []; en = []; check = null; doneT = 0; banner = 150;
+    grid = def.rows.map((row) => row.split(''));
+    let spawn = { c: 1, r: rows - 4 };
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const ch = grid[r][c];
+      if (ch === 'P') { spawn = { c, r }; grid[r][c] = ' '; }
+      else if ('whbs'.includes(ch)) { addEnemy(ch, c, r); grid[r][c] = ' '; }
+      else if (ch === 'M') { plats.push({ x: c * T, ox: c * T, y: r * T, w: T * 3, h: 12, r: 90, sp: 0.02, t: c * 7, dx: 0 }); grid[r][c] = ' '; }
+    }
+    p = { x: spawn.c * T + 6, y: spawn.r * T + T - 28, w: 20, h: 28, vx: 0, vy: 0, face: 1, ground: false, coy: 0, jb: 0, jl: 0, inv: 0, hp: hpMax, dead: 0, walk: 0, sq: 0, riding: null, drop: 0, bump: null };
+    spawnPoint = { x: p.x, y: p.y };
+    cam = { x: Math.max(0, Math.min(cols * T - W, p.x - W * 0.3)) };
+  }
+  function spawn(fresh) {
+    const s = check || spawnPoint;
+    p = { x: s.x, y: s.y, w: 20, h: 28, vx: 0, vy: 0, face: 1, ground: false, coy: 0, jb: 0, jl: 0, inv: fresh ? 0 : 70, hp: hpMax, dead: 0, walk: 0, sq: 0, riding: null, drop: 0, bump: null };
+    const target = Math.max(0, Math.min(cols * T - W, p.x + p.w / 2 - W / 2 + p.face * 40));
+    cam.x = target;
+  }
+
+  /* ---------- physics ---------- */
+  function moveBody(b, dx, dy) {
+    let hitX = 0;
+    if (dx) {
+      b.x += dx;
+      const r0 = Math.floor(b.y / T), r1 = Math.floor((b.y + b.h - 0.01) / T);
+      const c = Math.floor((dx > 0 ? b.x + b.w : b.x) / T);
+      for (let r = r0; r <= r1; r++) if (solid(c, r)) { b.x = dx > 0 ? c * T - b.w : (c + 1) * T; hitX = dx > 0 ? 1 : -1; b.vx = 0; break; }
+    }
+    b.ground = false; b.bump = null;
+    b.y += dy;
+    const c0 = Math.floor(b.x / T), c1 = Math.floor((b.x + b.w - 0.01) / T);
+    if (dy > 0) {
+      const r = Math.floor((b.y + b.h) / T), pb = b.y + b.h - dy;
+      for (let c = c0; c <= c1; c++) {
+        if (solid(c, r) || (tile(c, r) === '=' && !(b.drop > 0) && pb <= r * T + 1)) { b.y = r * T - b.h; b.vy = 0; b.ground = true; break; }
+      }
+    } else if (dy < 0) {
+      const r = Math.floor(b.y / T);
+      for (let c = c0; c <= c1; c++) if (solid(c, r)) { b.y = (r + 1) * T; b.vy = 0; b.bump = { c, r }; break; }
+    }
+    return hitX;
+  }
+
+  function hurt(dir) {
+    if (p.inv > 0 || p.dead) return;
+    p.hp--; p.inv = 100; p.vy = -6; p.vx = -dir * 4; runHit = true;
+    Arcade.G.shake(6); Arcade.G.freeze(4); A.sfx('hurt');
+    Arcade.G.burst(p.x + p.w / 2, p.y + p.h / 2, 12, { color: ['#fff', '#fca5a5'], speed: 4, life: 24 });
+    if (p.hp <= 0) die();
+  }
+  function die() {
+    if (p.dead) return;
+    lives--; runLostLife = true; p.dead = 70; A.sfx('ko'); Arcade.G.shake(10);
+    Arcade.G.burst(p.x + p.w / 2, p.y + p.h / 2, 28, { color: ['#fff', '#fbbf24', '#fb7185'], speed: 5, glow: true, life: 36 });
+  }
+
+  function updEnemy(e) {
+    e.t++;
+    if (e.kind === 'b') { e.x = e.x0 + Math.sin(e.t * 0.02) * 90; e.y = e.y0 + Math.sin(e.t * 0.05) * 24; e.vx = Math.cos(e.t * 0.02); return; }
+    e.vy = Math.min(e.vy + 0.5, 10);
+    if (e.kind === 'h') {
+      if (e.ground) { e.vx = 0; if (e.t % 75 === 0) { e.vy = -8.5 * Math.min(1.4, enemySpeedScale()); e.vx = (p.x < e.x ? -1.6 : 1.6) * enemySpeedScale(); } }
+    } else if (e.ground) {
+      const fx = Math.floor((e.vx > 0 ? e.x + e.w + 2 : e.x - 2) / T), fr = Math.floor((e.y + e.h + 4) / T);
+      if (!solid(fx, fr) && tile(fx, fr) !== '=') e.vx = -e.vx;
+    }
+    const sp = e.vx;
+    moveBody(e, e.vx, e.vy);
+    if (e.kind !== 'h' && e.vx === 0) e.vx = -sp;
+    if (e.y > rows * T + 120) e.dead = true;
+  }
+
+  function reportCourse(abs) {
+    if (window.Apex && Apex.report) Apex.report({ gameId: GAME_ID, type: 'level_complete', level: abs, score: Arcade.G.score, mode: activeMode });
+  }
+  function recordCourse(abs) {
+    const s = statsOf();
+    const patch = { coursesCleared: (Number(s.coursesCleared) || 0) + 1, bestCourses: Math.max(Number(s.bestCourses) || 0, abs) };
+    if (activeMode === 'campaign') {
+      if (abs >= 3) { patch.campaignStage = 1; patch.campaignLives = MODES.campaign.lives; patch.campaignClears = (Number(s.campaignClears) || 0) + 1; }
+      else { patch.campaignStage = abs + 1; patch.campaignLives = lives; }
+    }
+    if (activeMode === 'endless') patch.endlessBest = Math.max(Number(s.endlessBest) || 0, abs);
+    if (activeMode === 'daily') patch.dailyCourses = Math.max(Number(s.dailyCourses) || 0, abs);
+    if (activeMode === 'midnight') patch.midnightBest = Math.max(Number(s.midnightBest) || 0, abs);
+    savePatch(patch);
+  }
+  function recordRun(win) {
+    const s = statsOf(), d = new Date();
+    const day = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const patch = {
+      runs: (Number(s.runs) || 0) + 1,
+      coinsTotal: (Number(s.coinsTotal) || 0) + coins,
+      bestCourses: Math.max(Number(s.bestCourses) || 0, maxCourse),
+    };
+    if (activeMode === 'endless') patch.endlessBest = Math.max(Number(s.endlessBest) || 0, maxCourse);
+    if (activeMode === 'midnight' && win) patch.midnightClears = (Number(s.midnightClears) || 0) + 1;
+    const extra = {};
+    if (activeMode === 'daily') {
+      patch.dailyBest = Math.max(Number(s.dailyBest) || 0, Arcade.G.score);
+      extra.daily = { day: day, best: Math.max(Arcade.G.score, Number((Save.load(GAME_ID).daily || {}).best) || 0) };
+    }
+    savePatch(patch, extra);
+  }
+
+  function completeCourse() {
+    if (!p || p.dead || doneT > 0 || Arcade.G.state !== 'playing') return;
+    const abs = absoluteCourse();
+    reportCourse(abs);
+    recordCourse(abs);
+    maxCourse = Math.max(maxCourse, abs);
+    if (abs === 1) unlock('first-parcel');
+    if (!runHit) unlock('perfect-course');
+    if (coins >= 50) unlock('coin-run');
+    if (totalCrates >= 5) unlock('crate-hunter');
+    if (activeMode === 'daily' && abs >= 3) unlock('daily-runner');
+    if (activeMode === 'endless' && abs >= 5) unlock('endless-five');
+    if (activeMode === 'midnight' && abs >= 3) unlock('midnight-clear');
+    if (activeMode === 'midnight' && abs >= 3 && !runHit) unlock('untouchable');
+    if (activeMode === 'campaign' && abs >= 3) unlock('all-courses');
+    if (activeMode === 'campaign' && abs >= 3 && !runLostLife) unlock('no-loss');
+    const timeBonus = timerMode ? Math.max(0, Math.floor(timer)) * 10 : 0;
+    const bonus = 500 + p.hp * 100 + timeBonus;
+    award(bonus);
+    Arcade.G.popup(W / 2, 210, 'ROUTE ' + abs + ' CLEAR  +' + Math.round(bonus * modeMult()), '#fde047', 20);
+    Arcade.G.ring(p.x + p.w / 2, p.y + p.h / 2, '#fde047', 120, 26);
+    A.sfx('clear');
+    if (timerMode) timer += 20;
+    doneT = 90;
+  }
+
+  function finishRun(win, reason) {
+    if (runRecorded) return;
+    runRecorded = true;
+    recordRun(win);
+    const G = Arcade.G;
+    if (win) {
+      if (activeMode === 'campaign') G.win('Parcels Delivered!', 'All three routes \u00b7 score ' + G.score);
+      else if (activeMode === 'daily') G.win('Daily Route Complete!', 'Seed ' + runSeed + ' \u00b7 score ' + G.score);
+      else if (activeMode === 'midnight') G.win('Midnight Delivery!', 'One life, three routes \u00b7 score ' + G.score);
+      else if (activeMode === 'dash') G.win('Dash Delivered!', 'Time left ' + Math.max(0, Math.floor(timer)) + 's \u00b7 score ' + G.score);
+      else G.win('Route Complete!', 'Score ' + G.score);
+    } else {
+      G.over(reason || 'Delivery Failed', 'Reached route ' + absoluteCourse() + ' \u00b7 ' + MODE_LABEL[activeMode]);
+    }
+  }
+
+  function advanceAfterClear() {
+    const abs = absoluteCourse();
+    if (activeMode === 'campaign' && abs >= 3) return finishRun(true);
+    if (activeMode === 'midnight' && abs >= 3) return finishRun(true);
+    if (activeMode === 'daily' && courseIndex + 1 >= route.length) return finishRun(true);
+    if (activeMode === 'dash' && courseIndex + 1 >= route.length) return finishRun(true);
+    if (activeMode === 'endless') { courseIndex++; route.push(buildRoute(courseIndex)); loadCourse(route[courseIndex]); return; }
+    if (courseIndex + 1 < route.length) { courseIndex++; loadCourse(route[courseIndex]); return; }
+    finishRun(true);
+  }
+
+  /* ---------- input and update ---------- */
+  function update(G) {
+    G.hudL = 'SCORE ' + G.score + ' \u00b7 COINS ' + coins + ' \u00b7 ROUTE ' + absoluteCourse() + '/' + courseTotalLabel();
+    G.hudR = '\u2665'.repeat(Math.max(0, p.hp)) + '  LIVES ' + lives + ' \u00b7 ' + MODE_LABEL[activeMode];
+    if (banner > 0) banner--;
+    for (const m of plats) { const ox = m.x; m.t++; m.x = m.ox + Math.sin(m.t * m.sp) * m.r; m.dx = m.x - ox; }
+    if (doneT > 0) { followCam(); if (--doneT === 0) advanceAfterClear(); return; }
+    if (p.dead > 0) {
+      followCam();
+      if (--p.dead === 0) { if (lives <= 0) finishRun(false); else spawn(false); }
+      return;
+    }
+    if (timerMode) {
+      if (timer <= 0) { finishRun(false, 'Out of Time'); return; }
+      if (G.t % 60 === 0) { timer--; if (timer <= 0) { finishRun(false, 'Out of Time'); return; } }
+    }
+    const ax = A.axisX(), jh = A.held('Space', 'ArrowUp', 'KeyW', 'KeyZ'), jp = A.hit('Space', 'ArrowUp', 'KeyW', 'KeyZ');
+    if (ax) p.face = ax;
+    p.vx = A.approach(p.vx, ax * 3.5, ax ? (p.ground ? 0.45 : 0.3) : (p.ground ? 0.55 : 0.12));
+    p.coy = p.ground ? 6 : p.coy - 1;
+    p.jb = jp ? 7 : p.jb - 1;
+    if (jp && A.held('ArrowDown', 'KeyS') && p.ground) { p.drop = 8; p.jb = 0; }
+    if (p.jb > 0 && p.coy > 0) {
+      p.vy = -10.8; p.jb = 0; p.coy = 0; p.sq = -0.3; A.sfx('jump');
+      G.burst(p.x + p.w / 2, p.y + p.h, 5, { color: '#fff', speed: 1.6, life: 14, size: 2, angle: -Math.PI / 2, spread: 1.3, grav: 0.05 });
+    }
+    if (!jh && p.vy < -3) p.vy *= 0.45;
+    p.vy = Math.min(p.vy + 0.52, 12);
+    const wasG = p.ground;
+    if (p.riding) moveBody(p, p.riding.dx, 0);
+    moveBody(p, p.vx, p.vy);
+    p.riding = null;
+    if (p.vy >= 0) for (const m of plats) {
+      if (p.x + p.w > m.x + 2 && p.x < m.x + m.w - 2) {
+        const fb = p.y + p.h;
+        if (fb >= m.y - 4 && fb <= m.y + 14 && !(p.drop > 0)) { p.y = m.y - p.h; p.vy = 0; p.ground = true; p.riding = m; break; }
+      }
+    }
+    if (p.drop > 0) p.drop--;
+    if (p.inv > 0) p.inv--;
+    p.sq *= 0.8;
+    if (p.ground && !wasG) { A.sfx('land'); p.sq = 0.35; G.burst(p.x + p.w / 2, p.y + p.h, 4, { color: '#e2e8f0', speed: 1.4, life: 12, size: 2, angle: -Math.PI / 2, spread: 1.4 }); }
+    if (p.ground) p.walk += Math.abs(p.vx) * 0.13;
+    if (p.bump) {
+      const { c, r } = p.bump; p.bump = null;
+      if (grid[r][c] === '?') {
+        grid[r][c] = 'u'; totalCrates++; coins++; G.addScore(100); A.sfx('coin');
+        G.popup(c * T + T / 2, r * T - 6, '+100', '#fde047'); G.burst(c * T + T / 2, r * T, 8, { color: ['#fde047', '#fff'], speed: 3, life: 22, glow: true });
+        if (totalCrates >= 5) unlock('crate-hunter');
+      } else A.sfx('thud');
+    }
+    const x0 = Math.floor((p.x + 3) / T), x1 = Math.floor((p.x + p.w - 3) / T), y0 = Math.floor((p.y + 3) / T), y1 = Math.floor((p.y + p.h - 1) / T);
+    for (let r = y0; r <= y1; r++) for (let c = x0; c <= x1; c++) {
+      const ch = tile(c, r);
+      if (ch === 'o') {
+        grid[r][c] = ' '; coins++; G.addScore(50); A.sfx('coin');
+        G.burst(c * T + T / 2, r * T + T / 2, 6, { color: ['#fde047', '#fff'], speed: 2.5, life: 16, size: 2, glow: true });
+        if (coins >= 50) unlock('coin-run');
+      } else if (ch === '^') { if (p.y + p.h > r * T + 14) { hurt(p.vx >= 0 ? 1 : -1); p.vy = -7; } }
+      else if (ch === 'S') {
+        if (p.vy >= 0 && p.y + p.h > r * T + 14) { p.vy = -16; p.sq = -0.4; A.sfx('bounce'); unlock('spring-step'); G.ring(c * T + T / 2, r * T + 20, springColor, 40, 16); }
+      } else if (ch === '>') {
+        if (Math.abs(p.vx) < 6) A.sfx('dash');
+        p.vx = p.face * Math.max(Math.abs(p.vx), 5.6);
+      } else if (ch === 'C') {
+        check = { x: c * T + 6, y: r * T + T - p.h }; grid[r][c] = 'c'; A.sfx('power'); unlock('checkpoint');
+        G.popup(c * T + T / 2, r * T - 30, 'CHECKPOINT', '#86efac', 14); G.ring(c * T + T / 2, r * T, '#86efac', 60, 24);
+      } else if (ch === 'F') { completeCourse(); return; }
+    }
+    if (p.y > rows * T + 60) die();
+    for (const e of en) {
+      if (e.dead) continue;
+      updEnemy(e);
+      if (p.dead || !A.overlap({ x: p.x + 2, y: p.y + 2, w: p.w - 4, h: p.h - 2 }, e)) continue;
+      if (p.vy > 0.5 && p.y + p.h - e.y < 18 && e.kind !== 's') {
+        e.dead = true; p.vy = jh ? -11 : -8; G.addScore(100); A.sfx('hit'); G.freeze(3);
+        G.popup(e.x + e.w / 2, e.y - 8, '+100', '#fff'); G.burst(e.x + e.w / 2, e.y + e.h / 2, 12, { color: ['#fff', '#fbbf24'], speed: 3.5, life: 22 });
+      } else if (p.inv <= 0) hurt(e.x + e.w / 2 > p.x + p.w / 2 ? 1 : -1);
+    }
+    en = en.filter((e) => !e.dead);
+    if (G.score >= 10000) unlock('score-10000');
+    followCam();
+  }
+
+  function followCam() {
+    if (!p) return;
+    const target = Math.max(0, Math.min(cols * T - W, p.x + p.w / 2 - W / 2 + p.face * 40));
+    cam.x += (target - cam.x) * 0.12;
+  }
+
+  /* ---------- drawing ---------- */
+  function drawBackdrop(c, G) {
+    const theme = activePal(), t = G.clock;
+    A.sky(c, W, H, theme.sky);
+    c.save(); c.globalAlpha = 0.9; c.fillStyle = activeMode === 'midnight' ? '#e0e7ff' : '#fff7d6';
+    c.beginPath(); c.arc(640 - cam.x * 0.02, activeMode === 'midnight' ? 82 : 96, activeMode === 'midnight' ? 30 : 38, 0, TAU); c.fill();
+    if (activeMode === 'midnight') { c.fillStyle = theme.sky[0]; c.beginPath(); c.arc(628 - cam.x * 0.02, 76, 28, 0, TAU); c.fill(); }
+    c.restore();
+    P.ridge(c, 330, 30, 1, cam.x * 0.2, theme.far);
+    P.ridge(c, 380, 26, 4, cam.x * 0.45, theme.mid);
+    P.clouds(c, cam, t, 0.1, activeMode === 'midnight' ? 'rgba(148,163,184,.25)' : 'rgba(255,255,255,.75)');
+  }
+
+  function drawTiles(c, G) {
+    const c0 = Math.max(0, Math.floor(cam.x / T)), c1 = Math.min(cols - 1, Math.floor((cam.x + W) / T));
+    const r0 = Math.max(0, Math.floor(0 / T)), r1 = Math.min(rows - 1, Math.floor(H / T)), t = G.clock;
+    const theme = activePal();
+    for (let r = r0; r <= r1; r++) for (let q = c0; q <= c1; q++) {
+      const ch = grid[r][q]; if (ch === ' ') continue;
+      const x = q * T, y = r * T;
+      if (ch === '#') {
+        c.fillStyle = theme.solid; c.fillRect(x, y, T, T);
+        c.fillStyle = 'rgba(0,0,0,.18)'; c.fillRect(x, y + T - 4, T, 4); c.fillRect(x + T - 3, y, 3, T);
+        c.fillStyle = 'rgba(255,255,255,.08)'; c.fillRect(x, y, T, 2);
+        if (!solid(q, r - 1)) {
+          c.fillStyle = theme.top; c.fillRect(x, y, T, 8);
+          c.fillStyle = A.shade(theme.top, 0.3); c.fillRect(x, y, T, 3);
+          c.fillStyle = A.shade(theme.top, -0.3); c.fillRect(x, y + 8, T, 2);
+        }
+      } else if (ch === '=') {
+        c.fillStyle = A.shade(theme.plat, -0.35); c.fillRect(x, y + 4, T, 8);
+        c.fillStyle = theme.plat; c.fillRect(x, y, T, 8); c.fillStyle = A.shade(theme.plat, 0.3); c.fillRect(x, y, T, 2);
+      } else if (ch === '?' || ch === 'u') {
+        const col = ch === '?' ? A.shade(theme.plat, 0.25) : A.shade(theme.solid, -0.2);
+        c.fillStyle = A.shade(col, -0.35); A.roundRect(c, x + 1, y + 2, T - 2, T - 2, 5); c.fill();
+        c.fillStyle = col; A.roundRect(c, x + 1, y + 1, T - 2, T - 4, 5); c.fill();
+        if (ch === '?') A.text(c, '?', x + T / 2, y + T / 2 + 6, 19, '#7c4a03', 'center', '800');
+      } else if (ch === '^') {
+        for (let i = 0; i < 2; i++) {
+          c.fillStyle = '#e2e8f0'; c.beginPath(); c.moveTo(x + i * 16, y + T); c.lineTo(x + i * 16 + 8, y + 10); c.lineTo(x + i * 16 + 16, y + T); c.fill();
+          c.fillStyle = '#94a3b8'; c.beginPath(); c.moveTo(x + i * 16 + 8, y + 10); c.lineTo(x + i * 16 + 16, y + T); c.lineTo(x + i * 16 + 8, y + T); c.fill();
+        }
+      } else if (ch === 'o') {
+        const sx = Math.abs(Math.cos(t * 0.06 + q)), cy = y + T / 2 + Math.sin(t * 0.05 + q) * 2;
+        c.save(); c.shadowColor = coinColor; c.shadowBlur = 8;
+        c.fillStyle = coinColor; c.beginPath(); c.ellipse(x + T / 2, cy, 8 * sx + 1.5, 9, 0, 0, TAU); c.fill(); c.restore();
+        c.fillStyle = A.shade(coinColor, 0.45); c.beginPath(); c.ellipse(x + T / 2, cy, 4 * sx + 0.8, 5, 0, 0, TAU); c.fill();
+      } else if (ch === 'S') {
+        c.strokeStyle = '#cbd5e1'; c.lineWidth = 3;
+        c.beginPath(); for (let i = 0; i < 4; i++) { const yy = y + T - 3 - i * 5; c.moveTo(x + 8, yy); c.lineTo(x + T - 8, yy - 2); } c.stroke();
+        c.fillStyle = springColor; A.roundRect(c, x + 4, y + 10, T - 8, 6, 3); c.fill();
+      } else if (ch === '>') {
+        c.save(); c.globalAlpha = 0.6 + 0.4 * Math.sin(t * 0.2 + q); c.fillStyle = '#22d3ee'; c.shadowColor = '#22d3ee'; c.shadowBlur = 8;
+        for (let i = 0; i < 2; i++) { c.beginPath(); c.moveTo(x + 4 + i * 12, y + T - 18); c.lineTo(x + 14 + i * 12, y + T - 10); c.lineTo(x + 4 + i * 12, y + T - 2); c.lineTo(x + 8 + i * 12, y + T - 10); c.fill(); }
+        c.restore();
+      } else if (ch === 'C' || ch === 'c') {
+        c.fillStyle = '#e2e8f0'; c.fillRect(x + 14, y - T + 8, 3, T * 2 - 8);
+        c.fillStyle = ch === 'c' ? '#4ade80' : '#94a3b8';
+        const w = Math.sin(t * 0.1) * 2; c.beginPath(); c.moveTo(x + 17, y - T + 10); c.lineTo(x + 34 + w, y - T + 16); c.lineTo(x + 17, y - T + 22); c.fill();
+      } else if (ch === 'F') {
+        c.save(); c.shadowColor = '#fde047'; c.shadowBlur = 16;
+        c.fillStyle = '#e2e8f0'; c.fillRect(x + 14, y - 2 * T, 4, T * 3);
+        c.fillStyle = '#fde047'; const w = Math.sin(t * 0.12) * 3;
+        c.beginPath(); c.moveTo(x + 18, y - 2 * T + 2); c.lineTo(x + 46 + w, y - 2 * T + 14); c.lineTo(x + 18, y - 2 * T + 26); c.fill(); c.restore();
+      }
+    }
+  }
+
+  function drawEnemy(c, e, G) {
+    const cx = e.x + e.w / 2, cy = e.y + e.h / 2, d = e.vx < 0 ? -1 : 1, t = G.clock;
+    A.shadow(c, cx, e.y + e.h + 1, e.w * 0.45, 3, 0.25);
+    if (e.kind === 'b') {
+      const fl = Math.sin(t * 0.35) * 8;
+      c.fillStyle = '#6d28d9'; c.beginPath(); c.moveTo(cx - 4, cy); c.lineTo(cx - 20, cy - fl - 4); c.lineTo(cx - 12, cy + 6); c.fill();
+      c.beginPath(); c.moveTo(cx + 4, cy); c.lineTo(cx + 20, cy - fl - 4); c.lineTo(cx + 12, cy + 6); c.fill();
+      c.fillStyle = '#7c3aed'; c.beginPath(); c.arc(cx, cy, 9, 0, TAU); c.fill();
+    } else {
+      const col = e.kind === 'h' ? '#22c55e' : e.kind === 's' ? '#94a3b8' : '#ef4444';
+      c.fillStyle = A.shade(col, -0.3); c.beginPath(); c.ellipse(cx, e.y + e.h - 3, e.w / 2, 5, 0, 0, TAU); c.fill();
+      c.fillStyle = col; c.beginPath(); c.ellipse(cx, cy, e.w / 2, e.h / 2, 0, Math.PI, 0); c.lineTo(cx + e.w / 2, e.y + e.h - 3); c.lineTo(cx - e.w / 2, e.y + e.h - 3); c.fill();
+      if (e.kind === 's') { c.fillStyle = '#e2e8f0'; for (let i = -1; i <= 1; i++) { c.beginPath(); c.moveTo(cx + i * 8 - 4, e.y + 4); c.lineTo(cx + i * 8, e.y - 5); c.lineTo(cx + i * 8 + 4, e.y + 4); c.fill(); } }
+    }
+    c.fillStyle = '#fff'; c.beginPath(); c.arc(cx - 5, cy - 2, 3.5, 0, TAU); c.arc(cx + 5, cy - 2, 3.5, 0, TAU); c.fill();
+    c.fillStyle = '#111'; c.beginPath(); c.arc(cx - 5 + d * 1.2, cy - 2, 1.6, 0, TAU); c.arc(cx + 5 + d * 1.2, cy - 2, 1.6, 0, TAU); c.fill();
+  }
+
+  function drawFox(c, px, G) {
+    const cx = px.x + px.w / 2, base = px.y + px.h, f = px.face, t = G.clock;
+    const run = px.ground ? Math.sin(px.walk) : 0, air = !px.ground;
+    A.shadow(c, cx, base + 1, 11, 3, 0.25);
+    c.save(); c.translate(cx, base); c.scale(f * (1 + px.sq * 0.5), 1 - px.sq * 0.5);
+    const wag = Math.sin(t * 0.15) * 3 + (air ? -4 : run * 2);
+    c.fillStyle = fox.body; c.beginPath(); c.ellipse(-12, -13 + wag * 0.3, 9, 5, -0.7 + wag * 0.04, 0, TAU); c.fill();
+    c.fillStyle = '#fff'; c.beginPath(); c.ellipse(-17, -17 + wag * 0.3, 4, 3, -0.7, 0, TAU); c.fill();
+    c.fillStyle = A.shade(fox.body, -0.45);
+    const l1 = air ? 3 : run * 5, l2 = air ? -3 : -run * 5;
+    c.fillRect(-6 + l1, -6, 5, 6); c.fillRect(2 + l2, -6, 5, 6);
+    c.fillStyle = fox.body; A.roundRect(c, -8, -20, 16, 16, 6); c.fill();
+    c.fillStyle = '#fff7ed'; c.beginPath(); c.ellipse(3, -11, 4, 6, 0, 0, TAU); c.fill();
+    c.fillStyle = fox.satchel; A.roundRect(c, -11, -15, 8, 8, 2); c.fill();
+    c.strokeStyle = A.shade(fox.satchel, -0.25); c.lineWidth = 2; c.beginPath(); c.moveTo(-7, -20); c.lineTo(5, -6); c.stroke();
+    c.fillStyle = fox.body; c.beginPath(); c.arc(3, -23, 8, 0, TAU); c.fill();
+    c.beginPath(); c.moveTo(-2, -29); c.lineTo(-3, -38); c.lineTo(4, -31); c.fill();
+    c.beginPath(); c.moveTo(5, -30); c.lineTo(9, -38); c.lineTo(11, -27); c.fill();
+    c.fillStyle = '#fff7ed'; c.beginPath(); c.ellipse(8, -21, 5, 4, 0, 0, TAU); c.fill();
+    c.fillStyle = '#111'; c.beginPath(); c.arc(11, -22, 1.6, 0, TAU); c.fill();
+    c.beginPath(); c.arc(5, -25, 1.6, 0, TAU); c.fill();
+    c.strokeStyle = trailColor; c.lineWidth = 4; c.lineCap = 'round'; c.beginPath(); c.moveTo(-2, -16);
+    c.quadraticCurveTo(-12, -16 + Math.sin(t * 0.3) * 3 - (air ? 4 : 0), -18 - Math.abs(px.vx) * 1.5, -14 + Math.sin(t * 0.3 + 1) * 3); c.stroke();
+    c.restore();
+  }
+
+  function drawTimer(c, G) {
+    if (!timerMode) return;
+    const m = Math.floor(Math.max(0, timer) / 60), s = Math.max(0, timer) % 60;
+    const col = timer <= 20 && Math.floor(G.clock / 15) % 2 ? '#fb7185' : '#67e8f9';
+    c.save(); c.fillStyle = 'rgba(5,7,15,.6)'; A.roundRect(c, W / 2 - 62, 36, 124, 30, 10); c.fill();
+    c.strokeStyle = A.alpha(col, 0.7); c.lineWidth = 1.5; A.roundRect(c, W / 2 - 62, 36, 124, 30, 10); c.stroke(); c.restore();
+    A.text(c, 'TIME ' + m + ':' + String(s).padStart(2, '0'), W / 2, 57, 17, col, 'center', '800', A.MONO);
+  }
+
+  function draw(G, c) {
+    drawBackdrop(c, G);
+    c.save(); c.translate(-Math.round(cam.x), 0);
+    drawTiles(c, G);
+    const theme = activePal();
+    for (const m of plats) {
+      c.fillStyle = A.shade(theme.plat, -0.35); A.roundRect(c, m.x, m.y + 3, m.w, m.h, 5); c.fill();
+      c.fillStyle = theme.plat; A.roundRect(c, m.x, m.y, m.w, m.h - 3, 5); c.fill();
+      c.fillStyle = A.shade(theme.plat, 0.3); c.fillRect(m.x + 4, m.y + 1, m.w - 8, 2);
+    }
+    for (const e of en) drawEnemy(c, e, G);
+    if (p && !p.dead && !(p.inv > 0 && Math.floor(p.inv / 4) % 2)) drawFox(c, p, G);
+    G.drawFX(c);
+    c.restore();
+    A.vignette(c, W, H, 0.3);
+    drawTimer(c, G);
+    if (banner > 0 && G.state === 'playing') {
+      const course = route[courseIndex] || {};
+      c.save(); c.globalAlpha = Math.min(1, banner / 40);
+      A.glowText(c, course.name || 'Fox Courier', W / 2, 104, 30, activeMode === 'midnight' ? '#c4b5fd' : '#fde68a', 'center', 14);
+      if (course.hint) A.text(c, course.hint, W / 2, 130, 14, '#e6e9f5', 'center', '600');
+      c.restore();
+    }
+    if (doneT > 0) A.glowText(c, 'ROUTE CLEAR!', W / 2, 190, 38, '#fde047', 'center', 20);
+  }
+
+  /* ---------- lifecycle ---------- */
+  function init(G) {
+    runSeed = activeMode === 'daily' ? dailySeed() : (FORCED_SEED || (((Date.now() & 0x7fffffff) ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0) || 1);
+    rngState = runSeed;
+    const cfg = modeCfg(), saved = window.Save && Save.load ? Save.load(GAME_ID) : {}, stats = saved.stats || {};
+    lives = cfg.lives; hpMax = cfg.hp; timerMode = cfg.timer > 0; timer = cfg.timer;
+    startLives = lives;
+    coins = 0; totalCrates = 0; runRecorded = false; runHit = false; runLostLife = false; maxCourse = 0; doneT = 0; check = null; courseOffset = 0; courseIndex = 0;
+    if (activeMode === 'campaign') {
+      const stage = Math.max(1, Math.min(3, Number(stats.campaignStage) || 1));
+      courseOffset = stage - 1;
+      route = STATIC_ROUTE.slice(courseOffset);
+      if (stage > 1) lives = Math.max(1, Math.min(cfg.lives, Number(stats.campaignLives) || cfg.lives));
+      startLives = lives;
+    } else if (activeMode === 'daily') {
+      route = [buildRoute(0), buildRoute(1), buildRoute(2)];
+    } else if (activeMode === 'endless') {
+      route = [buildRoute(0)];
+    } else {
+      route = STATIC_ROUTE.slice();
+    }
+    loadCourse(route[0]);
+    lastInitMode = activeMode;
+  }
+
+  const foxGame = Arcade.game({
+    id: GAME_ID, title: 'Fox Courier', subtitle: 'Carry the parcel across the lively routes', color: '#fb923c',
+    controls: [['\u2190 \u2192  /  A D', 'Run'], ['Space  /  \u2191  /  W', 'Jump (hold for height)'], ['\u2193 + Jump', 'Drop through thin platforms'], ['Land on enemies', 'Stomp them (spikes hurt)'], ['Reach the flag', 'Checkpoints save your spot']],
+    help: '\u2190 \u2192 or A D run \u00b7 Space, \u2191 or W jump \u00b7 \u2193 + jump drops through thin platforms \u00b7 stomp enemies, avoid spikes \u00b7 hit crates for coins \u00b7 springs launch you \u00b7 reach the flag',
+    w: W, h: H, touchL: [['\u25c0', 'ArrowLeft'], ['\u25b6', 'ArrowRight']], touchR: [['\u25b2', 'ArrowUp'], ['\u25cf', 'Space']],
+    init, update, draw,
+  });
+  const originalShake = foxGame.shake.bind(foxGame);
+  foxGame.shake = (amount) => originalShake(amount * shakeScale);
+
+  function applyCosmetic(slot, id) {
+    if (slot === 'skin') {
+      if (id.includes('crimson')) fox = { body: '#ef4444', scarf: '#fbbf24', satchel: '#7c2d12' };
+      else if (id.includes('mint')) fox = { body: '#6ee7b7', scarf: '#f0fdfa', satchel: '#0f766e' };
+      else if (id.includes('midnight')) fox = { body: '#312e81', scarf: '#a78bfa', satchel: '#1e1b4b' };
+      else if (id.includes('solar')) fox = { body: '#fde68a', scarf: '#f97316', satchel: '#b45309' };
+      else fox = { body: '#fb923c', scarf: '#ef4444', satchel: '#92400e' };
+    } else if (slot === 'palette') {
+      if (id.includes('mint')) { coinColor = '#86efac'; springColor = '#22d3ee'; }
+      else if (id.includes('solar')) { coinColor = '#fde047'; springColor = '#fb7185'; }
+      else if (id.includes('gold')) { coinColor = '#fbbf24'; springColor = '#f59e0b'; }
+      else { coinColor = '#facc15'; springColor = '#f472b6'; }
+    } else if (slot === 'trail') {
+      trailColor = id.includes('aurora') ? '#67e8f9' : id.includes('ember') ? '#fb7185' : id.includes('gold') ? '#fde047' : '#ef4444';
+    } else if (slot === 'theme') {
+      themeOverride = id.includes('snowline') ? ['#0f172a', '#334155', '#e2e8f0']
+        : id.includes('orchard') ? ['#14532d', '#4ade80', '#fef9c3']
+        : id.includes('dusk') ? ['#1e1b4b', '#be185d', '#fb923c']
+        : null;
+    }
+  }
+
+  foxGame.ui = UI.mountGame(foxGame, {
+    id: GAME_ID, title: 'Fox Courier', subtitle: 'Deliver the parcels across three lively routes.', accent: '#fb923c',
+    modes: [
+      { id: 'campaign', name: 'Campaign', blurb: 'Three routes, three lives, and a saved checkpoint.', seasonTargets: [2400, 5000, 8000] },
+      { id: 'dash', name: 'Parcel Dash', blurb: 'Beat the clock across all three routes.', seasonTargets: [2600, 5200, 8800] },
+      { id: 'daily', name: 'Daily Route', blurb: 'The same seeded route for everyone today.', seeded: true, seasonTargets: [3000, 6000, 10000] },
+      { id: 'endless', name: 'Endless Delivery', blurb: 'Procedural routes that grow longer and meaner.', seasonTargets: [3200, 7000, 12000] },
+      { id: 'midnight', name: 'Midnight Run', blurb: 'One life, faster enemies, and a 1.5\u00d7 score bonus.', lockedHint: 'Clear 3 routes to unlock', requires: { stat: 'coursesCleared', gte: 3 }, seasonTargets: [3200, 6500, 11000] },
+    ],
+    settings: [
+      { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
+      { key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 },
+      { key: 'particles', label: 'Particles', type: 'select', options: ['lite', 'standard', 'ultra'], default: 'standard' },
+    ],
+    achievements: [
+      { id: 'first-parcel', name: 'First Parcel', desc: 'Clear your first route.', rarity: 'common' },
+      { id: 'perfect-course', name: 'Perfect Course', desc: 'Clear a route without taking damage.', rarity: 'rare' },
+      { id: 'crate-hunter', name: 'Crate Hunter', desc: 'Bust five crates in one run.', rarity: 'common' },
+      { id: 'spring-step', name: 'Spring Step', desc: 'Launch off a spring.', rarity: 'common' },
+      { id: 'checkpoint', name: 'Postal Relay', desc: 'Light a checkpoint.', rarity: 'common' },
+      { id: 'coin-run', name: 'Coin Carrier', desc: 'Collect fifty coins in one run.', rarity: 'rare' },
+      { id: 'all-courses', name: 'Round Complete', desc: 'Clear the three-route campaign.', rarity: 'epic' },
+      { id: 'daily-runner', name: 'Daily Courier', desc: 'Clear the Daily Route.', rarity: 'rare' },
+      { id: 'endless-five', name: 'Long Haul', desc: 'Reach route five in Endless Delivery.', rarity: 'epic' },
+      { id: 'midnight-clear', name: 'Midnight Delivery', desc: 'Clear Midnight Run.', rarity: 'legendary' },
+      { id: 'no-loss', name: 'Flawless Round', desc: 'Clear the campaign without losing a life.', rarity: 'epic' },
+      { id: 'untouchable', name: 'Untouchable', desc: 'Clear Midnight Run without taking damage.', rarity: 'legendary' },
+      { id: 'score-10000', name: 'Big Delivery', desc: 'Score 10,000 in one run.', rarity: 'legendary' },
+    ],
+    tutorial: { type: 'interactive', steps: [
+      { text: 'Run with A/D or the arrow keys and jump with Space.', hold: 'ArrowRight' },
+      { text: 'Stomp grubs from above; spikes and spikers cannot be stomped.', hold: 'Space' },
+      { text: 'Reach the flag at the end of each route. Checkpoints save your respawn.', hold: 'KeyF' },
+    ] },
+    chapter: 'PARCEL ROUTES \u00b7 3 COURSES', levels: [{}, {}, {}],
+    hooks: {
+      applyMode: (mode) => {
+        activeMode = MODES[mode] ? mode : 'campaign';
+        if (foxGame && lastInitMode !== activeMode) foxGame.restart(false);
+      },
+      applySetting: (key, value) => {
+        if (key === 'difficulty') difficulty = value;
+        if (key === 'shake') shakeScale = Number(value);
+        if (key === 'particles' && window.Perf && Perf.setTier) Perf.setTier(value);
+      },
+      applyCosmetic,
+      getResult: () => ({ score: foxGame.score, win: foxGame.state === 'won', mode: activeMode, course: absoluteCourse(), lives }),
+    },
+  });
+
+  if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+    window.FoxCourierTest = {
+      state() {
+        return { mode: activeMode, difficulty: Arcade.difficulty, course: absoluteCourse(), courseIndex, courseOffset, total: route.length, lives, startLives, hp: p ? p.hp : 0, score: foxGame.score, seed: runSeed, state: foxGame.state, coins, timer, timerMode, check: !!check, title: foxGame.title, sub: foxGame.sub, maxCourse };
+      },
+      layout() { return grid.map((row) => row.join('')); },
+      sequence(n) { const out = []; for (let i = 0; i < n; i++) out.push(Number(random().toFixed(6))); return out; },
+      setMode(mode) { return foxGame.ui.setMode(mode); },
+      setDifficulty(level) { difficulty = level; Arcade.difficulty = level; Arcade.speedMult = level === 'easy' ? 0.8 : level === 'hard' ? 1.35 : 1; },
+      restart(autostart) { foxGame.restart(autostart === true); },
+      award(points) { award(points); },
+      cosmetic: applyCosmetic,
+      colors() { return { body: fox.body, scarf: fox.scarf, trail: trailColor, coin: coinColor, spring: springColor, sky: activePal().sky.slice() }; },
+      stats() { return window.Save && Save.load ? Save.load(GAME_ID) : {}; },
+      clearCourse() { completeCourse(); },
+      die() { if (foxGame.state === 'playing' && p && !p.dead) die(); },
+      setTimer(n) { timer = n; },
+      teleportTile(c, r) { if (p) { p.x = c * T + 4; p.y = r * T + T - p.h; p.vx = 0; p.vy = 0; } },
+      spawnEnemy(kind, c, r) { addEnemy(kind || 'w', c == null ? 8 : c, r == null ? 11 : r); },
+      grantCoins(n) { coins += n == null ? 50 : n; },
+      setHp(n) { if (p) p.hp = n == null ? 3 : n; },
+      routeNames() { return route.map((item) => item.name); },
+    };
+  }
+})();
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

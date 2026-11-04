@@ -67,7 +67,6 @@ const A = Arcade;
     let mult = 1;
     if (activeMode === 'last-light') mult *= 1.25;
     if (activeMode === 'nightfall') mult *= 1.5;
-    if (difficulty === 'hard') mult *= 1.25;
     Arcade.G.addScore(Math.round(points * mult));
   }
   function unlock(id) {

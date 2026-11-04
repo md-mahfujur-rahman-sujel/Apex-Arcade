@@ -19,113 +19,783 @@
 <script src="../../kits/score-bridge.js"></script>
 <script src="../../kits/ui-kit.js"></script>
 <script>
-/* Rollo Rush — high-speed platformer: build up speed, hit the cyan boost pads, spin-stomp enemies,
-   collect rings and race through three zones. Built on platform-kit.js. */
-const A = Arcade, P = Plat, TAU = Math.PI * 2;
+/* Rollo Rush — momentum platformer: build speed, hit cyan boost pads, spin-dash, bounce off
+   springs, scatter rings when hit, and race through three zones. Five modes share one seeded engine. */
+(function () {
+  'use strict';
+  const A = Arcade, P = Plat, T = 32, W = 800, H = 480, TAU = Math.PI * 2;
+  const GAME_ID = 'rollo-rush';
+  const MODE_LABEL = { campaign: 'CAMPAIGN', blitz: 'BLITZ RUN', daily: 'DAILY DASH', endless: 'ENDLESS RUSH', overdrive: 'OVERDRIVE' };
+  const MODES = {
+    campaign: { lives: 3, hp: 3, timer: 0, mult: 1, speed: 1 },
+    blitz: { lives: 2, hp: 3, timer: 120, mult: 1, speed: 1.05 },
+    daily: { lives: 3, hp: 3, timer: 0, mult: 1.25, speed: 1 },
+    endless: { lives: 3, hp: 3, timer: 0, mult: 1.1, speed: 1 },
+    overdrive: { lives: 1, hp: 2, timer: 0, mult: 1.5, speed: 1.3 },
+  };
+  const FORCED_SEED = (() => { try { return Number(new URLSearchParams(location.search).get('seed')) || 0; } catch (e) { return 0; } })();
 
-/* ---- zone 1: Sunny Shore ---- */
-const Z1 = P.make('Zone 1 \u00b7 Sunny Shore', 130, (g) => {
-  g.ground(0, 30); g.set(2, 11, 'P'); g.coins(8, 10, 8); g.set(14, 11, '>'); g.set(22, 11, 'w'); g.coins(24, 9, 5);
-  g.ground(34, 60); g.set(36, 11, '>'); g.coins(40, 9, 9); g.set(46, 11, 'h'); g.set(52, 11, '^'); g.set(53, 11, '^'); g.set(57, 11, 'C');
-  g.ground(64, 95); g.set(66, 11, '>'); g.set(70, 11, 'S'); g.plat(70, 6, 6); g.coins(70, 5, 6);
-  g.set(80, 11, 'w'); g.set(84, 9, 'b'); g.coins(86, 10, 6);
-  g.ground(99, 130); g.set(104, 11, '>'); g.coins(108, 10, 10); g.set(115, 11, 's'); g.set(122, 11, 'h'); g.set(127, 11, 'F');
-});
-Z1.hint = 'Run to build speed \u2014 cyan arrows give a boost';
+  let grid, rows, cols, p, en, plats, drops, cam, check, doneT, banner, route, zoneIndex, zoneOffset, spawnPoint;
+  let lives, rings, hpMax, timer, timerMode;
+  let activeMode = 'campaign', difficulty = 'normal', rngState = 0, runSeed = 0, lastInitMode = null;
+  let runRecorded = false, runHit = false, courseHit = false, runLostLife = false, totalCrates = 0, maxZone = 0;
+  let boosts = 0, stomps = 0, dashCd = 0;
+  let shakeScale = 1, starsCache = null, themeOverride = null;
+  let rollo = { body: '#14b8a6', belly: '#fde68a' };
+  let trailColor = '#2dd4bf', ringColor = '#facc15', springColor = '#f472b6', boostColor = '#22d3ee';
 
-/* ---- zone 2: Crystal Mines ---- */
-const Z2 = P.make('Zone 2 \u00b7 Crystal Mines', 130, (g) => {
-  g.ground(0, 18); g.set(2, 11, 'P'); g.coins(6, 10, 6); g.set(10, 11, '>');
-  g.ground(22, 40, 11); g.set(26, 10, 'w'); g.set(31, 10, '^'); g.set(32, 10, '^'); g.coins(28, 8, 6); g.set(36, 10, 'C');
-  g.set(44, 11, 'M'); g.coins(44, 9, 3);
-  g.ground(52, 75, 11); g.set(54, 10, '>'); g.coins(58, 8, 8); g.set(62, 10, 'h'); g.set(66, 8, 'b'); g.set(70, 10, 's');
-  g.plat(79, 9, 3); g.plat(84, 8, 3); g.plat(89, 7, 3); g.coins(84, 6, 3); g.set(86, 5, 'b');
-  g.ground(94, 130, 11); g.set(98, 10, 'S'); g.plat(98, 5, 5); g.coins(98, 4, 5); g.set(106, 10, 'w');
-  g.set(110, 10, '^'); g.set(111, 10, '^'); g.set(112, 10, 'C'); g.set(118, 10, 'h'); g.set(122, 10, 's'); g.set(127, 10, 'F');
-});
-Z2.hint = 'Watch the spikes \u2014 and ride the lift';
+  function random() { if (!rngState) return Math.random(); rngState = (Math.imul(rngState, 1664525) + 1013904223) >>> 0; return rngState / 4294967296; }
+  function randRange(a, b) { return a + random() * (b - a); }
+  function randInt(a, b) { return Math.floor(randRange(a, b + 1)); }
+  function dailySeed() {
+    const d = new Date(), key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate() + ':rollo-rush'; let hash = 2166136261;
+    for (let i = 0; i < key.length; i++) { hash ^= key.charCodeAt(i); hash = Math.imul(hash, 16777619); }
+    return (hash >>> 0) || 1;
+  }
+  function modeCfg() { return MODES[activeMode] || MODES.campaign; }
+  function diffMult() { return difficulty === 'hard' ? 1.15 : difficulty === 'easy' ? 0.85 : 1; }
+  function enemySpeedScale() { return modeCfg().speed * diffMult(); }
+  function runSpeed() { return 5.2 * modeCfg().speed * (difficulty === 'hard' ? 1.12 : difficulty === 'easy' ? 0.9 : 1); }
+  function modeMult() {
+    if (activeMode === 'daily') return 1.25;
+    if (activeMode === 'overdrive') return 1.5;
+    if (activeMode === 'endless') return Math.min(1.6, 1.1 + Math.max(0, absoluteZone() - 1) * 0.05);
+    return 1;
+  }
+  function award(points) { Arcade.G.addScore(Math.round(points * modeMult())); }
+  function statsOf() { const save = window.Save && Save.load ? Save.load(GAME_ID) : {}; return save.stats || {}; }
+  function savePatch(patch, extra) { if (window.Save && Save.update) Save.update(GAME_ID, Object.assign({ stats: patch }, extra || {})); }
+  function unlock(id) {
+    const save = window.Save && Save.load ? Save.load(GAME_ID) : {};
+    if ((Array.isArray(save.achievements) ? save.achievements : []).includes(id)) return;
+    if (window.Save && Save.update) Save.update(GAME_ID, { achievements: [id] });
+    if (window.Apex && Apex.unlockAchievement) Apex.unlockAchievement(id, GAME_ID);
+    if (window.UI && UI.toast) UI.toast(id.replace(/-/g, ' '), { color: '#fbbf24' });
+  }
+  function absoluteZone() { return zoneOffset + zoneIndex + 1; }
+  function zoneTotalLabel() { return activeMode === 'endless' ? '\u221e' : activeMode === 'campaign' ? '3' : String(route ? route.length : 3); }
 
-/* ---- zone 3: Neon Highway ---- */
-const Z3 = P.make('Zone 3 \u00b7 Neon Highway', 140, (g) => {
-  g.ground(0, 40); g.set(2, 11, 'P'); g.set(8, 11, '>'); g.set(16, 11, '>'); g.coins(10, 9, 10); g.set(26, 11, 'h'); g.set(32, 11, 'w');
-  g.ground(44, 70); g.set(46, 11, '>'); g.set(52, 11, '^'); g.set(53, 11, '^'); g.set(54, 11, '^'); g.coins(51, 8, 6); g.set(60, 11, 'C'); g.set(64, 11, 's');
-  g.set(74, 11, 'M'); g.coins(74, 9, 3);
-  g.ground(82, 110); g.set(84, 11, '>'); g.coins(88, 9, 10); g.set(96, 9, 'b'); g.set(100, 11, 'h'); g.set(105, 11, 's');
-  g.ground(114, 140); g.set(116, 11, '>'); g.coins(120, 10, 8); g.set(126, 11, '^'); g.set(127, 11, '^'); g.set(130, 11, 'C'); g.set(134, 11, 'w'); g.set(137, 11, 'F');
-});
-Z3.hint = 'Full throttle to the finish';
+  /* ---------- zone definitions (canonical layouts) ---------- */
+  const Z1 = P.make('Zone 1 \u00b7 Sunny Shore', 130, (g) => {
+    g.ground(0, 30); g.set(2, 11, 'P'); g.coins(8, 10, 8); g.set(14, 11, '>'); g.set(22, 11, 'w'); g.coins(24, 9, 5);
+    g.ground(34, 60); g.set(36, 11, '>'); g.coins(40, 9, 9); g.set(46, 11, 'h'); g.set(52, 11, '^'); g.set(53, 11, '^'); g.set(57, 11, 'C');
+    g.ground(64, 95); g.set(66, 11, '>'); g.set(70, 11, 'S'); g.plat(70, 6, 6); g.coins(70, 5, 6);
+    g.set(80, 11, 'w'); g.set(84, 9, 'b'); g.coins(86, 10, 6);
+    g.ground(99, 130); g.set(104, 11, '>'); g.coins(108, 10, 10); g.set(115, 11, 's'); g.set(122, 11, 'h'); g.set(127, 11, 'F');
+  });
+  Z1.hint = 'Run to build speed \u2014 cyan arrows give a boost';
 
-const PAL = [
-  { sky: ['#0ea5e9', '#7dd3fc', '#fef3c7'], solid: '#b45309', top: '#fde68a', plat: '#a16207' },
-  { sky: ['#1e1b4b', '#3b0764', '#581c87'], solid: '#4c1d95', top: '#a78bfa', plat: '#6d28d9' },
-  { sky: ['#020617', '#1e1b4b', '#7e22ce'], solid: '#1f2937', top: '#22d3ee', plat: '#475569' },
-];
-Z1.theme = PAL[0]; Z2.theme = PAL[1]; Z3.theme = PAL[2];
+  const Z2 = P.make('Zone 2 \u00b7 Crystal Mines', 130, (g) => {
+    g.ground(0, 18); g.set(2, 11, 'P'); g.coins(6, 10, 6); g.set(10, 11, '>');
+    g.ground(22, 40, 11); g.set(26, 10, 'w'); g.set(31, 10, '^'); g.set(32, 10, '^'); g.coins(28, 8, 6); g.set(36, 10, 'C');
+    g.set(44, 11, 'M'); g.coins(44, 9, 3);
+    g.ground(52, 75, 11); g.set(54, 10, '>'); g.coins(58, 8, 8); g.set(62, 10, 'h'); g.set(66, 8, 'b'); g.set(70, 10, 's');
+    g.plat(79, 9, 3); g.plat(84, 8, 3); g.plat(89, 7, 3); g.coins(84, 6, 3); g.set(86, 5, 'b');
+    g.ground(94, 130, 11); g.set(98, 10, 'S'); g.plat(98, 5, 5); g.coins(98, 4, 5); g.set(106, 10, 'w');
+    g.set(110, 10, '^'); g.set(111, 10, '^'); g.set(112, 10, 'C'); g.set(118, 10, 'h'); g.set(122, 10, 's'); g.set(127, 10, 'F');
+  });
+  Z2.hint = 'Watch the spikes \u2014 and ride the lift';
 
-function bg(c, cam, t, lvl) {
-  const W = 800, H = 480;
-  A.sky(c, W, H, PAL[lvl].sky);
-  if (lvl === 0) {
-    c.fillStyle = '#fde68a'; c.beginPath(); c.arc(640, 90, 40, 0, TAU); c.fill();
-    P.clouds(c, cam, t, 0.1);
-    c.fillStyle = '#0284c7'; c.fillRect(0, 300, W, 90);
-    c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 2; c.beginPath();
-    for (let i = 0; i < 14; i++) { const x = ((i * 70 - cam.x * 0.3 + t * 0.4) % 1000 + 1000) % 1000 - 100; c.moveTo(x, 310 + (i % 4) * 18); c.lineTo(x + 24, 310 + (i % 4) * 18); }
-    c.stroke();
-    P.ridge(c, 385, 14, 2, cam.x * 0.4, '#fcd34d');
-    for (let i = 0; i < 5; i++) { const x = ((i * 330 - cam.x * 0.5) % 1650 + 1650) % 1650 - 100; c.fillStyle = '#7c2d12'; c.fillRect(x, 300, 6, 90); c.fillStyle = '#16a34a'; for (let k = 0; k < 5; k++) { c.beginPath(); c.ellipse(x + 3 + Math.cos(k * 1.26) * 18, 300 + Math.sin(k * 1.26) * 8, 20, 5, k * 1.26, 0, TAU); c.fill(); } }
-  } else if (lvl === 1) {
-    c.fillStyle = '#2e1065';
-    for (let i = 0; i < 16; i++) { const x = ((i * 60 - cam.x * 0.3) % 960 + 960) % 960 - 60, h = 40 + A.hash(i, 1) * 110; c.beginPath(); c.moveTo(x, 0); c.lineTo(x + 30, h); c.lineTo(x + 60, 0); c.fill(); }
-    for (let i = 0; i < 12; i++) {
-      const x = ((i * 130 - cam.x * 0.45) % 1560 + 1560) % 1560 - 80, y = 330 + A.hash(i, 5) * 60, h = 30 + A.hash(i, 9) * 50;
-      c.save(); c.shadowColor = '#c084fc'; c.shadowBlur = 16; c.fillStyle = i % 2 ? '#a78bfa' : '#67e8f9'; c.globalAlpha = 0.5 + 0.25 * Math.sin(t * 0.05 + i);
-      c.beginPath(); c.moveTo(x, y); c.lineTo(x + 9, y - h); c.lineTo(x + 18, y); c.fill(); c.restore();
+  const Z3 = P.make('Zone 3 \u00b7 Neon Highway', 140, (g) => {
+    g.ground(0, 40); g.set(2, 11, 'P'); g.set(8, 11, '>'); g.set(16, 11, '>'); g.coins(10, 9, 10); g.set(26, 11, 'h'); g.set(32, 11, 'w');
+    g.ground(44, 70); g.set(46, 11, '>'); g.set(52, 11, '^'); g.set(53, 11, '^'); g.set(54, 11, '^'); g.coins(51, 8, 6); g.set(60, 11, 'C'); g.set(64, 11, 's');
+    g.set(74, 11, 'M'); g.coins(74, 9, 3);
+    g.ground(82, 110); g.set(84, 11, '>'); g.coins(88, 9, 10); g.set(96, 9, 'b'); g.set(100, 11, 'h'); g.set(105, 11, 's');
+    g.ground(114, 140); g.set(116, 11, '>'); g.coins(120, 10, 8); g.set(126, 11, '^'); g.set(127, 11, '^'); g.set(130, 11, 'C'); g.set(134, 11, 'w'); g.set(137, 11, 'F');
+  });
+  Z3.hint = 'Full throttle to the finish';
+
+  const PAL = [
+    { kind: 'shore', sky: ['#38bdf8', '#bae6fd', '#fef3c7'], far: '#93c5fd', mid: '#fbbf24', solid: '#b45309', top: '#fde68a', plat: '#a16207' },
+    { kind: 'mine', sky: ['#1e1b4b', '#3b0764', '#581c87'], far: '#4c1d95', mid: '#6d28d9', solid: '#4c1d95', top: '#a78bfa', plat: '#6d28d9' },
+    { kind: 'neon', sky: ['#020617', '#1e1b4b', '#7e22ce'], far: '#1e293b', mid: '#312e81', solid: '#1f2937', top: '#22d3ee', plat: '#475569' },
+    { kind: 'shore', sky: ['#f59e0b', '#fdba74', '#fef3c7'], far: '#fb923c', mid: '#b45309', solid: '#7c2d12', top: '#a3e635', plat: '#92400e' },
+    { kind: 'mine', sky: ['#0f172a', '#1e1b4b', '#4c1d95'], far: '#312e81', mid: '#4338ca', solid: '#312e81', top: '#c4b5fd', plat: '#6366f1' },
+    { kind: 'neon', sky: ['#0b0716', '#4c1d95', '#f0abfc'], far: '#2e1065', mid: '#6d28d9', solid: '#3f3f46', top: '#c084fc', plat: '#52525b' },
+  ];
+  Z1.pal = PAL[0]; Z2.pal = PAL[1]; Z3.pal = PAL[2];
+  const STATIC_ROUTE = [Z1, Z2, Z3];
+  const STORM = { kind: 'storm', sky: ['#050816', '#0f172a', '#334155'], far: '#1e293b', mid: '#0f172a' };
+
+  function buildZone(index) {
+    const width = 128 + Math.min(64, index * 8);
+    const zone = P.make('Zone ' + (index + 1), width, (g) => {
+      g.ground(0, 6, 12); g.set(2, 11, 'P');
+      let x = 7;
+      while (x < width - 17) {
+        const len = 8 + Math.floor(random() * 9), end = Math.min(width, x + len);
+        g.ground(x, end, random() < 0.68 ? 12 : 10);
+        if (random() < 0.62) g.set(x + 1 + Math.floor(random() * Math.max(1, len - 3)), 11, '>');
+        if (random() < 0.45) g.set(x + 1 + Math.floor(random() * Math.max(1, len - 3)), 11, random() < 0.5 ? 'w' : 'h');
+        if (index >= 1 && random() < 0.15) g.set(x + Math.max(1, len - 2), 11, 's');
+        if (random() < 0.65) g.coins(x + 1, 9, Math.min(5, Math.max(2, len - 2)), 1);
+        if (random() < 0.34) g.plat(x + 1, 8, 3);
+        if (random() < 0.3) g.set(x + 1, 7, 'b');
+        if (random() < 0.4) g.set(x + Math.max(1, len - 3), 11, 'M');
+        if (random() < 0.24) g.set(x + 2 + Math.floor(random() * Math.max(1, len - 4)), 11, 'S');
+        x = end + 3 + Math.floor(random() * 2);
+        if (x < width - 17 && random() < 0.3) g.set(x - 1, 11, '^');
+      }
+      g.ground(width - 17, width, 12);
+      const mid = Math.floor(width / 2);
+      g.ground(mid - 2, mid + 3, 12); g.set(mid, 11, 'C'); g.coins(mid - 4, 9, 5, 1); g.set(mid + 1, 11, '>');
+      g.stairs(width - 13, 4, 12); g.set(width - 6, 11, 'F');
+    });
+    zone.pal = PAL[(index + (runSeed % PAL.length)) % PAL.length];
+    zone.hint = index === 0 ? 'Hold Shift for a spin dash and keep the pace' : 'The pace keeps climbing \u2014 hit every boost';
+    return zone;
+  }
+
+  /* ---------- world ---------- */
+  function activePal() {
+    const base = (route && route[zoneIndex] && route[zoneIndex].pal) || PAL[0];
+    if (activeMode === 'overdrive') return Object.assign({}, base, STORM);
+    if (themeOverride) return Object.assign({}, base, { sky: themeOverride.slice() });
+    return base;
+  }
+  function tile(x, y) { if (x < 0 || x >= cols) return '#'; if (y < 0 || y >= rows) return ' '; return grid[y][x]; }
+  function solid(x, y) { return '#?u'.includes(tile(x, y)); }
+
+  function addEnemy(ch, c, r) {
+    const scale = enemySpeedScale();
+    const d = { w: { w: 26, h: 24, vx: -0.9 }, h: { w: 26, h: 26, vx: 0 }, b: { w: 28, h: 20, vx: 0 }, s: { w: 28, h: 22, vx: -1.2 } }[ch];
+    const x = c * T + (T - d.w) / 2, y = r * T + T - d.h;
+    en.push({ kind: ch, x, y, w: d.w, h: d.h, vx: d.vx * scale, vy: 0, x0: x, y0: y, t: Math.floor(random() * 60), ground: false, dead: false });
+  }
+  function makePlayer() {
+    return { x: 0, y: 0, w: 22, h: 28, vx: 0, vy: 0, face: 1, ground: false, coy: 0, jb: 0, jumps: 0, inv: 0, hp: hpMax, dead: 0, walk: 0, sq: 0, riding: null, drop: 0, bump: null, dash: 0, boost: 0 };
+  }
+  function loadZone(def) {
+    rows = def.rows.length; cols = def.rows[0].length;
+    plats = []; en = []; drops = []; check = null; doneT = 0; banner = 150; courseHit = false; dashCd = 0;
+    grid = def.rows.map((row) => row.split(''));
+    let spawn = { c: 1, r: rows - 4 };
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const ch = grid[r][c];
+      if (ch === 'P') { spawn = { c, r }; grid[r][c] = ' '; }
+      else if ('whbs'.includes(ch)) { addEnemy(ch, c, r); grid[r][c] = ' '; }
+      else if (ch === 'M') { plats.push({ x: c * T, ox: c * T, y: r * T, w: T * 3, h: 12, r: 90, sp: 0.02, t: c * 7, dx: 0 }); grid[r][c] = ' '; }
     }
-  } else {
-    A.drawStars(c, A.G ? (bg.stars || (bg.stars = A.makeStars(70, W, 260))) : [], t, W, 260, 0.05, '#e0e7ff');
-    for (let i = 0; i < 16; i++) {
-      const x = ((i * 70 - cam.x * 0.3) % 1120 + 1120) % 1120 - 70, h = 90 + A.hash(i, 4) * 180;
-      c.fillStyle = i % 2 ? '#0f172a' : '#111c3a'; c.fillRect(x, 400 - h, 56, h + 80);
-      c.fillStyle = i % 3 ? '#22d3ee' : '#f0abfc'; c.globalAlpha = 0.6; c.fillRect(x, 400 - h, 56, 2); c.globalAlpha = 1;
-      for (let wy = 410 - h; wy < 390; wy += 16) for (let wx = x + 6; wx < x + 50; wx += 12) if (A.hash(wx, wy) > 0.62) { c.fillStyle = '#67e8f9'; c.fillRect(wx, wy, 4, 7); }
+    p = makePlayer();
+    p.x = spawn.c * T + 4; p.y = spawn.r * T + T - p.h; p.hp = hpMax;
+    spawnPoint = { x: p.x, y: p.y };
+    cam = { x: Math.max(0, Math.min(cols * T - W, p.x - W * 0.3)) };
+  }
+  function spawn(fresh) {
+    const s = check || spawnPoint;
+    p = makePlayer();
+    p.x = s.x; p.y = s.y; p.inv = fresh ? 0 : 70; p.hp = hpMax;
+    const target = Math.max(0, Math.min(cols * T - W, p.x + p.w / 2 - W / 2 + p.face * 40));
+    cam.x = target;
+  }
+
+  /* ---------- physics ---------- */
+  function moveBody(b, dx, dy) {
+    let hitX = 0;
+    if (dx) {
+      b.x += dx;
+      const r0 = Math.floor(b.y / T), r1 = Math.floor((b.y + b.h - 0.01) / T);
+      const c = Math.floor((dx > 0 ? b.x + b.w : b.x) / T);
+      for (let r = r0; r <= r1; r++) if (solid(c, r)) { b.x = dx > 0 ? c * T - b.w : (c + 1) * T; hitX = dx > 0 ? 1 : -1; b.vx = 0; break; }
+    }
+    b.ground = false; b.bump = null;
+    b.y += dy;
+    const c0 = Math.floor(b.x / T), c1 = Math.floor((b.x + b.w - 0.01) / T);
+    if (dy > 0) {
+      const r = Math.floor((b.y + b.h) / T), pb = b.y + b.h - dy;
+      for (let c = c0; c <= c1; c++) {
+        if (solid(c, r) || (tile(c, r) === '=' && !(b.drop > 0) && pb <= r * T + 1)) { b.y = r * T - b.h; b.vy = 0; b.ground = true; break; }
+      }
+    } else if (dy < 0) {
+      const r = Math.floor(b.y / T);
+      for (let c = c0; c <= c1; c++) if (solid(c, r)) { b.y = (r + 1) * T; b.vy = 0; b.bump = { c, r }; break; }
+    }
+    return hitX;
+  }
+
+  function scatterRings() {
+    const drop = Math.min(rings, Math.max(1, Math.ceil(rings / 2)));
+    if (!drop) return 0;
+    rings -= drop;
+    for (let i = 0; i < drop; i++) {
+      const angle = -Math.PI / 2 + (i / Math.max(1, drop)) * Math.PI * 2;
+      drops.push({ x: p.x + p.w / 2, y: p.y + p.h / 2, vx: Math.cos(angle) * (2 + (i % 3)), vy: Math.sin(angle) * (4 + (i % 2)), t: 0 });
+    }
+    A.sfx('coin');
+    return drop;
+  }
+
+  function hurt(dir) {
+    if (p.inv > 0 || p.dead) return;
+    p.hp--; p.inv = 100; p.vy = -6; p.vx = -dir * 3.5; runHit = true; courseHit = true;
+    scatterRings();
+    Arcade.G.shake(6); Arcade.G.freeze(4); A.sfx('hurt');
+    Arcade.G.burst(p.x + p.w / 2, p.y + p.h / 2, 12, { color: ['#fff', '#fca5a5'], speed: 4, life: 24 });
+    if (p.hp <= 0) die();
+  }
+  function die() {
+    if (p.dead) return;
+    lives--; runLostLife = true; rings = 0; p.dead = 70; A.sfx('ko'); Arcade.G.shake(10);
+    Arcade.G.burst(p.x + p.w / 2, p.y + p.h / 2, 28, { color: ['#fff', '#fbbf24', '#fb7185'], speed: 5, glow: true, life: 36 });
+  }
+
+  function updEnemy(e) {
+    e.t++;
+    if (e.kind === 'b') { e.x = e.x0 + Math.sin(e.t * 0.02) * 95; e.y = e.y0 + Math.sin(e.t * 0.05) * 24; e.vx = Math.cos(e.t * 0.02); return; }
+    e.vy = Math.min(e.vy + 0.5, 10);
+    if (e.kind === 'h') {
+      if (e.ground) { e.vx = 0; if (e.t % 75 === 0) { e.vy = -8.5 * Math.min(1.4, enemySpeedScale()); e.vx = (p.x < e.x ? -1.6 : 1.6) * enemySpeedScale(); } }
+    } else if (e.ground) {
+      const fx = Math.floor((e.vx > 0 ? e.x + e.w + 2 : e.x - 2) / T), fr = Math.floor((e.y + e.h + 4) / T);
+      if (!solid(fx, fr) && tile(fx, fr) !== '=') e.vx = -e.vx;
+    }
+    const sp = e.vx;
+    moveBody(e, e.vx, e.vy);
+    if (e.kind !== 'h' && e.vx === 0) e.vx = -sp;
+    if (e.y > rows * T + 120) e.dead = true;
+  }
+
+  function updDrops(G) {
+    for (let i = drops.length - 1; i >= 0; i--) {
+      const d = drops[i]; d.t++;
+      d.vy = Math.min(d.vy + 0.45, 9);
+      d.x += d.vx; d.y += d.vy;
+      const c = Math.floor((d.x + 7) / T), r = Math.floor((d.y + 7) / T);
+      if (solid(c, r)) { d.y = r * T - 7; d.vy = -Math.abs(d.vy) * 0.42; d.vx *= 0.84; if (Math.abs(d.vy) < 2.2) { d.vy = 0; d.vx *= 0.8; } }
+      const got = d.t > 40 && p && !p.dead && A.overlap({ x: d.x - 7, y: d.y - 7, w: 22, h: 22 }, { x: p.x, y: p.y, w: p.w, h: p.h });
+      if (got) {
+        rings++; G.addScore(25); A.sfx('coin'); G.burst(d.x, d.y, 4, { color: [ringColor, '#fff'], speed: 2, life: 12, size: 2, glow: true });
+        drops.splice(i, 1);
+      } else if (d.t > 480 || d.y > rows * T + 80) drops.splice(i, 1);
     }
   }
-}
 
-/* Rollo the armadillo: a runner on the ground, a spinning ball in the air */
-function drawRollo(c, p, G) {
-  const cx = p.x + p.w / 2, base = p.y + p.h, f = p.face, t = G.clock, air = !p.ground;
-  if (air) {
-    c.save(); c.translate(cx, p.y + p.h / 2); c.rotate(t * 0.5 * f);
-    c.fillStyle = '#0f766e'; c.beginPath(); c.arc(0, 0, 13, 0, TAU); c.fill();
-    c.strokeStyle = '#5eead4'; c.lineWidth = 3;
-    for (let i = -1; i <= 1; i++) { c.beginPath(); c.arc(0, 0, 13, i * 0.9 + 0.5, i * 0.9 + 1.6); c.stroke(); }
-    c.fillStyle = '#fde68a'; c.beginPath(); c.arc(7, -2, 4, 0, TAU); c.fill();
-    c.restore(); return;
+  function reportZone(abs) {
+    if (window.Apex && Apex.report) Apex.report({ gameId: GAME_ID, type: 'level_complete', level: abs, score: Arcade.G.score, mode: activeMode });
   }
-  const run = Math.sin(p.walk * 1.3), speed = Math.min(1, Math.abs(p.vx) / 6);
-  A.shadow(c, cx, base + 1, 12, 3, 0.25);
-  c.save(); c.translate(cx, base); c.scale(f * (1 + p.sq * 0.5), 1 - p.sq * 0.5);
-  c.fillStyle = '#7c2d12'; c.fillRect(-6 + run * 5 * speed, -6, 5, 6); c.fillRect(2 - run * 5 * speed, -6, 5, 6);
-  c.fillStyle = '#14b8a6'; c.beginPath(); c.ellipse(-2, -14, 11, 11, -0.2 * speed, 0, TAU); c.fill();
-  c.strokeStyle = '#0f766e'; c.lineWidth = 2.5;
-  for (let i = 0; i < 3; i++) { c.beginPath(); c.arc(-2, -14, 11, 2.6 + i * 0.5, 3.2 + i * 0.5); c.stroke(); }
-  c.fillStyle = '#fde68a'; c.beginPath(); c.arc(6, -17, 7, 0, TAU); c.fill();
-  c.beginPath(); c.moveTo(11, -18); c.lineTo(19 + speed * 2, -15); c.lineTo(11, -13); c.fill();
-  c.beginPath(); c.moveTo(3, -23); c.lineTo(1, -30); c.lineTo(8, -24); c.fill();
-  c.fillStyle = '#111'; c.beginPath(); c.arc(8, -19, 1.7, 0, TAU); c.fill();
-  c.restore();
-  if (speed > 0.8) { c.strokeStyle = 'rgba(255,255,255,.35)'; c.lineWidth = 2; for (let i = 0; i < 3; i++) { c.beginPath(); c.moveTo(cx - f * (16 + i * 8), p.y + 8 + i * 7); c.lineTo(cx - f * (30 + i * 10), p.y + 8 + i * 7); c.stroke(); } }
-}
+  function recordZone(abs) {
+    const s = statsOf();
+    const patch = { zonesCleared: (Number(s.zonesCleared) || 0) + 1, bestZones: Math.max(Number(s.bestZones) || 0, abs) };
+    if (activeMode === 'campaign') {
+      if (abs >= 3) { patch.campaignStage = 1; patch.campaignLives = MODES.campaign.lives; patch.campaignClears = (Number(s.campaignClears) || 0) + 1; }
+      else { patch.campaignStage = abs + 1; patch.campaignLives = lives; }
+    }
+    if (activeMode === 'endless') patch.endlessBest = Math.max(Number(s.endlessBest) || 0, abs);
+    if (activeMode === 'daily') patch.dailyZones = Math.max(Number(s.dailyZones) || 0, abs);
+    if (activeMode === 'overdrive') patch.overdriveBest = Math.max(Number(s.overdriveBest) || 0, abs);
+    savePatch(patch);
+  }
+  function recordRun(win) {
+    const s = statsOf(), d = new Date();
+    const day = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const patch = {
+      runs: (Number(s.runs) || 0) + 1,
+      ringsTotal: (Number(s.ringsTotal) || 0) + rings,
+      bestZones: Math.max(Number(s.bestZones) || 0, maxZone),
+    };
+    if (activeMode === 'endless') patch.endlessBest = Math.max(Number(s.endlessBest) || 0, maxZone);
+    if (activeMode === 'overdrive' && win) patch.overdriveClears = (Number(s.overdriveClears) || 0) + 1;
+    const extra = {};
+    if (activeMode === 'daily') {
+      patch.dailyBest = Math.max(Number(s.dailyBest) || 0, Arcade.G.score);
+      extra.daily = { day: day, best: Math.max(Arcade.G.score, Number((Save.load(GAME_ID).daily || {}).best) || 0) };
+    }
+    savePatch(patch, extra);
+  }
 
-P.game({
-  id: 'rollo-rush', title: 'Rollo Rush', subtitle: 'Build speed, boost, spin-stomp, finish first', color: '#2dd4bf',
-  controls: [['\u2190 \u2192  /  A D', 'Run \u2014 speed builds up'], ['Space  /  \u2191  /  W', 'Jump (you spin into a ball)'], ['Cyan arrows', 'Speed boost'], ['Land on enemies', 'Spin-stomp them'], ['Spring pads', 'Launch high']],
-  help: '\u2190 \u2192 or A D run (speed builds up) \u00b7 Space, \u2191 or W jump and spin \u00b7 cyan arrow pads give a boost \u00b7 land on enemies to stomp them \u00b7 springs launch you \u00b7 collect rings, reach the flag',
-  levels: [Z1, Z2, Z3], bg, drawHero: drawRollo, winTitle: 'Zones Cleared!',
-  phys: { run: 6.2, acc: 0.16, air: 0.18, fric: 0.1, jump: 11, grav: 0.55, fall: 13 },
-});
+  function completeZone() {
+    if (!p || p.dead || doneT > 0 || Arcade.G.state !== 'playing') return;
+    const abs = absoluteZone();
+    reportZone(abs);
+    recordZone(abs);
+    maxZone = Math.max(maxZone, abs);
+    if (abs === 1) unlock('first-zone');
+    if (!courseHit) unlock('soft-landing');
+    if (rings >= 40) unlock('ring-runner');
+    if (boosts >= 5) unlock('boost-junkie');
+    if (stomps >= 10) unlock('spin-stomper');
+    if (activeMode === 'daily' && abs >= 3) unlock('daily-dash');
+    if (activeMode === 'endless' && abs >= 6) unlock('endless-six');
+    if (activeMode === 'overdrive' && abs >= 3) unlock('overdrive-clear');
+    if (activeMode === 'campaign' && abs >= 3) unlock('all-zones');
+    if (activeMode === 'campaign' && abs >= 3 && !runLostLife) unlock('no-loss');
+    const timeBonus = timerMode ? Math.max(0, Math.floor(timer)) * 10 : 0;
+    const bonus = 500 + p.hp * 100 + timeBonus;
+    award(bonus);
+    Arcade.G.popup(W / 2, 210, 'ZONE ' + abs + ' CLEAR  +' + Math.round(bonus * modeMult()), '#fde047', 20);
+    Arcade.G.ring(p.x + p.w / 2, p.y + p.h / 2, '#fde047', 120, 26);
+    A.sfx('clear');
+    if (timerMode) timer += 15;
+    doneT = 90;
+  }
+
+  function finishRun(win, reason) {
+    if (runRecorded) return;
+    runRecorded = true;
+    recordRun(win);
+    const G = Arcade.G;
+    if (win) {
+      if (activeMode === 'campaign') G.win('Zones Cleared!', 'Three zones at full speed \u00b7 score ' + G.score);
+      else if (activeMode === 'daily') G.win('Daily Dash Complete!', 'Seed ' + runSeed + ' \u00b7 score ' + G.score);
+      else if (activeMode === 'overdrive') G.win('Overdrive Cleared!', 'One life, three zones \u00b7 score ' + G.score);
+      else if (activeMode === 'blitz') G.win('Blitz Complete!', 'Time left ' + Math.max(0, Math.floor(timer)) + 's \u00b7 score ' + G.score);
+      else G.win('Rush Complete!', 'Score ' + G.score);
+    } else {
+      G.over(reason || 'Rollo Wiped Out', 'Reached zone ' + absoluteZone() + ' \u00b7 ' + MODE_LABEL[activeMode]);
+    }
+  }
+
+  function advanceAfterClear() {
+    const abs = absoluteZone();
+    if (activeMode === 'campaign' && abs >= 3) return finishRun(true);
+    if (activeMode === 'overdrive' && abs >= 3) return finishRun(true);
+    if (activeMode === 'daily' && zoneIndex + 1 >= route.length) return finishRun(true);
+    if (activeMode === 'blitz' && zoneIndex + 1 >= route.length) return finishRun(true);
+    if (activeMode === 'endless') { zoneIndex++; route.push(buildZone(zoneIndex)); loadZone(route[zoneIndex]); return; }
+    if (zoneIndex + 1 < route.length) { zoneIndex++; loadZone(route[zoneIndex]); return; }
+    finishRun(true);
+  }
+
+  /* ---------- input and update ---------- */
+  function update(G) {
+    G.hudL = 'SCORE ' + G.score + ' \u00b7 RINGS ' + rings + ' \u00b7 ZONE ' + absoluteZone() + '/' + zoneTotalLabel();
+    G.hudR = '\u2665'.repeat(Math.max(0, p.hp)) + '  LIVES ' + lives + ' \u00b7 ' + MODE_LABEL[activeMode];
+    if (banner > 0) banner--;
+    for (const m of plats) { const ox = m.x; m.t++; m.x = m.ox + Math.sin(m.t * m.sp) * m.r; m.dx = m.x - ox; }
+    if (dashCd > 0) dashCd--;
+    if (doneT > 0) { followCam(); if (--doneT === 0) advanceAfterClear(); return; }
+    if (p.dead > 0) {
+      followCam();
+      if (--p.dead === 0) { if (lives <= 0) finishRun(false); else spawn(false); }
+      return;
+    }
+    if (timerMode) {
+      if (timer <= 0) { finishRun(false, 'Out of Time'); return; }
+      if (G.t % 60 === 0) { timer--; if (timer <= 0) { finishRun(false, 'Out of Time'); return; } }
+    }
+    const ax = A.axisX(), jh = A.held('Space', 'ArrowUp', 'KeyW', 'KeyZ'), jp = A.hit('Space', 'ArrowUp', 'KeyW', 'KeyZ');
+    const dashKey = A.hit('ShiftLeft', 'ShiftRight', 'KeyJ', 'KeyK');
+    if (ax) p.face = ax;
+    if (p.boost > 0) p.vx = A.approach(p.vx, p.face * (runSpeed() + 2.6), 0.12);
+    else p.vx = A.approach(p.vx, ax * runSpeed(), ax ? (p.ground ? 0.5 : 0.34) : (p.ground ? 0.42 : 0.1));
+    if (p.ground && !ax && Math.abs(p.vx) < 0.4) p.vx = 0;
+    p.coy = p.ground ? 6 : p.coy - 1;
+    p.jb = jp ? 7 : p.jb - 1;
+    if (p.ground) p.jumps = 0;
+    if (dashKey && p.ground && dashCd <= 0) {
+      p.vx = p.face * 8.4; p.dash = 16; dashCd = 70; p.sq = 0.3;
+      A.sfx('dash'); G.ring(p.x + p.w / 2, p.y + p.h / 2, boostColor, 46, 16);
+      G.burst(p.x + p.w / 2, p.y + p.h, 8, { color: [boostColor, '#fff'], speed: 3, life: 18, size: 2 });
+    }
+    if (p.dash > 0) p.dash--;
+    if (jp && A.held('ArrowDown', 'KeyS') && p.ground) { p.drop = 8; p.jb = 0; }
+    if (p.jb > 0 && p.coy > 0) {
+      p.vy = -11.2; p.jb = 0; p.coy = 0; p.jumps = 1; p.sq = -0.3; A.sfx('jump');
+      G.burst(p.x + p.w / 2, p.y + p.h, 5, { color: '#fff', speed: 1.6, life: 14, size: 2, angle: -Math.PI / 2, spread: 1.3, grav: 0.05 });
+    }
+    if (!jh && p.vy < -3) p.vy *= 0.45;
+    p.vy = Math.min(p.vy + 0.56, 13);
+    const wasG = p.ground;
+    if (p.riding) moveBody(p, p.riding.dx, 0);
+    moveBody(p, p.vx, p.vy);
+    p.riding = null;
+    if (p.vy >= 0) for (const m of plats) {
+      if (p.x + p.w > m.x + 2 && p.x < m.x + m.w - 2) {
+        const fb = p.y + p.h;
+        if (fb >= m.y - 4 && fb <= m.y + 14 && !(p.drop > 0)) { p.y = m.y - p.h; p.vy = 0; p.ground = true; p.riding = m; break; }
+      }
+    }
+    if (p.drop > 0) p.drop--;
+    if (p.inv > 0) p.inv--;
+    p.sq *= 0.8;
+    if (p.boost > 0) p.boost--;
+    if (p.ground && !wasG) { A.sfx('land'); p.sq = 0.35; G.burst(p.x + p.w / 2, p.y + p.h, 4, { color: '#e2e8f0', speed: 1.4, life: 12, size: 2, angle: -Math.PI / 2, spread: 1.4 }); }
+    if (p.ground) p.walk += Math.abs(p.vx) * 0.16;
+    if (Math.abs(p.vx) >= 6.8) unlock('speed-demon');
+    if (p.bump) {
+      const { c, r } = p.bump; p.bump = null;
+      if (grid[r][c] === '?') {
+        grid[r][c] = 'u'; totalCrates++; rings++; G.addScore(100); A.sfx('coin');
+        G.popup(c * T + T / 2, r * T - 6, '+100', '#fde047'); G.burst(c * T + T / 2, r * T, 8, { color: ['#fde047', '#fff'], speed: 3, life: 22, glow: true });
+      } else A.sfx('thud');
+    }
+    const x0 = Math.floor((p.x + 3) / T), x1 = Math.floor((p.x + p.w - 3) / T), y0 = Math.floor((p.y + 3) / T), y1 = Math.floor((p.y + p.h - 1) / T);
+    for (let r = y0; r <= y1; r++) for (let c = x0; c <= x1; c++) {
+      const ch = tile(c, r);
+      if (ch === 'o') {
+        grid[r][c] = ' '; rings++; G.addScore(50); A.sfx('coin');
+        G.burst(c * T + T / 2, r * T + T / 2, 6, { color: [ringColor, '#fff'], speed: 2.5, life: 16, size: 2, glow: true });
+        if (rings >= 40) unlock('ring-runner');
+      } else if (ch === '^') { if (p.y + p.h > r * T + 14) { hurt(p.vx >= 0 ? 1 : -1); p.vy = -7; } }
+      else if (ch === 'S') {
+        if (p.vy >= 0 && p.y + p.h > r * T + 14) { p.vy = -16; p.jumps = 1; p.sq = -0.4; A.sfx('bounce'); unlock('spring-step'); G.ring(c * T + T / 2, r * T + 20, springColor, 40, 16); }
+      } else if (ch === '>') {
+        if (p.boost <= 0) { boosts++; A.sfx('dash'); G.ring(c * T + T / 2, r * T + T / 2, boostColor, 46, 18); G.burst(c * T + T / 2, r * T + T / 2, 6, { color: [boostColor, '#fff'], speed: 2.6, life: 16, size: 2 }); if (boosts >= 5) unlock('boost-junkie'); }
+        p.vx = p.face * Math.max(Math.abs(p.vx), 7.2); p.boost = 24;
+      } else if (ch === 'C') {
+        check = { x: c * T + 6, y: r * T + T - p.h }; grid[r][c] = 'c'; A.sfx('power'); unlock('checkpoint');
+        G.popup(c * T + T / 2, r * T - 30, 'CHECKPOINT', '#86efac', 14); G.ring(c * T + T / 2, r * T, '#86efac', 60, 24);
+      } else if (ch === 'F') { completeZone(); return; }
+    }
+    if (p.y > rows * T + 60) die();
+    for (const e of en) {
+      if (e.dead) continue;
+      updEnemy(e);
+      if (p.dead || !A.overlap({ x: p.x + 2, y: p.y + 2, w: p.w - 4, h: p.h - 2 }, e)) continue;
+      const spinning = p.dash > 0 || !p.ground;
+      if ((p.vy > 0.5 && p.y + p.h - e.y < 18) || (spinning && p.dash > 0) ) {
+        if (e.kind === 's' && !(p.dash > 0)) { hurt(e.x + e.w / 2 > p.x + p.w / 2 ? 1 : -1); continue; }
+        e.dead = true; p.vy = jh ? -11 : -8; p.jumps = 1; stomps++; G.addScore(100); A.sfx('hit'); G.freeze(3);
+        G.popup(e.x + e.w / 2, e.y - 8, '+100', '#fff'); G.burst(e.x + e.w / 2, e.y + e.h / 2, 12, { color: ['#fff', '#fbbf24'], speed: 3.5, life: 22 });
+        if (stomps >= 10) unlock('spin-stomper');
+      } else if (p.inv <= 0) hurt(e.x + e.w / 2 > p.x + p.w / 2 ? 1 : -1);
+    }
+    en = en.filter((e) => !e.dead);
+    updDrops(G);
+    if (G.score >= 10000) unlock('score-10000');
+    followCam();
+  }
+
+  function followCam() {
+    if (!p) return;
+    const target = Math.max(0, Math.min(cols * T - W, p.x + p.w / 2 - W / 2 + p.face * 60));
+    cam.x += (target - cam.x) * 0.14;
+  }
+
+  /* ---------- drawing ---------- */
+  function drawBackdrop(c, G) {
+    const theme = activePal(), t = G.clock, kind = theme.kind;
+    A.sky(c, W, H, theme.sky);
+    if (kind === 'neon' || kind === 'storm' || kind === 'mine') A.drawStars(c, starsCache || (starsCache = A.makeStars(80, W, H * 0.7)), t, W, H * 0.7, 0.04, '#e0e7ff');
+    if (kind === 'shore') {
+      c.fillStyle = '#fde68a'; c.beginPath(); c.arc(640 - cam.x * 0.02, 92, 38, 0, TAU); c.fill();
+      P.clouds(c, cam, t, 0.1, 'rgba(255,255,255,.78)');
+      c.fillStyle = '#0284c7'; c.fillRect(0, 318, W, 74);
+      c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 2; c.beginPath();
+      for (let i = 0; i < 14; i++) { const x = ((i * 70 - cam.x * 0.3 + t * 0.6) % 1000 + 1000) % 1000 - 100; c.moveTo(x, 326 + (i % 4) * 16); c.lineTo(x + 26, 326 + (i % 4) * 16); }
+      c.stroke();
+      P.ridge(c, 300, 12, 2, cam.x * 0.35, theme.mid);
+    } else if (kind === 'mine') {
+      for (let i = 0; i < 12; i++) {
+        const x = ((i * 130 - cam.x * 0.45) % 1560 + 1560) % 1560 - 80, y = 300 + A.hash(i, 5) * 80, h = 40 + A.hash(i, 9) * 70;
+        c.save(); c.shadowColor = '#c084fc'; c.shadowBlur = 16; c.fillStyle = i % 2 ? '#a78bfa' : '#67e8f9'; c.globalAlpha = 0.45 + 0.25 * Math.sin(t * 0.05 + i);
+        c.beginPath(); c.moveTo(x, y); c.lineTo(x + 11, y - h); c.lineTo(x + 22, y); c.fill(); c.restore();
+      }
+    } else {
+      for (let i = 0; i < 16; i++) {
+        const x = ((i * 70 - cam.x * 0.3) % 1120 + 1120) % 1120 - 70, h = 90 + A.hash(i, 4) * 180;
+        c.fillStyle = i % 2 ? '#0f172a' : '#111c3a'; c.fillRect(x, 400 - h, 56, h + 80);
+        c.fillStyle = i % 3 ? '#22d3ee' : '#f0abfc'; c.globalAlpha = 0.6; c.fillRect(x, 400 - h, 56, 2); c.globalAlpha = 1;
+        for (let wy = 410 - h; wy < 390; wy += 16) for (let wx = x + 6; wx < x + 50; wx += 12) if (A.hash(wx, wy) > 0.62) { c.fillStyle = '#67e8f9'; c.fillRect(wx, wy, 4, 7); }
+      }
+    }
+    if (p && Math.abs(p.vx) > 4.2) {
+      c.save(); c.globalAlpha = Math.min(0.35, Math.abs(p.vx) / 26); c.strokeStyle = '#fff'; c.lineWidth = 2;
+      for (let i = 0; i < 6; i++) { const y = 90 + i * 52 + Math.sin(t * 0.2 + i) * 8; c.beginPath(); c.moveTo(60 + (i * 97) % 280, y); c.lineTo(170 + (i * 97) % 280, y); c.stroke(); }
+      c.restore();
+    }
+  }
+
+  function drawTiles(c, G) {
+    const c0 = Math.max(0, Math.floor(cam.x / T)), c1 = Math.min(cols - 1, Math.floor((cam.x + W) / T));
+    const r1 = Math.min(rows - 1, Math.floor(H / T)), t = G.clock;
+    const theme = activePal();
+    for (let r = 0; r <= r1; r++) for (let q = c0; q <= c1; q++) {
+      const ch = grid[r][q]; if (ch === ' ') continue;
+      const x = q * T, y = r * T;
+      if (ch === '#') {
+        c.fillStyle = theme.solid; c.fillRect(x, y, T, T);
+        c.fillStyle = 'rgba(0,0,0,.18)'; c.fillRect(x, y + T - 4, T, 4); c.fillRect(x + T - 3, y, 3, T);
+        c.fillStyle = 'rgba(255,255,255,.08)'; c.fillRect(x, y, T, 2);
+        if (!solid(q, r - 1)) {
+          c.fillStyle = theme.top; c.fillRect(x, y, T, 8);
+          c.fillStyle = A.shade(theme.top, 0.3); c.fillRect(x, y, T, 3);
+          c.fillStyle = A.shade(theme.top, -0.3); c.fillRect(x, y + 8, T, 2);
+        }
+      } else if (ch === '=') {
+        c.fillStyle = A.shade(theme.plat, -0.35); c.fillRect(x, y + 4, T, 8);
+        c.fillStyle = theme.plat; c.fillRect(x, y, T, 8); c.fillStyle = A.shade(theme.plat, 0.3); c.fillRect(x, y, T, 2);
+      } else if (ch === '?' || ch === 'u') {
+        const col = ch === '?' ? A.shade(theme.plat, 0.25) : A.shade(theme.solid, -0.2);
+        c.fillStyle = A.shade(col, -0.35); A.roundRect(c, x + 1, y + 2, T - 2, T - 2, 5); c.fill();
+        c.fillStyle = col; A.roundRect(c, x + 1, y + 1, T - 2, T - 4, 5); c.fill();
+        if (ch === '?') A.text(c, '?', x + T / 2, y + T / 2 + 6, 19, '#7c4a03', 'center', '800');
+      } else if (ch === '^') {
+        for (let i = 0; i < 2; i++) {
+          c.fillStyle = '#e2e8f0'; c.beginPath(); c.moveTo(x + i * 16, y + T); c.lineTo(x + i * 16 + 8, y + 10); c.lineTo(x + i * 16 + 16, y + T); c.fill();
+          c.fillStyle = '#94a3b8'; c.beginPath(); c.moveTo(x + i * 16 + 8, y + 10); c.lineTo(x + i * 16 + 16, y + T); c.lineTo(x + i * 16 + 8, y + T); c.fill();
+        }
+      } else if (ch === 'o') {
+        const sx = Math.abs(Math.cos(t * 0.07 + q)), cy = y + T / 2 + Math.sin(t * 0.05 + q) * 2;
+        c.save(); c.shadowColor = ringColor; c.shadowBlur = 10;
+        c.strokeStyle = ringColor; c.lineWidth = 4;
+        c.beginPath(); c.ellipse(x + T / 2, cy, 7 * sx + 1.5, 9, 0, 0, TAU); c.stroke(); c.restore();
+        c.strokeStyle = A.shade(ringColor, 0.45); c.lineWidth = 1.5;
+        c.beginPath(); c.ellipse(x + T / 2, cy, 4 * sx + 0.8, 5, 0, 0, TAU); c.stroke();
+      } else if (ch === 'S') {
+        c.strokeStyle = '#cbd5e1'; c.lineWidth = 3;
+        c.beginPath(); for (let i = 0; i < 4; i++) { const yy = y + T - 3 - i * 5; c.moveTo(x + 8, yy); c.lineTo(x + T - 8, yy - 2); } c.stroke();
+        c.fillStyle = springColor; A.roundRect(c, x + 4, y + 10, T - 8, 6, 3); c.fill();
+      } else if (ch === '>') {
+        c.save(); c.globalAlpha = 0.6 + 0.4 * Math.sin(t * 0.2 + q); c.fillStyle = boostColor; c.shadowColor = boostColor; c.shadowBlur = 10;
+        for (let i = 0; i < 2; i++) { c.beginPath(); c.moveTo(x + 4 + i * 12, y + T - 18); c.lineTo(x + 14 + i * 12, y + T - 10); c.lineTo(x + 4 + i * 12, y + T - 2); c.lineTo(x + 8 + i * 12, y + T - 10); c.fill(); }
+        c.restore();
+      } else if (ch === 'C' || ch === 'c') {
+        c.fillStyle = '#e2e8f0'; c.fillRect(x + 14, y - T + 8, 3, T * 2 - 8);
+        c.fillStyle = ch === 'c' ? '#4ade80' : '#94a3b8';
+        const w = Math.sin(t * 0.1) * 2; c.beginPath(); c.moveTo(x + 17, y - T + 10); c.lineTo(x + 34 + w, y - T + 16); c.lineTo(x + 17, y - T + 22); c.fill();
+      } else if (ch === 'F') {
+        c.save(); c.shadowColor = '#fde047'; c.shadowBlur = 16;
+        c.fillStyle = '#e2e8f0'; c.fillRect(x + 14, y - 2 * T, 4, T * 3);
+        c.fillStyle = '#fde047'; const w = Math.sin(t * 0.12) * 3;
+        c.beginPath(); c.moveTo(x + 18, y - 2 * T + 2); c.lineTo(x + 46 + w, y - 2 * T + 14); c.lineTo(x + 18, y - 2 * T + 26); c.fill(); c.restore();
+      }
+    }
+  }
+
+  function drawEnemy(c, e, G) {
+    const cx = e.x + e.w / 2, cy = e.y + e.h / 2, d = e.vx < 0 ? -1 : 1, t = G.clock;
+    A.shadow(c, cx, e.y + e.h + 1, e.w * 0.45, 3, 0.25);
+    if (e.kind === 'b') {
+      const fl = Math.sin(t * 0.35) * 8;
+      c.fillStyle = '#6d28d9'; c.beginPath(); c.moveTo(cx - 4, cy); c.lineTo(cx - 20, cy - fl - 4); c.lineTo(cx - 12, cy + 6); c.fill();
+      c.beginPath(); c.moveTo(cx + 4, cy); c.lineTo(cx + 20, cy - fl - 4); c.lineTo(cx + 12, cy + 6); c.fill();
+      c.fillStyle = '#7c3aed'; c.beginPath(); c.arc(cx, cy, 9, 0, TAU); c.fill();
+    } else {
+      const col = e.kind === 'h' ? '#22c55e' : e.kind === 's' ? '#94a3b8' : '#ef4444';
+      c.fillStyle = A.shade(col, -0.3); c.beginPath(); c.ellipse(cx, e.y + e.h - 3, e.w / 2, 5, 0, 0, TAU); c.fill();
+      c.fillStyle = col; c.beginPath(); c.ellipse(cx, cy, e.w / 2, e.h / 2, 0, Math.PI, 0); c.lineTo(cx + e.w / 2, e.y + e.h - 3); c.lineTo(cx - e.w / 2, e.y + e.h - 3); c.fill();
+      if (e.kind === 's') { c.fillStyle = '#e2e8f0'; for (let i = -1; i <= 1; i++) { c.beginPath(); c.moveTo(cx + i * 8 - 4, e.y + 4); c.lineTo(cx + i * 8, e.y - 5); c.lineTo(cx + i * 8 + 4, e.y + 4); c.fill(); } }
+    }
+    c.fillStyle = '#fff'; c.beginPath(); c.arc(cx - 5, cy - 2, 3.5, 0, TAU); c.arc(cx + 5, cy - 2, 3.5, 0, TAU); c.fill();
+    c.fillStyle = '#111'; c.beginPath(); c.arc(cx - 5 + d * 1.2, cy - 2, 1.6, 0, TAU); c.arc(cx + 5 + d * 1.2, cy - 2, 1.6, 0, TAU); c.fill();
+  }
+
+  function drawRollo(c, px, G) {
+    const cx = px.x + px.w / 2, base = px.y + px.h, f = px.face, t = G.clock;
+    const speed = Math.min(1, Math.abs(px.vx) / 6);
+    const spinning = !px.ground || px.dash > 0;
+    A.shadow(c, cx, base + 1, 12, 3, 0.25);
+    if (spinning) {
+      c.save(); c.translate(cx, px.y + px.h / 2); c.rotate(t * (0.4 + speed * 0.8) * f);
+      c.fillStyle = rollo.body; c.shadowColor = trailColor; c.shadowBlur = px.dash > 0 ? 16 : 6;
+      c.beginPath(); c.arc(0, 0, 14, 0, TAU); c.fill();
+      c.strokeStyle = A.shade(rollo.body, 0.4); c.lineWidth = 3;
+      for (let i = -1; i <= 1; i++) { c.beginPath(); c.arc(0, 0, 14, i * 0.9 + 0.5, i * 0.9 + 1.6); c.stroke(); }
+      c.fillStyle = rollo.belly; c.beginPath(); c.arc(7, -2, 4, 0, TAU); c.fill();
+      c.restore();
+      if (px.dash > 0) {
+        c.strokeStyle = A.alpha(boostColor, 0.6); c.lineWidth = 2;
+        for (let i = 0; i < 3; i++) { c.beginPath(); c.moveTo(cx - f * (18 + i * 9), px.y + 8 + i * 7); c.lineTo(cx - f * (38 + i * 12), px.y + 8 + i * 7); c.stroke(); }
+      }
+      return;
+    }
+    const run = Math.sin(px.walk * 1.3);
+    c.save(); c.translate(cx, base); c.scale(f * (1 + px.sq * 0.5), 1 - px.sq * 0.5);
+    c.fillStyle = '#7c2d12'; c.fillRect(-7 + run * 6 * speed, -6, 6, 6); c.fillRect(2 - run * 6 * speed, -6, 6, 6);
+    c.fillStyle = A.shade(rollo.body, -0.25); c.beginPath(); c.ellipse(-3, -14, 12, 12, -0.25 * speed, 0, TAU); c.fill();
+    c.fillStyle = rollo.body; c.beginPath(); c.ellipse(-2, -15, 11, 11, -0.2 * speed, 0, TAU); c.fill();
+    c.strokeStyle = A.shade(rollo.body, 0.35); c.lineWidth = 2.5;
+    for (let i = 0; i < 3; i++) { c.beginPath(); c.arc(-3, -15, 11, 2.6 + i * 0.5, 3.2 + i * 0.5); c.stroke(); }
+    c.fillStyle = rollo.belly; c.beginPath(); c.arc(6, -18, 7, 0, TAU); c.fill();
+    c.beginPath(); c.moveTo(11, -19); c.lineTo(19 + speed * 3, -15); c.lineTo(11, -13); c.fill();
+    c.beginPath(); c.moveTo(3, -24); c.lineTo(1, -31); c.lineTo(8, -25); c.fill();
+    c.fillStyle = '#111'; c.beginPath(); c.arc(8, -20, 1.7, 0, TAU); c.fill();
+    c.strokeStyle = trailColor; c.lineWidth = 3.4; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(-9, -20); c.lineTo(-17, -18 + Math.sin(t * 0.3) * 2); c.stroke();
+    c.restore();
+    if (speed > 0.55) { c.strokeStyle = 'rgba(255,255,255,.4)'; c.lineWidth = 2; for (let i = 0; i < 3; i++) { c.beginPath(); c.moveTo(cx - f * (16 + i * 8), px.y + 8 + i * 7); c.lineTo(cx - f * (32 + i * 10), px.y + 8 + i * 7); c.stroke(); } }
+  }
+
+  function drawRings(c, G) {
+    for (const d of drops) {
+      const spin = Math.abs(Math.cos(d.t * 0.2));
+      c.save(); c.shadowColor = ringColor; c.shadowBlur = 8; c.strokeStyle = ringColor; c.lineWidth = 3;
+      c.beginPath(); c.ellipse(d.x, d.y, 7 * spin + 1.5, 8, 0, 0, TAU); c.stroke(); c.restore();
+    }
+    if (!p) return;
+  }
+
+  function drawSpeedGauge(c) {
+    const sp = Math.min(1, Math.abs(p ? p.vx : 0) / (runSpeed() + 3));
+    c.save(); c.fillStyle = 'rgba(5,7,15,.55)'; A.roundRect(c, W - 152, H - 30, 136, 18, 8); c.fill();
+    c.fillStyle = 'rgba(255,255,255,.14)'; A.roundRect(c, W - 144, H - 24, 112, 6, 3); c.fill();
+    c.fillStyle = sp > 0.82 ? boostColor : sp > 0.5 ? ringColor : '#94a3b8'; A.roundRect(c, W - 144, H - 24, Math.max(3, 112 * sp), 6, 3); c.fill();
+    A.text(c, 'SPD', W - 146, H - 17, 8, '#e2e8f0', 'left', '800');
+    c.restore();
+  }
+
+  function drawTimer(c, G) {
+    if (!timerMode) return;
+    const m = Math.floor(Math.max(0, timer) / 60), s = Math.max(0, timer) % 60;
+    const col = timer <= 20 && Math.floor(G.clock / 15) % 2 ? '#fb7185' : '#67e8f9';
+    c.save(); c.fillStyle = 'rgba(5,7,15,.6)'; A.roundRect(c, W / 2 - 62, 36, 124, 30, 10); c.fill();
+    c.strokeStyle = A.alpha(col, 0.7); c.lineWidth = 1.5; A.roundRect(c, W / 2 - 62, 36, 124, 30, 10); c.stroke(); c.restore();
+    A.text(c, 'TIME ' + m + ':' + String(s).padStart(2, '0'), W / 2, 57, 17, col, 'center', '800', A.MONO);
+  }
+
+  function draw(G, c) {
+    drawBackdrop(c, G);
+    c.save(); c.translate(-Math.round(cam.x), 0);
+    drawTiles(c, G);
+    const theme = activePal();
+    for (const m of plats) {
+      c.save(); c.shadowColor = A.alpha(boostColor, 0.5); c.shadowBlur = 10;
+      c.fillStyle = 'rgba(226,232,240,.9)'; A.roundRect(c, m.x, m.y, m.w, m.h, 6); c.fill(); c.restore();
+      c.fillStyle = A.shade(theme.plat, 0.2); A.roundRect(c, m.x + 4, m.y + 1, m.w - 8, 3, 2); c.fill();
+    }
+    for (const e of en) drawEnemy(c, e, G);
+    drawRings(c, G);
+    if (p && !p.dead && !(p.inv > 0 && Math.floor(p.inv / 4) % 2)) drawRollo(c, p, G);
+    G.drawFX(c);
+    c.restore();
+    A.vignette(c, W, H, 0.3);
+    drawTimer(c, G);
+    drawSpeedGauge(c);
+    if (banner > 0 && G.state === 'playing' && doneT === 0) {
+      const zone = route[zoneIndex] || {};
+      c.save(); c.globalAlpha = Math.min(1, banner / 40);
+      c.fillStyle = 'rgba(5,7,15,.55)'; A.roundRect(c, W / 2 - 236, 74, 472, 62, 16); c.fill();
+      A.glowText(c, zone.name || 'Rollo Rush', W / 2, 104, 30, activeMode === 'overdrive' ? '#c4b5fd' : '#fde68a', 'center', 14);
+      if (zone.hint) A.text(c, zone.hint, W / 2, 128, 14, '#e6e9f5', 'center', '600');
+      c.restore();
+    }
+    if (doneT > 0) A.glowText(c, 'ZONE CLEAR!', W / 2, 190, 38, '#fde047', 'center', 20);
+  }
+
+  /* ---------- lifecycle ---------- */
+  function init(G) {
+    runSeed = activeMode === 'daily' ? dailySeed() : (FORCED_SEED || (((Date.now() & 0x7fffffff) ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0) || 1);
+    rngState = runSeed;
+    const cfg = modeCfg(), saved = window.Save && Save.load ? Save.load(GAME_ID) : {}, stats = saved.stats || {};
+    lives = cfg.lives; hpMax = cfg.hp; timerMode = cfg.timer > 0; timer = cfg.timer;
+    rings = 0; totalCrates = 0; boosts = 0; stomps = 0; runRecorded = false; runHit = false; runLostLife = false; maxZone = 0; doneT = 0; check = null; zoneOffset = 0; zoneIndex = 0; drops = [];
+    if (activeMode === 'campaign') {
+      const stage = Math.max(1, Math.min(3, Number(stats.campaignStage) || 1));
+      zoneOffset = stage - 1;
+      route = STATIC_ROUTE.slice(zoneOffset);
+      if (stage > 1) lives = Math.max(1, Math.min(cfg.lives, Number(stats.campaignLives) || cfg.lives));
+    } else if (activeMode === 'daily') {
+      route = [buildZone(0), buildZone(1), buildZone(2)];
+    } else if (activeMode === 'endless') {
+      route = [buildZone(0)];
+    } else {
+      route = STATIC_ROUTE.slice();
+    }
+    loadZone(route[0]);
+    lastInitMode = activeMode;
+  }
+
+  const rolloGame = Arcade.game({
+    id: GAME_ID, title: 'Rollo Rush', subtitle: 'Build speed, boost, spin-stomp, finish first', color: '#2dd4bf',
+    controls: [['\u2190 \u2192  /  A D', 'Run \u2014 speed builds up'], ['Space  /  \u2191  /  W', 'Jump \u2014 you spin into a ball'], ['Shift', 'Spin dash for a burst of speed'], ['Cyan arrows', 'Speed boost pads'], ['Land on enemies', 'Spin-stomp them'], ['Spring pads', 'Launch high']],
+    help: '\u2190 \u2192 or A D run (speed builds up) \u00b7 Space, \u2191 or W jump and spin \u00b7 Shift spin-dashes \u00b7 cyan arrow pads give a boost \u00b7 land on enemies to stomp them \u00b7 springs launch you \u00b7 collect rings, reach the flag',
+    w: W, h: H, touchL: [['\u25c0', 'ArrowLeft'], ['\u25b6', 'ArrowRight']], touchR: [['\u25b2', 'ArrowUp'], ['\u25cf', 'Space'], ['\u26a1', 'ShiftLeft']],
+    init, update, draw,
+  });
+  const originalShake = rolloGame.shake.bind(rolloGame);
+  rolloGame.shake = (amount) => originalShake(amount * shakeScale);
+
+  function applyCosmetic(slot, id) {
+    const key = String(id || '').split(':').pop();
+    if (slot === 'skin') {
+      if (key.includes('ember')) rollo = { body: '#fb7185', belly: '#fecdd3' };
+      else if (key.includes('cobalt')) rollo = { body: '#3b82f6', belly: '#dbeafe' };
+      else if (key.includes('violet')) rollo = { body: '#a78bfa', belly: '#ede9fe' };
+      else rollo = { body: '#14b8a6', belly: '#fde68a' };
+    } else if (slot === 'palette') {
+      if (key.includes('sunset')) { ringColor = '#fdba74'; springColor = '#fb7185'; boostColor = '#fb923c'; }
+      else if (key.includes('prism')) { ringColor = '#c4b5fd'; springColor = '#a78bfa'; boostColor = '#67e8f9'; }
+      else { ringColor = '#facc15'; springColor = '#f472b6'; boostColor = '#22d3ee'; }
+    } else if (slot === 'trail') {
+      trailColor = key.includes('aurora') ? '#67e8f9' : key.includes('gold') ? '#fde047' : key.includes('mint') ? '#6ee7b7' : '#2dd4bf';
+    } else if (slot === 'theme') {
+      themeOverride = key.includes('dunes') ? ['#0b1a2b', '#1d4ed8', '#93c5fd']
+        : key.includes('neon') ? ['#0b0716', '#4c1d95', '#f0abfc']
+        : key.includes('midnight') ? ['#020617', '#0f172a', '#312e81']
+        : null;
+    }
+  }
+
+  rolloGame.ui = UI.mountGame(rolloGame, {
+    id: GAME_ID, title: 'Rollo Rush', subtitle: 'Build speed and keep your momentum through the course.', accent: '#2dd4bf',
+    modes: [
+      { id: 'campaign', name: 'Campaign', blurb: 'Three zones, three lives, and a saved checkpoint.', seasonTargets: [2400, 5000, 8000] },
+      { id: 'blitz', name: 'Blitz Run', blurb: 'Race the clock across all three zones.', seasonTargets: [2600, 5200, 8800] },
+      { id: 'daily', name: 'Daily Dash', blurb: 'The same seeded speed route for everyone today.', seeded: true, seasonTargets: [3000, 6000, 10000] },
+      { id: 'endless', name: 'Endless Rush', blurb: 'Procedural zones that keep the pace rising.', seasonTargets: [3200, 7000, 12000] },
+      { id: 'overdrive', name: 'Overdrive', blurb: 'One life, faster pace, and a 1.5\u00d7 score bonus.', lockedHint: 'Clear 3 zones to unlock', requires: { stat: 'zonesCleared', gte: 3 }, seasonTargets: [3200, 6500, 11000] },
+    ],
+    settings: [
+      { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
+      { key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 },
+      { key: 'particles', label: 'Particles', type: 'select', options: ['lite', 'standard', 'ultra'], default: 'standard' },
+    ],
+    achievements: [
+      { id: 'first-zone', name: 'First Run', desc: 'Clear your first zone.', rarity: 'common' },
+      { id: 'soft-landing', name: 'Soft Landing', desc: 'Clear a zone without taking damage.', rarity: 'rare' },
+      { id: 'speed-demon', name: 'Speed Demon', desc: 'Reach boost speed.', rarity: 'common' },
+      { id: 'spring-step', name: 'Spring Step', desc: 'Launch off a spring.', rarity: 'common' },
+      { id: 'checkpoint', name: 'Track Anchor', desc: 'Light a checkpoint.', rarity: 'common' },
+      { id: 'ring-runner', name: 'Ring Runner', desc: 'Collect forty rings in one run.', rarity: 'rare' },
+      { id: 'boost-junkie', name: 'Boost Junkie', desc: 'Hit five boost pads in one run.', rarity: 'common' },
+      { id: 'spin-stomper', name: 'Spin Stomper', desc: 'Stomp ten enemies in one run.', rarity: 'rare' },
+      { id: 'all-zones', name: 'Zones Cleared', desc: 'Clear the three-zone campaign.', rarity: 'epic' },
+      { id: 'daily-dash', name: 'Daily Dasher', desc: 'Clear the Daily Dash.', rarity: 'rare' },
+      { id: 'endless-six', name: 'Marathon', desc: 'Reach zone six in Endless Rush.', rarity: 'epic' },
+      { id: 'overdrive-clear', name: 'Overdrive Cleared', desc: 'Clear Overdrive.', rarity: 'legendary' },
+      { id: 'no-loss', name: 'Flawless Rush', desc: 'Clear the campaign without losing a life.', rarity: 'epic' },
+      { id: 'score-10000', name: 'Sonic Boom', desc: 'Score 10,000 in one run.', rarity: 'legendary' },
+    ],
+    tutorial: { type: 'interactive', steps: [
+      { text: 'Run with A/D or the arrow keys and jump with Space.', hold: 'ArrowRight' },
+      { text: 'Hold Shift on the ground for a spin dash burst.', hold: 'ShiftLeft' },
+      { text: 'Cyan pads boost you, springs launch you, and the flag ends the zone.', hold: 'Space' },
+    ] },
+    chapter: 'THREE ZONES \u00b7 3 COURSES', levels: [{}, {}, {}],
+    hooks: {
+      applyMode: (mode) => {
+        activeMode = MODES[mode] ? mode : 'campaign';
+        if (rolloGame && lastInitMode !== activeMode) rolloGame.restart(false);
+      },
+      applySetting: (key, value) => {
+        if (key === 'difficulty') difficulty = value;
+        if (key === 'shake') shakeScale = Number(value);
+        if (key === 'particles' && window.Perf && Perf.setTier) Perf.setTier(value);
+      },
+      applyCosmetic,
+      getResult: () => ({ score: rolloGame.score, win: rolloGame.state === 'won', mode: activeMode, zone: absoluteZone(), lives }),
+    },
+  });
+
+  if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+    window.RolloRushTest = {
+      state() {
+        return { mode: activeMode, difficulty: Arcade.difficulty, zone: absoluteZone(), zoneIndex, zoneOffset, total: route.length, lives, hp: p ? p.hp : 0, score: rolloGame.score, seed: runSeed, state: rolloGame.state, rings, timer, timerMode, check: !!check, title: rolloGame.title, sub: rolloGame.sub, maxZone, boosts, stomps, dash: p ? p.dash : 0, dashCd, drops: drops ? drops.length : 0, speed: p ? Math.round(Math.abs(p.vx) * 100) / 100 : 0, ground: !!(p && p.ground), vy: p ? Math.round(p.vy * 100) / 100 : 0, x: p ? Math.round(p.x) : 0, y: p ? Math.round(p.y) : 0 };
+      },
+      layout() { return grid.map((row) => row.join('')); },
+      sequence(n) { const out = []; for (let i = 0; i < n; i++) out.push(Number(random().toFixed(6))); return out; },
+      setMode(mode) { return rolloGame.ui.setMode(mode); },
+      setDifficulty(level) { difficulty = level; Arcade.difficulty = level; Arcade.speedMult = level === 'easy' ? 0.8 : level === 'hard' ? 1.35 : 1; },
+      restart(autostart) { rolloGame.restart(autostart === true); },
+      award(points) { award(points); },
+      cosmetic: applyCosmetic,
+      colors() { return { body: rollo.body, belly: rollo.belly, trail: trailColor, ring: ringColor, spring: springColor, boost: boostColor, sky: activePal().sky.slice() }; },
+      stats() { return window.Save && Save.load ? Save.load(GAME_ID) : {}; },
+      clearZone() { completeZone(); },
+      die() { if (rolloGame.state === 'playing' && p && !p.dead) die(); },
+      hurt() { if (rolloGame.state === 'playing' && p && !p.dead) { p.inv = 0; hurt(p.face); } },
+      setTimer(n) { timer = n; },
+      teleportTile(c, r) { if (p) { p.x = c * T + 4; p.y = r * T + T - p.h; p.vx = 0; p.vy = 0; } },
+      spawnEnemy(kind, c, r) { addEnemy(kind || 'w', c == null ? 8 : c, r == null ? 11 : r); },
+      grantRings(n) { rings += n == null ? 50 : n; if (rings >= 40) unlock('ring-runner'); },
+      setHp(n) { if (p) p.hp = n == null ? 3 : n; },
+      setBoosts(n) { boosts = n == null ? 5 : n; if (boosts >= 5) unlock('boost-junkie'); },
+      setStomps(n) { stomps = n == null ? 10 : n; if (stomps >= 10) unlock('spin-stomper'); },
+      routeNames() { return route.map((item) => item.name); },
+    };
+  }
+})();
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

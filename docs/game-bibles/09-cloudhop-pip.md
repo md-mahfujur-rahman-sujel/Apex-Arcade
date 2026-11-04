@@ -48,13 +48,13 @@ Unlock each once under the host game id and send one achievement event and one t
 
 ## Tutorial and controls
 
-Use a guided tutorial. Teach the primary objective, legal input, one recovery or strategy tip, and the end condition. Controls shown in the menu and during play: A/D run, Space jump, press jump again mid-air for double jump.
+Use a guided tutorial. Teach the primary objective, legal input, one recovery or strategy tip, and the end condition. Controls shown in the menu and during play: A/D run, Space jump and double-jump, hold Shift to glide.
 
 Support keyboard and touch. Board games must offer clear selected/active state and tap targets; action games must keep virtual controls away from hazards and the theatre launch controls. Shared menus must support gamepad focus and activation.
 
 ## Current baseline and scope
 
-Canonical page: `09-mario-world/index.html`. Current family: Platform Kit (Arcade) (Yes). Catalog description: “A nimble double-jumping frog crosses sky isles, floating clouds, and moving mechanical platforms.” Controls: A/D run, Space jump, press jump again mid-air for double jump. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `09-mario-world/index.html`; `Arcade.game` save id is `cloudhop-pip`. The page is a standalone sky-isle engine on top of the shared kits: three static courses (Floating Isles, Windmill Heights, Starlit Bridge), a double jump, a held-Shift cape glide, drifting cloud platforms, springs, checkpoints, crates, coins, and four enemy types. Five modes share the engine: Campaign (three lives, three hearts, checkpointed stage resume), Breeze Dash (140-second clock, +15 seconds per clear), Daily Drift (local-day seeded, 1.25× score), Endless Ascent (procedural isles, growing multiplier), and Stormfront (one life, two hearts, faster gusts, 1.5× score, unlocked after three cleared isles). Records track cleared isles, campaign clears, endless best, daily best, storm clears, coins, and runs; 14 achievements and 13 `cloudhop-pip` cosmetics are wired. Gameplay randomness uses a local seeded generator, while decorative stars stay outside the seed. Controls are A/D or arrows to run, Space/↑/W to jump and double-jump, Shift to glide, and ↓+jump to drop through thin platforms; the touch pad exposes run, jump, and glide.
 
 ## Menu Identity Card
 
@@ -65,7 +65,7 @@ Canonical page: `09-mario-world/index.html`. Current family: Platform Kit (Arcad
 - **Frame and buttons:** Per-title `cloud-frame` frame and `cloud-banner` button identity, using the shared storybook treatment.
 - **Scene recipe:** Original procedural cloud mark with an accent-lit background, restrained depth bands, and a static Lite/reduced-motion frame.
 - **Music and UI sounds:** Per-title procedural motif; shared tick, select, and back cues.
-- **Menu items:** Play, Options, About, Exit. No proposed modes or cosmetics are shown as available.
-- **Settings:** Shared audio, display, controls, accessibility, and difficulty options.
-- **Controls:** Arrows or A/D move; Space jumps; use springs to reach high paths.
+- **Menu items:** Play, Modes, Customize, Options, More, Exit. Five modes and 13 cosmetics are live; Stormfront stays locked until three isles are cleared.
+- **Settings:** Shared audio, display, controls, accessibility, and difficulty options, plus per-game difficulty, screen shake, and particle tier.
+- **Controls:** Arrows or A/D move; Space jumps and double-jumps; hold Shift to glide; ↓+jump drops through thin platforms.
 - **Lite fallback:** Static cloud composition with the title accent and scene silhouette.

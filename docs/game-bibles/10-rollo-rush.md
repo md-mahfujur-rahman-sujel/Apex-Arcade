@@ -48,13 +48,13 @@ Unlock each once under the host game id and send one achievement event and one t
 
 ## Tutorial and controls
 
-Use a guided tutorial. Teach the primary objective, legal input, one recovery or strategy tip, and the end condition. Controls shown in the menu and during play: A/D run to build speed, Space/W jump & spin attack.
+Use a guided tutorial. Teach the primary objective, legal input, one recovery or strategy tip, and the end condition. Controls shown in the menu and during play: A/D run to build speed, Space/W jump & spin attack, Shift spin dash.
 
 Support keyboard and touch. Board games must offer clear selected/active state and tap targets; action games must keep virtual controls away from hazards and the theatre launch controls. Shared menus must support gamepad focus and activation.
 
 ## Current baseline and scope
 
-Canonical page: `10-sonic/index.html`. Current family: Platform Kit (Arcade) (Yes). Catalog description: “Build momentum, hit cyan acceleration pads, roll into a spinning ball, launch off springs, and collect rings.” Controls: A/D run to build speed, Space/W jump & spin attack. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `10-sonic/index.html`; `Arcade.game` save id is `rollo-rush`. The page is a standalone momentum engine on top of the shared kits: the canonical three zones (Sunny Shore, Crystal Mines, Neon Highway), speed-building run physics, a ground spin dash, cyan boost pads, springs, checkpoints, crates, rings, moving lift platforms, and four enemy types. Taking a hit scatters half the run’s rings as recoverable pickups. Five modes share the engine: Campaign (three lives, three hearts, checkpointed stage resume), Blitz Run (120-second clock, +15 seconds per clear), Daily Dash (local-day seeded, 1.25× score), Endless Rush (procedural zones, growing multiplier), and Overdrive (one life, two hearts, faster pace, 1.5× score, unlocked after three cleared zones). Records track cleared zones, campaign clears, endless best, daily best, overdrive clears, rings, and runs; 14 achievements and 13 `rollo-rush` cosmetics are wired. Gameplay randomness uses a local seeded generator, while decorative stars stay outside the seed. Controls are A/D or arrows to run, Space/↑/W to jump and spin, Shift to spin dash, and ↓+jump to drop through thin platforms; the touch pad exposes run, jump, and spin dash.
 
 ## Menu Identity Card
 
@@ -65,7 +65,7 @@ Canonical page: `10-sonic/index.html`. Current family: Platform Kit (Arcade) (Ye
 - **Frame and buttons:** Per-title `wheel-frame` frame and `wheel-banner` button identity, using the shared crt treatment.
 - **Scene recipe:** Original procedural wheel mark with an accent-lit background, restrained depth bands, and a static Lite/reduced-motion frame.
 - **Music and UI sounds:** Per-title procedural motif; shared tick, select, and back cues.
-- **Menu items:** Play, Options, About, Exit. No proposed modes or cosmetics are shown as available.
-- **Settings:** Shared audio, display, controls, accessibility, and difficulty options.
-- **Controls:** Arrows move; Space jumps; avoid hazards and keep your speed.
+- **Menu items:** Play, Modes, Customize, Options, More, Exit. Five modes and 13 cosmetics are live; Overdrive stays locked until three zones are cleared.
+- **Settings:** Shared audio, display, controls, accessibility, and difficulty options, plus per-game difficulty, screen shake, and particle tier.
+- **Controls:** Arrows or A/D move; Space jumps and spins; Shift spin-dashes; ↓+jump drops through thin platforms.
 - **Lite fallback:** Static wheel composition with the title accent and scene silhouette.

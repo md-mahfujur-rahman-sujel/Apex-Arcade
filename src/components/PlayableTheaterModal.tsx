@@ -631,19 +631,69 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
       case 'space-invaders':
         return <SpaceInvadersEngine {...commonProps} />;
       case 'asteroids-core':
-        return <AsteroidsCoreEngine {...commonProps} />;
+        return (
+          <AsteroidsCoreEngine
+            {...commonProps}
+            seed={startSeed}
+            highScore={highScore}
+            onLevelComplete={(level) => {
+              recordApexLevelProgress(game.id, level);
+              onStatsUpdated();
+            }}
+            onRestart={() => {
+              sessionEndedRef.current = false;
+              sessionStartRef.current = Date.now();
+              sessionBestRef.current = highScoreRef.current;
+              sessionNewBestRef.current = false;
+              setCurrentScore(0);
+            }}
+          />
+        );
       case 'iso-tetris':
         return <IsoTetrisEngine {...commonProps} />;
       case 'pac-maze':
         return <PacMazeEngine {...commonProps} seed={startSeed} />;
       case 'sonic-speedway':
-        return <SonicSpeedwayEngine {...commonProps} />;
+        return (
+          <SonicSpeedwayEngine
+            {...commonProps}
+            highScore={highScore}
+            onLevelComplete={(level) => {
+              recordApexLevelProgress(game.id, level);
+              onStatsUpdated();
+            }}
+            onRestart={() => {
+              sessionEndedRef.current = false;
+              sessionStartRef.current = Date.now();
+              sessionBestRef.current = highScoreRef.current;
+              sessionNewBestRef.current = false;
+              setCurrentScore(0);
+            }}
+          />
+        );
       case 'street-brawler':
         return <StreetBrawlerEngine {...commonProps} />;
       case 'chrono-battle':
         return <ChronoBattleEngine {...commonProps} />;
       case 'precision-platformer':
-        return <PrecisionPlatformerEngine {...commonProps} variant={game.variant || 'celeste'} />;
+        return (
+          <PrecisionPlatformerEngine
+            {...commonProps}
+            variant={game.variant || 'celeste'}
+            highScore={highScore}
+            onLevelComplete={(level) => {
+              recordApexLevelProgress(game.id, level);
+              onStatsUpdated();
+            }}
+            onRestart={() => {
+              sessionEndedRef.current = false;
+              sessionStartRef.current = Date.now();
+              sessionBestRef.current = highScoreRef.current;
+              sessionNewBestRef.current = false;
+              setCurrentScore(0);
+            }}
+          />
+        );
       case 'action-combat':
         return <ActionCombatEngine {...commonProps} variant={game.variant || 'hollow'} />;
       default:

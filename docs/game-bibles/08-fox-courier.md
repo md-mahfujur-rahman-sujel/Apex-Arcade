@@ -54,7 +54,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `08-mario/index.html`. Current family: Platform Kit (Arcade) (Yes). Catalog description: “Three courses of enemy stomping, crate busting, spring launches, checkpoints, and flagpole leaps.” Controls: A/D run, Space/W jump (hold for height), Down+Jump drops through thin floors. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `08-mario/index.html`; `Arcade.game` save id is `fox-courier`. The page implements an 800×480 scrolling platformer with stompable grubs, spikers, breakable crates, springs, checkpoints, spikes, moving platforms, and flagpole clears. The Game Frame config adds Campaign, the timed Parcel Dash, the seeded three-route Daily Route, procedural Endless Delivery, and the one-life Midnight Run, plus the achievements and cosmetics above. Controls are A/D or arrows to run, Space/W/up to jump (hold for height), down+jump to drop through thin platforms, and Shift/K/J for the theatre dash. Gameplay randomness in Daily Route and Endless Delivery uses a local seeded generator; decorative scenery remains outside the seed.
 
 ## Menu Identity Card
 
@@ -65,7 +65,7 @@ Canonical page: `08-mario/index.html`. Current family: Platform Kit (Arcade) (Ye
 - **Frame and buttons:** Per-title `parcel-frame` frame and `parcel-banner` button identity, using the shared storybook treatment.
 - **Scene recipe:** Original procedural parcel mark with an accent-lit background, restrained depth bands, and a static Lite/reduced-motion frame.
 - **Music and UI sounds:** Per-title procedural motif; shared tick, select, and back cues.
-- **Menu items:** Play, Options, About, Exit. No proposed modes or cosmetics are shown as available.
+- **Menu items:** Play, Modes, Customize, Options, More, Exit.
 - **Settings:** Shared audio, display, controls, accessibility, and difficulty options.
 - **Controls:** Arrows or A/D move; Space jumps; stomp enemies and reach each flag.
 - **Lite fallback:** Static parcel composition with the title accent and scene silhouette.

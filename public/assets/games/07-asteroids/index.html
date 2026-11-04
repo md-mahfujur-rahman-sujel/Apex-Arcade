@@ -22,9 +22,11 @@
 (function () {
   const A = Arcade, W = 800, H = 520, TAU = Math.PI * 2;
   const RAD = [0, 15, 28, 46], PTS = [0, 100, 50, 20];
+  const FORCED_SEED = (() => { try { return Number(new URLSearchParams(location.search).get('seed')) || 0; } catch (e) { return 0; } })();
+  const MODE_LABEL = { classic: 'CLASSIC', rush: 'RUSH', daily: 'DAILY', campaign: 'CAMPAIGN', 'last-orbit': 'LAST ORBIT', 'deep-rift': 'DEEP RIFT' };
   let ship, bullets, rocks, saucer, sBul, pups, stars;
-  let lives, wave, waveT, nextLife, fireCd, hyperCd, shieldT, rapidT, tripleT, ufoT, deadT, bannerT;
-  let activeMode = 'classic', campaignStage = 1, targetWave = 0, rngState = 0, shakeScale = 1;
+  let lives, startLives, wave, bestWave, waveT, nextLife, fireCd, hyperCd, shieldT, rapidT, tripleT, ufoT, deadT, bannerT, runRecorded;
+  let activeMode = 'classic', difficulty = 'normal', campaignStage = 1, targetWave = 0, rngState = 0, runSeed = 0, lastInitMode = null, shakeScale = 1;
   let scene = ['#05060f', '#0b1030', '#150f2e'], shipColor = '#93c5fd', shipLower = '#2563eb', flameColor = '#fbbf24', shotColor = '#fde68a';
   function random() { if (!rngState) return Math.random(); rngState = (Math.imul(rngState, 1664525) + 1013904223) >>> 0; return rngState / 4294967296; }
   function randomRange(min, max) { return min + random() * (max - min); }
@@ -35,12 +37,43 @@
     for (let i = 0; i < key.length; i++) { hash ^= key.charCodeAt(i); hash = Math.imul(hash, 16777619); }
     return (hash >>> 0) || 1;
   }
+  function modeMult() {
+    return activeMode === 'last-orbit' ? 1.25 : activeMode === 'deep-rift' ? 1.5 : 1;
+  }
+  function award(points) { Arcade.G.addScore(Math.round(points * modeMult())); }
   function unlock(id) {
     const save = window.Save && Save.load ? Save.load('starfall-rift') : {};
     if ((Array.isArray(save.achievements) ? save.achievements : []).includes(id)) return;
     if (window.Save && Save.update) Save.update('starfall-rift', { achievements: [id] });
     if (window.Apex && Apex.unlockAchievement) Apex.unlockAchievement(id, 'starfall-rift');
-    if (window.UI && UI.toast) UI.toast('Achievement unlocked', { color: '#fbbf24' });
+    if (window.UI && UI.toast) UI.toast(id.replace(/-/g, ' '), { color: '#fbbf24' });
+  }
+  function noteWave(cleared) {
+    if (cleared <= bestWave) return;
+    bestWave = cleared;
+    if (window.Save && Save.update) Save.update('starfall-rift', { stats: { bestWave: cleared } });
+  }
+  function reportWave(G, cleared) {
+    if (window.Apex && Apex.report) Apex.report({ gameId: 'starfall-rift', type: 'level_complete', level: cleared, score: G.score, mode: activeMode });
+  }
+  function recordRun(G, cleared) {
+    const saved = window.Save && Save.load ? Save.load('starfall-rift') : {};
+    const stats = saved.stats || {};
+    const patch = {
+      bestScore: Math.max(Number(stats.bestScore) || 0, G.score),
+      bestWave: Math.max(Number(stats.bestWave) || 0, wave),
+      runs: (Number(stats.runs) || 0) + 1,
+    };
+    if (activeMode === 'daily') patch.dailyBest = Math.max(Number(stats.dailyBest) || 0, G.score);
+    if (activeMode === 'deep-rift') patch.deepRiftClears = (Number(stats.deepRiftClears) || 0) + (cleared ? 1 : 0);
+    if (activeMode === 'campaign') patch.sectorClears = (Number(stats.sectorClears) || 0) + (cleared ? 1 : 0);
+    if (activeMode === 'last-orbit') patch.lastOrbitClears = (Number(stats.lastOrbitClears) || 0) + (cleared ? 1 : 0);
+    const extra = {};
+    if (activeMode === 'daily') {
+      const d = new Date(), day = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      extra.daily = { day: day, best: Math.max(G.score, Number(saved.daily && saved.daily.best) || 0) };
+    }
+    if (window.Save && Save.update) Save.update('starfall-rift', Object.assign({ stats: patch }, extra));
   }
 
   const wrap = (o, m) => {
@@ -48,20 +81,26 @@
     if (o.y < -m) o.y += H + 2 * m; else if (o.y > H + m) o.y -= H + 2 * m;
   };
   const mkShip = () => ({ x: W / 2, y: H / 2, vx: 0, vy: 0, a: -Math.PI / 2, inv: 150, thrust: false });
+  function rockSpeedScale() {
+    let mult = activeMode === 'deep-rift' ? 1.28 : activeMode === 'last-orbit' ? 1.15 : 1;
+    if (difficulty === 'hard') mult *= 1.2; else if (difficulty === 'easy') mult *= 0.82;
+    return mult;
+  }
 
   function mkRock(x, y, tier, vx, vy) {
     const n = 11, r = RAD[tier], pts = [], craters = [];
     for (let i = 0; i < n; i++) pts.push(r * randomRange(0.78, 1.15));
     for (let i = 0; i < 3; i++) craters.push([randomRange(0, TAU), randomRange(0.1, 0.55) * r, randomRange(0.12, 0.24) * r]);
-    const sp = randomRange(0.6, 1.4) * (4 - tier) * 0.55 + 0.4, a = randomRange(0, TAU);
+    const sp = (randomRange(0.6, 1.4) * (4 - tier) * 0.55 + 0.4) * rockSpeedScale(), a = randomRange(0, TAU);
     return { x, y, tier, r, pts, craters, rot: randomRange(0, TAU), vr: randomRange(-0.03, 0.03), vx: vx != null ? vx : Math.cos(a) * sp, vy: vy != null ? vy : Math.sin(a) * sp, hue: randomInt(190, 235) };
   }
   function spawnWave() {
-    const n = Math.min(10, 3 + wave);
+    const base = activeMode === 'deep-rift' ? 4 : 3, cap = activeMode === 'deep-rift' ? 12 : 10;
+    const n = Math.min(cap, base + wave);
     for (let i = 0; i < n; i++) {
       let x, y, k = 0;
       do { x = randomRange(0, W); y = randomRange(0, H); k++; } while (k < 30 && A.dist(x, y, ship.x, ship.y) < 170);
-      rocks.push(mkRock(x, y, 3));
+      rocks.push(mkRock(x, y, random() < (activeMode === 'deep-rift' ? 0.3 : 0.16) ? 2 : 3));
     }
     bannerT = 110;
   }
@@ -69,20 +108,22 @@
     return { x, y, vx: randomRange(-0.5, 0.5), vy: randomRange(-0.5, 0.5), kind: randomPick(['S', 'R', 'T']), life: 520, t: 0 };
   }
   function checkLife(G) {
-    if (activeMode !== 'rush' && G.score >= nextLife) { lives++; nextLife += 10000; A.sfx('power'); G.popup(W / 2, 80, 'EXTRA SHIP!', '#86efac', 22); }
+    if (activeMode !== 'classic') return;
+    if (G.score >= nextLife) { lives++; nextLife += 10000; A.sfx('power'); G.popup(W / 2, 80, 'EXTRA SHIP!', '#86efac', 22); }
   }
   function breakRock(G, i) {
     const k = rocks[i]; rocks.splice(i, 1);
-    G.addScore(PTS[k.tier]); A.sfx(k.tier === 3 ? 'boom' : 'explode'); G.shake(k.tier * 1.5);
+    award(PTS[k.tier]); A.sfx(k.tier === 3 ? 'boom' : 'explode'); G.shake(k.tier * 1.5);
     G.burst(k.x, k.y, 8 + k.tier * 6, { color: ['#94a3b8', '#e2e8f0', '#64748b'], speed: 3 + k.tier, life: 34, size: 2.5 });
     if (k.tier > 1) for (let j = 0; j < 2; j++) rocks.push(mkRock(k.x, k.y, k.tier - 1, k.vx + randomRange(-1, 1) * 1.2, k.vy + randomRange(-1, 1) * 1.2));
-    if (random() < 0.07) pups.push(mkPup(k.x, k.y));
+    if (random() < (activeMode === 'deep-rift' ? 0.1 : 0.07)) pups.push(mkPup(k.x, k.y));
     unlock('first-fracture');
     checkLife(G);
   }
   function killSaucer(G) {
     unlock('raider-down');
-    G.addScore(200); A.sfx('boom'); G.shake(6);
+    award(200); A.sfx('boom'); G.shake(6);
+    G.popup(saucer.x, saucer.y - 24, '+200', '#f472b6', 16);
     G.burst(saucer.x, saucer.y, 26, { color: ['#f472b6', '#fde68a', '#fff'], speed: 5, life: 36, glow: true });
     G.ring(saucer.x, saucer.y, '#f472b6', 80, 26);
     pups.push(mkPup(saucer.x, saucer.y)); saucer = null; checkLife(G);
@@ -104,33 +145,55 @@
   }
   function spawnSaucer() {
     const dir = random() < 0.5 ? 1 : -1;
-    saucer = { x: dir > 0 ? -30 : W + 30, y: randomRange(70, H - 70), vx: dir * 1.6, t: 0, shoot: 70 };
+    saucer = { x: dir > 0 ? -30 : W + 30, y: randomRange(70, H - 70), vx: dir * (difficulty === 'hard' ? 2 : 1.6), t: 0, shoot: 70 };
+    A.sfx('blip'); Arcade.G.ring(saucer.x, saucer.y, '#f472b6', 46, 18);
+  }
+  function applyCosmetic(slot, id) {
+    if (slot === 'skin') {
+      const solar = id.includes('solar') || id.includes('gold');
+      shipColor = solar ? '#fde68a' : id.includes('jade') ? '#86efac' : id.includes('violet') ? '#c4b5fd' : '#93c5fd';
+      shipLower = solar ? '#d97706' : id.includes('jade') ? '#047857' : id.includes('violet') ? '#6d28d9' : '#2563eb';
+    } else if (slot === 'palette') shotColor = id.includes('mint') ? '#6ee7b7' : id.includes('coral') ? '#fb7185' : id.includes('solar') ? '#fde047' : '#fde68a';
+    else if (slot === 'trail') flameColor = id.includes('ice') ? '#67e8f9' : id.includes('violet') ? '#c084fc' : id.includes('jade') ? '#4ade80' : '#fbbf24';
+    else if (slot === 'theme') scene = id.includes('nebula') ? ['#120821', '#24113d', '#381553'] : id.includes('dawn') ? ['#1e1027', '#472647', '#7c3b51'] : id.includes('ocean') ? ['#031521', '#0a2942', '#124a63'] : ['#05060f', '#0b1030', '#150f2e'];
   }
 
   function init(G) {
-    rngState = activeMode === 'daily' ? dailySeed() : 0;
+    runSeed = activeMode === 'daily' ? dailySeed() : FORCED_SEED;
+    rngState = runSeed;
+    const saved = window.Save && Save.load ? Save.load('starfall-rift') : {};
+    bestWave = Number(saved && saved.stats && saved.stats.bestWave) || 0;
     if (activeMode === 'campaign') {
-      const save = window.Save && Save.load ? Save.load('starfall-rift') : {};
-      campaignStage = Math.max(1, Math.min(5, Number(save && save.stats && save.stats.riftCampaignStage) || 1));
-      lives = Math.max(1, Math.min(3, Number(save && save.stats && save.stats.riftCampaignLives) || 3));
+      campaignStage = Math.max(1, Math.min(5, Number(saved && saved.stats && saved.stats.riftCampaignStage) || 1));
+      lives = Math.max(1, Math.min(3, Number(saved && saved.stats && saved.stats.riftCampaignLives) || 3));
       targetWave = campaignStage * 3;
-    } else targetWave = activeMode === 'daily' || activeMode === 'rush' ? 5 : 0;
+    } else {
+      campaignStage = 1;
+      targetWave = activeMode === 'rush' || activeMode === 'daily' ? 5 : activeMode === 'last-orbit' ? 6 : activeMode === 'deep-rift' ? 8 : 0;
+      lives = activeMode === 'rush' || activeMode === 'last-orbit' ? 1 : activeMode === 'deep-rift' ? 2 : 3;
+    }
+    startLives = lives; runRecorded = false;
     ship = mkShip(); bullets = []; rocks = []; sBul = []; pups = []; saucer = null;
-    if (activeMode !== 'campaign') lives = activeMode === 'rush' ? 1 : 3;
     wave = 1; waveT = 0; nextLife = 10000; fireCd = 0; hyperCd = 0; shieldT = 0; rapidT = 0; tripleT = 0;
-    ufoT = 1200; deadT = 0; bannerT = 0; stars = A.makeStars(90, W, H);
+    ufoT = activeMode === 'deep-rift' ? 520 : 1200; deadT = 0; bannerT = 0; stars = A.makeStars(90, W, H);
     ship.inv = 120; spawnWave();
+    lastInitMode = activeMode;
   }
 
   function update(G) {
-    G.hudL = 'SCORE ' + G.score; G.hudR = 'WAVE ' + wave + '   BEST ' + G.hi;
+    G.hudL = 'SCORE ' + G.score + ' · WAVE ' + wave + ' · ♥' + Math.max(0, lives);
+    G.hudR = MODE_LABEL[activeMode] + ' · BEST ' + G.hi;
     if (bannerT > 0) bannerT--;
     if (shieldT > 0) shieldT--; if (rapidT > 0) rapidT--; if (tripleT > 0) tripleT--;
     if (fireCd > 0) fireCd--; if (hyperCd > 0) hyperCd--;
     let sh = ship;
     if (deadT > 0) {
       if (--deadT === 0) {
-        if (lives <= 0) { G.over('Ship Lost', 'Reached wave ' + wave); return; }
+        if (lives <= 0) {
+          if (!runRecorded) { runRecorded = true; recordRun(G, false); }
+          G.over('Ship Lost', 'Reached wave ' + wave + ' · ' + MODE_LABEL[activeMode]);
+          return;
+        }
         if (rocks.some((k) => A.dist(k.x, k.y, W / 2, H / 2) < k.r + 90)) deadT = 1; else { ship = mkShip(); sh = ship; }
       }
     } else {
@@ -140,7 +203,8 @@
         sh.vx += Math.cos(sh.a) * 0.14; sh.vy += Math.sin(sh.a) * 0.14;
         if (G.t % 2 === 0) G.burst(sh.x - Math.cos(sh.a) * 14, sh.y - Math.sin(sh.a) * 14, 1, { angle: sh.a + Math.PI, spread: 0.4, speed: 3, min: 1.5, life: 16, size: 2.5, color: ['#fbbf24', '#fb923c', '#fde68a'], glow: true });
       }
-      const sp = Math.hypot(sh.vx, sh.vy); if (sp > 7) { sh.vx *= 7 / sp; sh.vy *= 7 / sp; }
+      const sp = Math.hypot(sh.vx, sh.vy), cap = activeMode === 'deep-rift' ? 7.6 : 7;
+      if (sp > cap) { sh.vx *= cap / sp; sh.vy *= cap / sp; }
       sh.vx *= 0.993; sh.vy *= 0.993; sh.x += sh.vx; sh.y += sh.vy; wrap(sh, 10);
       if (sh.inv > 0) sh.inv--;
       if (A.held('Space') && fireCd <= 0) shoot();
@@ -164,12 +228,13 @@
       if (hit) bullets.splice(i, 1);
     }
     /* saucer */
-    if (!saucer && wave >= 2 && --ufoT <= 0) { spawnSaucer(); ufoT = randomInt(900, 1600); }
+    if (!saucer && (wave >= 2 || activeMode === 'deep-rift') && --ufoT <= 0) { spawnSaucer(); ufoT = randomInt(activeMode === 'deep-rift' ? 650 : 900, activeMode === 'deep-rift' ? 1100 : 1600); }
     if (saucer) {
       const u = saucer; u.t++; u.x += u.vx; u.y += Math.sin(u.t * 0.04) * 1.2;
       if (u.x < -45 || u.x > W + 45) saucer = null;
       else if (deadT <= 0 && --u.shoot <= 0) {
-        u.shoot = randomInt(60, 100); const a = Math.atan2(sh.y - u.y, sh.x - u.x) + randomRange(-1, 1) * Math.max(0.12, 0.7 - wave * 0.06);
+        u.shoot = randomInt(difficulty === 'hard' ? 45 : 60, difficulty === 'hard' ? 80 : 100);
+        const a = Math.atan2(sh.y - u.y, sh.x - u.x) + randomRange(-1, 1) * Math.max(0.12, 0.7 - wave * 0.06);
         sBul.push({ x: u.x, y: u.y, vx: Math.cos(a) * 3.6, vy: Math.sin(a) * 3.6, life: 120 }); A.sfx('laser');
       }
     }
@@ -206,15 +271,25 @@
     if (rocks.length === 0 && !saucer) {
       if (waveT <= 0) waveT = 100;
       else if (--waveT === 0) {
-        if (wave === 5) unlock('wave-five');
-        if (lives >= (activeMode === 'rush' ? 1 : 3)) unlock('untouched-sector');
-        if (targetWave && wave >= targetWave) {
-          if (activeMode === 'daily') unlock('daily-navigator');
-          if (activeMode === 'rush') G.win('Wave Rush Clear!', 'Five waves · one ship');
+        const cleared = wave;
+        reportWave(G, cleared); noteWave(cleared);
+        const bonus = 200 + cleared * 50;
+        award(bonus);
+        G.popup(W / 2, 238, 'WAVE ' + cleared + ' CLEAR  +' + bonus, '#67e8f9', 20);
+        G.ring(W / 2, 238, '#67e8f9', 120, 26);
+        if (cleared >= 5) unlock('wave-five');
+        if (cleared >= 10) unlock('wave-ten');
+        if (lives >= startLives) unlock('untouched-sector');
+        if (targetWave && cleared >= targetWave) {
+          runRecorded = true;
+          if (activeMode === 'daily') { unlock('daily-navigator'); recordRun(G, true); G.win('Daily Rift Complete!', 'Seed ' + runSeed + ' · score ' + G.score); }
+          else if (activeMode === 'rush') { recordRun(G, true); G.win('Wave Rush Clear!', 'Five waves · one ship · score ' + G.score); }
+          else if (activeMode === 'last-orbit') { unlock('last-orbit'); recordRun(G, true); G.win('Last Orbit Clear!', 'Six waves on a single hull · score ' + G.score); }
+          else if (activeMode === 'deep-rift') { unlock('deep-rift'); recordRun(G, true); G.win('Deep Rift Complete!', 'All eight waves secured · score ' + G.score); }
           else if (activeMode === 'campaign') {
-            if (campaignStage >= 5) { unlock('rift-campaign'); if (window.Save && Save.update) Save.update('starfall-rift', { stats: { riftCampaignStage: 1, riftCampaignLives: 3 } }); G.win('Rift Campaign Complete!', 'All five sectors secured'); }
-            else { if (window.Save && Save.update) Save.update('starfall-rift', { stats: { riftCampaignStage: campaignStage + 1, riftCampaignLives: lives } }); G.win('Sector ' + campaignStage + ' Clear', 'Checkpoint saved · sector ' + (campaignStage + 1) + ' is ready'); }
-          } else G.win('Daily Rift Complete!', 'Five seeded waves cleared');
+            if (campaignStage >= 5) { unlock('rift-campaign'); recordRun(G, true); if (window.Save && Save.update) Save.update('starfall-rift', { stats: { riftCampaignStage: 1, riftCampaignLives: 3 } }); G.win('Rift Campaign Complete!', 'All five sectors secured · score ' + G.score); }
+            else { recordRun(G, true); if (window.Save && Save.update) Save.update('starfall-rift', { stats: { riftCampaignStage: campaignStage + 1, riftCampaignLives: lives } }); G.win('Sector ' + campaignStage + ' Clear', 'Checkpoint saved · sector ' + (campaignStage + 1) + ' is ready'); }
+          }
           return;
         }
         wave++;
@@ -281,12 +356,15 @@
     }
     G.drawFX(c);
     A.vignette(c, W, H, 0.35);
-    /* HUD extras: lives, power-up timers, hyperspace cooldown */
+    /* HUD extras: lives, power-up timers, hyperspace cooldown, mode multiplier */
     for (let i = 0; i < lives; i++) { c.save(); c.translate(24 + i * 22, H - 22); c.rotate(-Math.PI / 2); c.fillStyle = '#60a5fa'; c.beginPath(); c.moveTo(9, 0); c.lineTo(-6, -6); c.lineTo(-3, 0); c.lineTo(-6, 6); c.fill(); c.restore(); }
     [[shieldT, '#67e8f9', 'SHIELD'], [rapidT, '#fbbf24', 'RAPID'], [tripleT, '#f472b6', 'TRIPLE']].forEach(([v, col, n], i) => {
       if (v > 0) { c.fillStyle = 'rgba(255,255,255,.12)'; c.fillRect(W / 2 - 110 + i * 78, H - 24, 70, 6); c.fillStyle = col; c.fillRect(W / 2 - 110 + i * 78, H - 24, 70 * v / 600, 6); A.text(c, n, W / 2 - 75 + i * 78, H - 30, 10, col, 'center', '800'); }
     });
     A.text(c, hyperCd > 0 ? 'HYPERSPACE ' + Math.ceil(hyperCd / 60) + 's' : 'HYPERSPACE READY', W - 14, H - 14, 11, hyperCd > 0 ? '#8b93b3' : '#67e8f9', 'right', '700');
+    A.text(c, 'BEST WAVE ' + Math.max(bestWave, wave), 14, 52, 11, '#8ea0c8', 'left', '700');
+    const mult = modeMult();
+    if (mult > 1) A.text(c, 'SCORE ×' + (Number.isInteger(mult) ? mult : mult.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')), W - 14, 52, 11, '#86efac', 'right', '800');
     if (bannerT > 0 && G.state === 'playing') A.glowText(c, 'WAVE ' + wave, W / 2, 190, 40, '#67e8f9', 'center', 18);
   }
 
@@ -306,8 +384,11 @@
       { id: 'rush', name: 'Wave Rush', blurb: 'Five waves. One ship. No extra lives.', seasonTargets: [2500, 6000, 11000] },
       { id: 'daily', name: 'Daily Rift', blurb: 'The same seeded five-wave field for today.', seeded: true, seasonTargets: [3000, 7000, 12000] },
       { id: 'campaign', name: 'Rift Campaign', blurb: 'Five sectors with a saved checkpoint after each.', seasonTargets: [3500, 8000, 14000] },
+      { id: 'last-orbit', name: 'Last Orbit', blurb: 'One hull, faster rocks, six waves, and a 1.25× score bonus.', seasonTargets: [3000, 7000, 13000] },
+      { id: 'deep-rift', name: 'Deep Rift', blurb: 'Two hulls, denser fields, eight waves, and 1.5× score.', lockedHint: 'Reach wave 5 to unlock', requires: { stat: 'bestWave', gte: 5 }, seasonTargets: [4500, 10000, 19000] },
     ],
     settings: [
+      { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
       { key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 },
       { key: 'particles', label: 'Particles', type: 'select', options: ['lite', 'standard', 'ultra'], default: 'standard' },
     ],
@@ -318,8 +399,11 @@
       { id: 'salvage-crew', name: 'Salvage Crew', desc: 'Collect a power-up.', rarity: 'common' },
       { id: 'triple-threat', name: 'Triple Threat', desc: 'Destroy a rock with triple shot active.', rarity: 'rare' },
       { id: 'wave-five', name: 'Wave Five', desc: 'Clear wave 5.', rarity: 'rare' },
+      { id: 'wave-ten', name: 'Wave Ten', desc: 'Clear wave 10.', rarity: 'epic' },
       { id: 'untouched-sector', name: 'Untouched Sector', desc: 'Clear a wave without losing a ship.', rarity: 'rare' },
       { id: 'daily-navigator', name: 'Daily Navigator', desc: 'Complete a Daily Rift run.', rarity: 'rare' },
+      { id: 'last-orbit', name: 'Last Orbit', desc: 'Clear Last Orbit on a single hull.', rarity: 'epic' },
+      { id: 'deep-rift', name: 'Deep Rift', desc: 'Clear all eight Deep Rift waves.', rarity: 'legendary' },
       { id: 'rift-campaign', name: 'Rift Campaign', desc: 'Clear all five campaign sectors.', rarity: 'epic' },
       { id: 'deep-space-ace', name: 'Deep Space Ace', desc: 'Reach wave 20 in Classic Orbit.', rarity: 'legendary' },
     ],
@@ -328,20 +412,42 @@
       { text: 'Fire at large rocks to split them, then clear the smaller pieces.', hold: 'Space' },
       { text: 'Use hyperspace to escape danger and collect S, R, or T upgrades.', hold: 'ShiftLeft' },
     ] },
+    chapter: 'RIFT SECTORS · 8 WAVES', levels: Array.from({ length: 8 }, () => ({})),
     hooks: {
-      applyMode: (mode) => { activeMode = mode; },
+      applyMode: (mode) => {
+        activeMode = mode || 'classic';
+        if (starfallGame && lastInitMode !== activeMode) starfallGame.restart(false);
+      },
       applySetting: (key, value) => {
+        if (key === 'difficulty') difficulty = value;
         if (key === 'shake') shakeScale = Number(value);
         if (key === 'particles' && window.Perf && Perf.setTier) Perf.setTier(value);
       },
-      applyCosmetic: (slot, id) => {
-        if (slot === 'skin') { shipColor = id.includes('gold') ? '#fde68a' : id.includes('jade') ? '#86efac' : id.includes('violet') ? '#c4b5fd' : '#93c5fd'; shipLower = id.includes('gold') ? '#d97706' : id.includes('jade') ? '#047857' : id.includes('violet') ? '#6d28d9' : '#2563eb'; }
-        else if (slot === 'palette') shotColor = id.includes('mint') ? '#6ee7b7' : id.includes('coral') ? '#fb7185' : id.includes('solar') ? '#fde047' : '#fde68a';
-        else if (slot === 'trail') flameColor = id.includes('ice') ? '#67e8f9' : id.includes('violet') ? '#c084fc' : id.includes('jade') ? '#4ade80' : '#fbbf24';
-        else if (slot === 'theme') scene = id.includes('nebula') ? ['#120821', '#24113d', '#381553'] : id.includes('dawn') ? ['#1e1027', '#472647', '#7c3b51'] : id.includes('ocean') ? ['#031521', '#0a2942', '#124a63'] : ['#05060f', '#0b1030', '#150f2e'];
-      },
+      applyCosmetic,
+      getResult: () => ({ score: starfallGame.score, win: starfallGame.state === 'won', mode: activeMode, wave, bestWave }),
     },
   });
+  if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+    window.StarfallRiftTest = {
+      state() {
+        return { mode: activeMode, difficulty, wave, lives, startLives, targetWave, score: starfallGame.score, seed: runSeed, state: starfallGame.state, bestWave, rocks: rocks.length, saucer: saucer ? 1 : 0, shieldT, rapidT, tripleT, hyperCd, title: starfallGame.title, sub: starfallGame.sub };
+      },
+      snapshot() { return rocks.map((k) => [Math.round(k.x), Math.round(k.y), k.tier]); },
+      sequence(n) { const out = []; for (let i = 0; i < n; i++) out.push(Number(random().toFixed(6))); return out; },
+      clearWave() { rocks.length = 0; saucer = null; sBul.length = 0; },
+      spawnSaucer,
+      addRock(tier) { rocks.push(mkRock(W / 2 + 140, H / 2, tier == null ? 3 : tier)); },
+      pickup(kind) { pups.push({ x: ship.x, y: ship.y, vx: 0, vy: 0, kind: kind || 'S', life: 300, t: 0 }); },
+      impact() { if (deadT <= 0) killShip(starfallGame); },
+      award(points) { award(points); },
+      setDifficulty(level) { difficulty = level; Arcade.difficulty = level; Arcade.speedMult = level === 'easy' ? 0.8 : level === 'hard' ? 1.35 : 1; },
+      setMode(mode) { return starfallGame.ui.setMode(mode); },
+      restart(autostart) { starfallGame.restart(autostart === true); },
+      colors() { return { shipColor, shipLower, shotColor, flameColor, scene: scene.slice() }; },
+      cosmetic: applyCosmetic,
+      stats() { return window.Save && Save.load ? Save.load('starfall-rift') : {}; },
+    };
+  }
 })();
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>

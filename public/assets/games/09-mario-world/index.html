@@ -19,105 +19,706 @@
 <script src="../../kits/score-bridge.js"></script>
 <script src="../../kits/ui-kit.js"></script>
 <script>
-/* Cloudhop Pip — sky-island platformer: a frog with a double jump, moving platforms, springs,
-   checkpoints and three courses. Built on platform-kit.js. */
-const A = Arcade, P = Plat, TAU = Math.PI * 2;
+/* Cloudhop Pip — sky-isle platformer: double-jump across floating clouds, ride moving platforms,
+   glide on the cape, and reach every flag. Five modes share one seeded engine. */
+(function () {
+  'use strict';
+  const A = Arcade, P = Plat, T = 32, W = 800, H = 480, TAU = Math.PI * 2;
+  const GAME_ID = 'cloudhop-pip';
+  const MODE_LABEL = { campaign: 'CAMPAIGN', dash: 'BREEZE DASH', daily: 'DAILY DRIFT', endless: 'ENDLESS ASCENT', storm: 'STORMFRONT' };
+  const MODES = {
+    campaign: { lives: 3, hp: 3, timer: 0, mult: 1, speed: 1 },
+    dash: { lives: 2, hp: 3, timer: 140, mult: 1, speed: 1.05 },
+    daily: { lives: 3, hp: 3, timer: 0, mult: 1.25, speed: 1 },
+    endless: { lives: 3, hp: 3, timer: 0, mult: 1.1, speed: 1 },
+    storm: { lives: 1, hp: 2, timer: 0, mult: 1.5, speed: 1.3 },
+  };
+  const FORCED_SEED = (() => { try { return Number(new URLSearchParams(location.search).get('seed')) || 0; } catch (e) { return 0; } })();
 
-/* ---- course 1: Floating Isles ---- */
-const S1 = P.make('1 \u00b7 Floating Isles', 110, (g) => {
-  g.ground(0, 14); g.set(2, 11, 'P'); g.coins(6, 10, 4);
-  g.ground(18, 28); g.set(22, 11, 'w'); g.set(24, 8, '?'); g.coins(20, 9, 3);
-  g.ground(33, 44); g.set(38, 11, 'S'); g.plat(38, 5, 5); g.coins(38, 4, 5);
-  g.ground(49, 62); g.set(52, 11, 'C'); g.set(56, 11, 'h'); g.plat(58, 8, 3); g.coins(58, 7, 3);
-  g.set(66, 11, 'M'); g.coins(66, 9, 3);
-  g.ground(74, 90); g.set(78, 11, 'w'); g.set(82, 9, 'b'); g.coins(80, 8, 6); g.set(86, 11, '^');
-  g.ground(94, 110); g.stairs(97, 3); g.set(106, 11, 'F');
-});
-S1.hint = 'Press jump again in mid-air for a double jump';
+  let grid, rows, cols, p, en, plats, cam, check, doneT, banner, route, courseIndex, courseOffset, spawnPoint;
+  let lives, coins, hpMax, timer, timerMode;
+  let activeMode = 'campaign', difficulty = 'normal', rngState = 0, runSeed = 0, lastInitMode = null;
+  let runRecorded = false, runHit = false, courseHit = false, runLostLife = false, totalCrates = 0, maxCourse = 0, doubleJumps = 0;
+  let shakeScale = 1, pal = null, themeOverride = null, starsCache = null;
+  let pip = { body: '#22c55e', belly: '#fef08a' };
+  let trailColor = '#f43f5e', coinColor = '#fde047', springColor = '#f472b6';
 
-/* ---- course 2: Windmill Heights ---- */
-const S2 = P.make('2 \u00b7 Windmill Heights', 120, (g) => {
-  g.ground(0, 10); g.set(2, 11, 'P');
-  g.plat(13, 10, 3); g.plat(18, 8, 3); g.plat(23, 6, 3); g.coins(23, 5, 3);
-  g.ground(28, 40, 8); g.set(32, 7, 'w'); g.set(35, 7, 'C');
-  g.set(44, 8, 'M'); g.coins(44, 6, 3);
-  g.ground(52, 66, 8); g.set(55, 7, 'h'); g.set(60, 7, 'w'); g.coins(57, 5, 5); g.set(63, 7, 'S'); g.plat(63, 2, 4); g.coins(63, 1, 4);
-  g.plat(70, 5, 3); g.plat(75, 8, 3); g.plat(80, 10, 3);
-  g.ground(85, 100, 11); g.set(88, 8, 'b'); g.set(92, 10, 's'); g.set(96, 10, 'C'); g.coins(90, 8, 5);
-  g.plat(103, 10, 3); g.plat(108, 9, 3);
-  g.ground(112, 120, 11); g.set(117, 10, 'F');
-});
-S2.hint = 'Climb up, then drop down the other side';
+  function random() { if (!rngState) return Math.random(); rngState = (Math.imul(rngState, 1664525) + 1013904223) >>> 0; return rngState / 4294967296; }
+  function randRange(a, b) { return a + random() * (b - a); }
+  function randInt(a, b) { return Math.floor(randRange(a, b + 1)); }
+  function dailySeed() {
+    const d = new Date(), key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate() + ':cloudhop-pip'; let hash = 2166136261;
+    for (let i = 0; i < key.length; i++) { hash ^= key.charCodeAt(i); hash = Math.imul(hash, 16777619); }
+    return (hash >>> 0) || 1;
+  }
+  function modeCfg() { return MODES[activeMode] || MODES.campaign; }
+  function diffMult() { return difficulty === 'hard' ? 1.15 : difficulty === 'easy' ? 0.85 : 1; }
+  function enemySpeedScale() { return modeCfg().speed * diffMult(); }
+  function modeMult() {
+    if (activeMode === 'daily') return 1.25;
+    if (activeMode === 'storm') return 1.5;
+    if (activeMode === 'endless') return Math.min(1.6, 1.1 + Math.max(0, absoluteCourse() - 1) * 0.05);
+    return 1;
+  }
+  function award(points) { Arcade.G.addScore(Math.round(points * modeMult())); }
+  function statsOf() { const save = window.Save && Save.load ? Save.load(GAME_ID) : {}; return save.stats || {}; }
+  function savePatch(patch, extra) { if (window.Save && Save.update) Save.update(GAME_ID, Object.assign({ stats: patch }, extra || {})); }
+  function unlock(id) {
+    const save = window.Save && Save.load ? Save.load(GAME_ID) : {};
+    if ((Array.isArray(save.achievements) ? save.achievements : []).includes(id)) return;
+    if (window.Save && Save.update) Save.update(GAME_ID, { achievements: [id] });
+    if (window.Apex && Apex.unlockAchievement) Apex.unlockAchievement(id, GAME_ID);
+    if (window.UI && UI.toast) UI.toast(id.replace(/-/g, ' '), { color: '#fbbf24' });
+  }
+  function absoluteCourse() { return courseOffset + courseIndex + 1; }
+  function courseTotalLabel() { return activeMode === 'endless' ? '\u221e' : activeMode === 'campaign' ? '3' : String(route ? route.length : 3); }
 
-/* ---- course 3: Starlit Bridge ---- */
-const S3 = P.make('3 \u00b7 Starlit Bridge', 120, (g) => {
-  g.ground(0, 12); g.set(2, 11, 'P'); g.coins(6, 10, 4);
-  g.set(17, 11, 'M'); g.set(28, 11, 'M'); g.coins(17, 9, 3); g.coins(28, 9, 3);
-  g.ground(36, 48, 11); g.set(40, 10, 'w'); g.set(44, 10, 'C'); g.coins(38, 8, 5);
-  g.plat(52, 10, 2); g.plat(56, 9, 2); g.plat(60, 8, 2); g.plat(64, 9, 2); g.set(58, 6, 'b');
-  g.ground(68, 82, 11); g.set(71, 10, 'h'); g.set(75, 10, '^'); g.set(76, 10, '^'); g.set(79, 10, 's');
-  g.set(86, 11, 'M'); g.coins(86, 9, 3);
-  g.ground(94, 108, 11); g.set(97, 10, 'w'); g.set(100, 8, 'b'); g.set(103, 10, 'C');
-  g.plat(110, 10, 3);
-  g.ground(114, 120, 11); g.set(117, 10, 'F');
-});
-S3.hint = 'The last bridge \u2014 keep your double jump handy';
+  /* ---------- course definitions ---------- */
+  const S1 = P.make('1 \u00b7 Floating Isles', 110, (g) => {
+    g.ground(0, 14); g.set(2, 11, 'P'); g.coins(6, 10, 4);
+    g.ground(18, 28); g.set(22, 11, 'w'); g.set(24, 8, '?'); g.coins(20, 9, 3);
+    g.ground(33, 44); g.set(38, 11, 'S'); g.plat(38, 5, 5); g.coins(38, 4, 5);
+    g.ground(49, 62); g.set(52, 11, 'C'); g.set(56, 11, 'h'); g.plat(58, 8, 3); g.coins(58, 7, 3);
+    g.set(66, 11, 'M'); g.coins(66, 9, 3);
+    g.ground(74, 90); g.set(78, 11, 'w'); g.set(82, 9, 'b'); g.coins(80, 8, 6); g.set(86, 11, '^');
+    g.ground(94, 110); g.stairs(97, 3); g.set(106, 11, 'F');
+  });
+  S1.hint = 'Press jump again in mid-air for a double jump';
 
-const PAL = [
-  { sky: ['#60a5fa', '#bfdbfe', '#fef9c3'], solid: '#a16207', top: '#86efac', plat: '#d6a56b' },
-  { sky: ['#f97316', '#fdba74', '#fef3c7'], solid: '#7c2d12', top: '#a3e635', plat: '#92400e' },
-  { sky: ['#0f172a', '#312e81', '#6d28d9'], solid: '#312e81', top: '#c4b5fd', plat: '#6366f1' },
-];
-S1.theme = PAL[0]; S2.theme = PAL[1]; S3.theme = PAL[2];
+  const S2 = P.make('2 \u00b7 Windmill Heights', 120, (g) => {
+    g.ground(0, 10); g.set(2, 11, 'P');
+    g.plat(13, 10, 3); g.plat(18, 8, 3); g.plat(23, 6, 3); g.coins(23, 5, 3);
+    g.ground(28, 40, 8); g.set(32, 7, 'w'); g.set(35, 7, 'C');
+    g.set(44, 8, 'M'); g.coins(44, 6, 3);
+    g.ground(52, 66, 8); g.set(55, 7, 'h'); g.set(60, 7, 'w'); g.coins(57, 5, 5); g.set(63, 7, 'S'); g.plat(63, 2, 4); g.coins(63, 1, 4);
+    g.plat(70, 5, 3); g.plat(75, 8, 3); g.plat(80, 10, 3);
+    g.ground(85, 100, 11); g.set(88, 8, 'b'); g.set(92, 10, 's'); g.set(96, 10, 'C'); g.coins(90, 8, 5);
+    g.plat(103, 10, 3); g.plat(108, 9, 3);
+    g.ground(112, 120, 11); g.set(117, 10, 'F');
+  });
+  S2.hint = 'Ride the drifting clouds across the gaps';
 
-function bg(c, cam, t, lvl) {
-  const W = 800, H = 480;
-  A.sky(c, W, H, PAL[lvl].sky);
-  if (lvl === 2) {
-    A.drawStars(c, bg.stars || (bg.stars = A.makeStars(90, W, H * 0.8)), t, W, H, 0.04, '#e0e7ff');
-    c.fillStyle = '#fef3c7'; c.beginPath(); c.arc(600, 90, 34, 0, TAU); c.fill();
-    c.fillStyle = PAL[2].sky[1]; c.beginPath(); c.arc(612, 84, 30, 0, TAU); c.fill();
-    P.clouds(c, cam, t, 0.1, 'rgba(165,180,252,.25)');
-    P.ridge(c, 400, 28, 3, cam.x * 0.25, '#1e1b4b');
-  } else {
-    if (lvl === 0) { c.fillStyle = '#fef08a'; c.beginPath(); c.arc(640, 90, 38, 0, TAU); c.fill(); }
-    P.clouds(c, cam, t, 0.1);
-    P.ridge(c, 360, 30, lvl + 1, cam.x * 0.2, lvl ? '#fb923c' : '#93c5fd');
-    P.ridge(c, 400, 24, lvl + 4, cam.x * 0.4, lvl ? '#b45309' : '#6ee7b7');
-    if (lvl === 1) for (let i = 0; i < 3; i++) {
-      const x = ((i * 520 - cam.x * 0.35) % 1560 + 1560) % 1560 - 100, a = t * 0.03;
-      c.fillStyle = '#7c2d12'; c.beginPath(); c.moveTo(x, 400); c.lineTo(x + 8, 300); c.lineTo(x + 24, 300); c.lineTo(x + 32, 400); c.fill();
-      c.strokeStyle = '#fef3c7'; c.lineWidth = 4; c.beginPath();
-      for (let k = 0; k < 4; k++) { c.moveTo(x + 16, 300); c.lineTo(x + 16 + Math.cos(a + k * 1.571) * 54, 300 + Math.sin(a + k * 1.571) * 54); } c.stroke();
+  const S3 = P.make('3 \u00b7 Starlit Bridge', 120, (g) => {
+    g.ground(0, 12); g.set(2, 11, 'P'); g.coins(6, 10, 4);
+    g.set(17, 11, 'M'); g.set(28, 11, 'M'); g.coins(17, 9, 3); g.coins(28, 9, 3);
+    g.ground(36, 48, 11); g.set(40, 10, 'w'); g.set(44, 10, 'C'); g.coins(38, 8, 5);
+    g.plat(52, 10, 2); g.plat(56, 9, 2); g.plat(60, 8, 2); g.plat(64, 9, 2); g.set(58, 6, 'b');
+    g.ground(68, 82, 11); g.set(71, 10, 'h'); g.set(75, 10, '^'); g.set(76, 10, '^'); g.set(79, 10, 's');
+    g.set(86, 11, 'M'); g.coins(86, 9, 3);
+    g.ground(94, 108, 11); g.set(97, 10, 'w'); g.set(100, 8, 'b'); g.set(103, 10, 'C');
+    g.plat(110, 10, 3);
+    g.ground(114, 120, 11); g.set(117, 10, 'F');
+  });
+  S3.hint = 'Hold Shift while falling to glide on the cape';
+
+  const PAL = [
+    { sky: ['#38bdf8', '#bae6fd', '#fef9c3'], far: '#93c5fd', mid: '#6ee7b7', solid: '#a16207', top: '#86efac', plat: '#d6a56b' },
+    { sky: ['#f59e0b', '#fdba74', '#fef3c7'], far: '#fb923c', mid: '#b45309', solid: '#7c2d12', top: '#a3e635', plat: '#92400e' },
+    { sky: ['#1e1b4b', '#312e81', '#6d28d9'], far: '#312e81', mid: '#4c1d95', solid: '#312e81', top: '#c4b5fd', plat: '#6366f1' },
+    { sky: ['#0ea5e9', '#bfdbfe', '#f0fdf4'], far: '#38bdf8', mid: '#22c55e', solid: '#166534', top: '#86efac', plat: '#a16207' },
+    { sky: ['#312e81', '#7e22ce', '#f0abfc'], far: '#4338ca', mid: '#4c1d95', solid: '#3f3f46', top: '#c084fc', plat: '#52525b' },
+  ];
+  S1.pal = PAL[0]; S2.pal = PAL[1]; S3.pal = PAL[2];
+  const STATIC_ROUTE = [S1, S2, S3];
+  const STORM = { sky: ['#050816', '#0f172a', '#334155'], far: '#1e293b', mid: '#0f172a' };
+
+  function buildRoute(index) {
+    const cols = 126 + Math.min(60, index * 9);
+    const course = P.make('Isle ' + (index + 1), cols, (g) => {
+      g.ground(0, 5, 12); g.set(2, 11, 'P');
+      let x = 6;
+      while (x < cols - 16) {
+        const len = 8 + Math.floor(random() * 8), end = Math.min(cols, x + len);
+        g.ground(x, end, random() < 0.7 ? 12 : 10);
+        if (random() < 0.5) g.set(x + 1 + Math.floor(random() * Math.max(1, len - 3)), 11, random() < 0.45 ? 'w' : 'h');
+        if (index >= 1 && random() < 0.14) g.set(x + Math.max(1, len - 2), 11, 's');
+        if (random() < 0.55) g.coins(x + 1, 9, Math.min(4, Math.max(2, len - 2)), 1);
+        if (random() < 0.32) g.set(x + Math.max(1, len - 2), 11, '?');
+        if (random() < 0.4) g.plat(x + 1, 8, 3);
+        if (random() < 0.26) g.set(x + 1, 7, 'b');
+        if (random() < 0.34) g.set(x + Math.max(1, len - 3), 11, 'M');
+        if (random() < 0.2) g.set(x + 2, 11, 'S');
+        x = end + 3 + Math.floor(random() * 2);
+        if (x < cols - 16 && random() < 0.28) g.set(x - 1, 11, '^');
+      }
+      g.ground(cols - 16, cols, 12);
+      const mid = Math.floor(cols / 2);
+      g.ground(mid - 2, mid + 3, 12); g.set(mid, 11, 'C'); g.coins(mid - 4, 9, 5, 1);
+      g.stairs(cols - 12, 4, 12); g.set(cols - 6, 11, 'F');
+    });
+    course.pal = PAL[(index + (runSeed % PAL.length)) % PAL.length];
+    course.hint = index === 0 ? 'Fresh skies: read the clouds before you leap' : 'The isles keep climbing';
+    return course;
+  }
+
+  /* ---------- world ---------- */
+  function activePal() {
+    const base = (route && route[courseIndex] && route[courseIndex].pal) || PAL[0];
+    if (activeMode === 'storm') return Object.assign({}, base, STORM);
+    if (themeOverride) return Object.assign({}, base, { sky: themeOverride.slice() });
+    return base;
+  }
+  function tile(x, y) { if (x < 0 || x >= cols) return '#'; if (y < 0 || y >= rows) return ' '; return grid[y][x]; }
+  function solid(x, y) { return '#?u'.includes(tile(x, y)); }
+
+  function addEnemy(ch, c, r) {
+    const scale = enemySpeedScale();
+    const d = { w: { w: 26, h: 24, vx: -0.8 }, h: { w: 26, h: 26, vx: 0 }, b: { w: 28, h: 20, vx: 0 }, s: { w: 28, h: 22, vx: -1 } }[ch];
+    const x = c * T + (T - d.w) / 2, y = r * T + T - d.h;
+    en.push({ kind: ch, x, y, w: d.w, h: d.h, vx: d.vx * scale, vy: 0, x0: x, y0: y, t: Math.floor(random() * 60), ground: false, dead: false });
+  }
+  function makePlayer() {
+    return { x: 0, y: 0, w: 20, h: 28, vx: 0, vy: 0, face: 1, ground: false, coy: 0, jb: 0, jl: 0, jumps: 0, gliding: false, inv: 0, hp: hpMax, dead: 0, walk: 0, sq: 0, riding: null, drop: 0, bump: null };
+  }
+  function loadCourse(def) {
+    rows = def.rows.length; cols = def.rows[0].length;
+    plats = []; en = []; check = null; doneT = 0; banner = 150; courseHit = false;
+    grid = def.rows.map((row) => row.split(''));
+    let spawn = { c: 1, r: rows - 4 };
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const ch = grid[r][c];
+      if (ch === 'P') { spawn = { c, r }; grid[r][c] = ' '; }
+      else if ('whbs'.includes(ch)) { addEnemy(ch, c, r); grid[r][c] = ' '; }
+      else if (ch === 'M') { plats.push({ x: c * T, ox: c * T, y: r * T, w: T * 3, h: 12, r: 90, sp: 0.02, t: c * 7, dx: 0 }); grid[r][c] = ' '; }
+    }
+    p = makePlayer();
+    p.x = spawn.c * T + 6; p.y = spawn.r * T + T - p.h; p.hp = hpMax;
+    spawnPoint = { x: p.x, y: p.y };
+    cam = { x: Math.max(0, Math.min(cols * T - W, p.x - W * 0.3)) };
+  }
+  function spawn(fresh) {
+    const s = check || spawnPoint;
+    p = makePlayer();
+    p.x = s.x; p.y = s.y; p.inv = fresh ? 0 : 70; p.hp = hpMax;
+    const target = Math.max(0, Math.min(cols * T - W, p.x + p.w / 2 - W / 2 + p.face * 40));
+    cam.x = target;
+  }
+
+  /* ---------- physics ---------- */
+  function moveBody(b, dx, dy) {
+    let hitX = 0;
+    if (dx) {
+      b.x += dx;
+      const r0 = Math.floor(b.y / T), r1 = Math.floor((b.y + b.h - 0.01) / T);
+      const c = Math.floor((dx > 0 ? b.x + b.w : b.x) / T);
+      for (let r = r0; r <= r1; r++) if (solid(c, r)) { b.x = dx > 0 ? c * T - b.w : (c + 1) * T; hitX = dx > 0 ? 1 : -1; b.vx = 0; break; }
+    }
+    b.ground = false; b.bump = null;
+    b.y += dy;
+    const c0 = Math.floor(b.x / T), c1 = Math.floor((b.x + b.w - 0.01) / T);
+    if (dy > 0) {
+      const r = Math.floor((b.y + b.h) / T), pb = b.y + b.h - dy;
+      for (let c = c0; c <= c1; c++) {
+        if (solid(c, r) || (tile(c, r) === '=' && !(b.drop > 0) && pb <= r * T + 1)) { b.y = r * T - b.h; b.vy = 0; b.ground = true; break; }
+      }
+    } else if (dy < 0) {
+      const r = Math.floor(b.y / T);
+      for (let c = c0; c <= c1; c++) if (solid(c, r)) { b.y = (r + 1) * T; b.vy = 0; b.bump = { c, r }; break; }
+    }
+    return hitX;
+  }
+
+  function hurt(dir) {
+    if (p.inv > 0 || p.dead) return;
+    p.hp--; p.inv = 100; p.vy = -6; p.vx = -dir * 4; runHit = true; courseHit = true;
+    Arcade.G.shake(6); Arcade.G.freeze(4); A.sfx('hurt');
+    Arcade.G.burst(p.x + p.w / 2, p.y + p.h / 2, 12, { color: ['#fff', '#fca5a5'], speed: 4, life: 24 });
+    if (p.hp <= 0) die();
+  }
+  function die() {
+    if (p.dead) return;
+    lives--; runLostLife = true; p.dead = 70; A.sfx('ko'); Arcade.G.shake(10);
+    Arcade.G.burst(p.x + p.w / 2, p.y + p.h / 2, 28, { color: ['#fff', '#fbbf24', '#fb7185'], speed: 5, glow: true, life: 36 });
+  }
+
+  function updEnemy(e) {
+    e.t++;
+    if (e.kind === 'b') { e.x = e.x0 + Math.sin(e.t * 0.02) * 90; e.y = e.y0 + Math.sin(e.t * 0.05) * 24; e.vx = Math.cos(e.t * 0.02); return; }
+    e.vy = Math.min(e.vy + 0.5, 10);
+    if (e.kind === 'h') {
+      if (e.ground) { e.vx = 0; if (e.t % 75 === 0) { e.vy = -8.5 * Math.min(1.4, enemySpeedScale()); e.vx = (p.x < e.x ? -1.6 : 1.6) * enemySpeedScale(); } }
+    } else if (e.ground) {
+      const fx = Math.floor((e.vx > 0 ? e.x + e.w + 2 : e.x - 2) / T), fr = Math.floor((e.y + e.h + 4) / T);
+      if (!solid(fx, fr) && tile(fx, fr) !== '=') e.vx = -e.vx;
+    }
+    const sp = e.vx;
+    moveBody(e, e.vx, e.vy);
+    if (e.kind !== 'h' && e.vx === 0) e.vx = -sp;
+    if (e.y > rows * T + 120) e.dead = true;
+  }
+
+  function reportCourse(abs) {
+    if (window.Apex && Apex.report) Apex.report({ gameId: GAME_ID, type: 'level_complete', level: abs, score: Arcade.G.score, mode: activeMode });
+  }
+  function recordCourse(abs) {
+    const s = statsOf();
+    const patch = { coursesCleared: (Number(s.coursesCleared) || 0) + 1, bestCourses: Math.max(Number(s.bestCourses) || 0, abs) };
+    if (activeMode === 'campaign') {
+      if (abs >= 3) { patch.campaignStage = 1; patch.campaignLives = MODES.campaign.lives; patch.campaignClears = (Number(s.campaignClears) || 0) + 1; }
+      else { patch.campaignStage = abs + 1; patch.campaignLives = lives; }
+    }
+    if (activeMode === 'endless') patch.endlessBest = Math.max(Number(s.endlessBest) || 0, abs);
+    if (activeMode === 'daily') patch.dailyCourses = Math.max(Number(s.dailyCourses) || 0, abs);
+    if (activeMode === 'storm') patch.stormBest = Math.max(Number(s.stormBest) || 0, abs);
+    savePatch(patch);
+  }
+  function recordRun(win) {
+    const s = statsOf(), d = new Date();
+    const day = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const patch = {
+      runs: (Number(s.runs) || 0) + 1,
+      coinsTotal: (Number(s.coinsTotal) || 0) + coins,
+      bestCourses: Math.max(Number(s.bestCourses) || 0, maxCourse),
+    };
+    if (activeMode === 'endless') patch.endlessBest = Math.max(Number(s.endlessBest) || 0, maxCourse);
+    if (activeMode === 'storm' && win) patch.stormfrontClears = (Number(s.stormfrontClears) || 0) + 1;
+    const extra = {};
+    if (activeMode === 'daily') {
+      patch.dailyBest = Math.max(Number(s.dailyBest) || 0, Arcade.G.score);
+      extra.daily = { day: day, best: Math.max(Arcade.G.score, Number((Save.load(GAME_ID).daily || {}).best) || 0) };
+    }
+    savePatch(patch, extra);
+  }
+
+  function completeCourse() {
+    if (!p || p.dead || doneT > 0 || Arcade.G.state !== 'playing') return;
+    const abs = absoluteCourse();
+    reportCourse(abs);
+    recordCourse(abs);
+    maxCourse = Math.max(maxCourse, abs);
+    if (abs === 1) unlock('first-hop');
+    if (!courseHit) unlock('perfect-isle');
+    if (coins >= 50) unlock('coin-cloud');
+    if (totalCrates >= 5) unlock('crate-catcher');
+    if (doubleJumps >= 20) unlock('double-jumper');
+    if (activeMode === 'daily' && abs >= 3) unlock('daily-drift');
+    if (activeMode === 'endless' && abs >= 6) unlock('endless-six');
+    if (activeMode === 'storm' && abs >= 3) unlock('storm-clear');
+    if (activeMode === 'storm' && abs >= 3 && !runHit) unlock('untouchable');
+    if (activeMode === 'campaign' && abs >= 3) unlock('all-isles');
+    if (activeMode === 'campaign' && abs >= 3 && !runLostLife) unlock('no-loss');
+    const timeBonus = timerMode ? Math.max(0, Math.floor(timer)) * 10 : 0;
+    const bonus = 500 + p.hp * 100 + timeBonus;
+    award(bonus);
+    Arcade.G.popup(W / 2, 210, 'ISLE ' + abs + ' CLEAR  +' + Math.round(bonus * modeMult()), '#fde047', 20);
+    Arcade.G.ring(p.x + p.w / 2, p.y + p.h / 2, '#fde047', 120, 26);
+    A.sfx('clear');
+    if (timerMode) timer += 15;
+    doneT = 90;
+  }
+
+  function finishRun(win, reason) {
+    if (runRecorded) return;
+    runRecorded = true;
+    recordRun(win);
+    const G = Arcade.G;
+    if (win) {
+      if (activeMode === 'campaign') G.win('Sky Cleared!', 'All three isles \u00b7 score ' + G.score);
+      else if (activeMode === 'daily') G.win('Daily Drift Complete!', 'Seed ' + runSeed + ' \u00b7 score ' + G.score);
+      else if (activeMode === 'storm') G.win('Stormfront Cleared!', 'One life, three isles \u00b7 score ' + G.score);
+      else if (activeMode === 'dash') G.win('Breeze Delivered!', 'Time left ' + Math.max(0, Math.floor(timer)) + 's \u00b7 score ' + G.score);
+      else G.win('Ascent Complete!', 'Score ' + G.score);
+    } else {
+      G.over(reason || 'The Clouds Took You', 'Reached isle ' + absoluteCourse() + ' \u00b7 ' + MODE_LABEL[activeMode]);
     }
   }
-}
 
-/* Pip the frog: big eyes, yellow belly, legs that stretch in the air */
-function drawPip(c, p, G) {
-  const cx = p.x + p.w / 2, base = p.y + p.h, f = p.face, air = !p.ground, run = p.ground ? Math.sin(p.walk) : 0;
-  A.shadow(c, cx, base + 1, 11, 3, 0.25);
-  c.save(); c.translate(cx, base); c.scale(f * (1 + p.sq * 0.5), 1 - p.sq * 0.5);
-  c.fillStyle = '#15803d';
-  if (air) { c.fillRect(-9, -8, 5, 8); c.fillRect(4, -8, 5, 8); c.fillRect(-12, -3, 7, 4); }
-  else { c.fillRect(-9 + run * 3, -6, 6, 6); c.fillRect(3 - run * 3, -6, 6, 6); }
-  c.fillStyle = '#22c55e'; A.roundRect(c, -10, -22, 20, 17, 8); c.fill();
-  c.fillStyle = '#fef08a'; c.beginPath(); c.ellipse(1, -10, 6, 5, 0, 0, TAU); c.fill();
-  c.fillStyle = '#22c55e'; c.beginPath(); c.arc(-2, -25, 6, 0, TAU); c.arc(8, -25, 6, 0, TAU); c.fill();
-  c.fillStyle = '#fff'; c.beginPath(); c.arc(-2, -25, 4.2, 0, TAU); c.arc(8, -25, 4.2, 0, TAU); c.fill();
-  c.fillStyle = '#111'; c.beginPath(); c.arc(-1, -25, 2, 0, TAU); c.arc(9, -25, 2, 0, TAU); c.fill();
-  c.strokeStyle = '#166534'; c.lineWidth = 1.6; c.beginPath(); c.arc(4, -16, 5, 0.2, Math.PI - 0.2); c.stroke();
-  c.strokeStyle = '#f43f5e'; c.lineWidth = 3; c.lineCap = 'round'; c.beginPath(); c.moveTo(-8, -17); c.lineTo(-16, -15 + Math.sin(G.clock * 0.3) * 2); c.stroke();
-  c.restore();
-}
+  function advanceAfterClear() {
+    const abs = absoluteCourse();
+    if (activeMode === 'campaign' && abs >= 3) return finishRun(true);
+    if (activeMode === 'storm' && abs >= 3) return finishRun(true);
+    if (activeMode === 'daily' && courseIndex + 1 >= route.length) return finishRun(true);
+    if (activeMode === 'dash' && courseIndex + 1 >= route.length) return finishRun(true);
+    if (activeMode === 'endless') { courseIndex++; route.push(buildRoute(courseIndex)); loadCourse(route[courseIndex]); return; }
+    if (courseIndex + 1 < route.length) { courseIndex++; loadCourse(route[courseIndex]); return; }
+    finishRun(true);
+  }
 
-P.game({
-  id: 'cloudhop-pip', title: 'Cloudhop Pip', subtitle: 'Double-jump across the sky isles', color: '#4ade80',
-  controls: [['\u2190 \u2192  /  A D', 'Run'], ['Space  /  \u2191  /  W', 'Jump \u2014 press again for a double jump'], ['\u2193 + Jump', 'Drop through thin platforms'], ['Moving platforms', 'Ride them across gaps'], ['Land on enemies', 'Stomp them (spikes hurt)']],
-  help: '\u2190 \u2192 or A D run \u00b7 Space, \u2191 or W jump, press again in mid-air to double jump \u00b7 \u2193 + jump drops through thin platforms \u00b7 ride moving platforms \u00b7 stomp enemies, avoid spikes \u00b7 reach the flag',
-  levels: [S1, S2, S3], bg, drawHero: drawPip, winTitle: 'Sky Cleared!',
-  phys: { jumps: 2, run: 3.6, jump: 10.2, grav: 0.5, cut: 0.5 },
-});
+  /* ---------- input and update ---------- */
+  function update(G) {
+    G.hudL = 'SCORE ' + G.score + ' \u00b7 COINS ' + coins + ' \u00b7 ISLE ' + absoluteCourse() + '/' + courseTotalLabel();
+    G.hudR = '\u2665'.repeat(Math.max(0, p.hp)) + '  LIVES ' + lives + ' \u00b7 ' + MODE_LABEL[activeMode];
+    if (banner > 0) banner--;
+    for (const m of plats) { const ox = m.x; m.t++; m.x = m.ox + Math.sin(m.t * m.sp) * m.r; m.dx = m.x - ox; }
+    if (doneT > 0) { followCam(); if (--doneT === 0) advanceAfterClear(); return; }
+    if (p.dead > 0) {
+      followCam();
+      if (--p.dead === 0) { if (lives <= 0) finishRun(false); else spawn(false); }
+      return;
+    }
+    if (timerMode) {
+      if (timer <= 0) { finishRun(false, 'Out of Time'); return; }
+      if (G.t % 60 === 0) { timer--; if (timer <= 0) { finishRun(false, 'Out of Time'); return; } }
+    }
+    const ax = A.axisX(), jh = A.held('Space', 'ArrowUp', 'KeyW', 'KeyZ'), jp = A.hit('Space', 'ArrowUp', 'KeyW', 'KeyZ');
+    const glideHeld = A.held('ShiftLeft', 'ShiftRight', 'KeyJ', 'KeyK');
+    if (ax) p.face = ax;
+    p.vx = A.approach(p.vx, ax * 3.6, ax ? (p.ground ? 0.45 : 0.3) : (p.ground ? 0.55 : 0.12));
+    p.coy = p.ground ? 6 : p.coy - 1;
+    p.jb = jp ? 7 : p.jb - 1;
+    if (p.ground) p.jumps = 0;
+    p.gliding = false;
+    if (jp && A.held('ArrowDown', 'KeyS') && p.ground) { p.drop = 8; p.jb = 0; }
+    if (p.jb > 0 && p.coy > 0) {
+      p.vy = -10.8; p.jb = 0; p.coy = 0; p.jumps = 1; p.sq = -0.3; A.sfx('jump');
+      G.burst(p.x + p.w / 2, p.y + p.h, 5, { color: '#fff', speed: 1.6, life: 14, size: 2, angle: -Math.PI / 2, spread: 1.3, grav: 0.05 });
+    } else if (p.jb > 0 && !p.ground && p.jumps === 1) {
+      p.vy = -9.4; p.jb = 0; p.jumps = 2; p.sq = -0.34; doubleJumps++;
+      A.sfx('jump2');
+      G.ring(p.x + p.w / 2, p.y + p.h / 2, '#86efac', 44, 16);
+      G.burst(p.x + p.w / 2, p.y + p.h, 6, { color: ['#fff', '#86efac'], speed: 2, life: 16, size: 2, angle: -Math.PI / 2, spread: 1.2 });
+      if (doubleJumps >= 20) unlock('double-jumper');
+    }
+    if (!jh && p.vy < -3) p.vy *= 0.45;
+    p.vy = Math.min(p.vy + 0.52, 12);
+    if (glideHeld && !p.ground && p.vy > 0 && p.jumps > 0) { p.vy = Math.min(p.vy, 2.2); p.gliding = true; }
+    const wasG = p.ground;
+    if (p.riding) moveBody(p, p.riding.dx, 0);
+    moveBody(p, p.vx, p.vy);
+    p.riding = null;
+    if (p.vy >= 0) for (const m of plats) {
+      if (p.x + p.w > m.x + 2 && p.x < m.x + m.w - 2) {
+        const fb = p.y + p.h;
+        if (fb >= m.y - 4 && fb <= m.y + 14 && !(p.drop > 0)) { p.y = m.y - p.h; p.vy = 0; p.ground = true; p.riding = m; break; }
+      }
+    }
+    if (wasG && !p.ground && p.jumps === 0) p.jumps = 1;
+    if (p.drop > 0) p.drop--;
+    if (p.inv > 0) p.inv--;
+    p.sq *= 0.8;
+    if (p.ground && !wasG) { A.sfx('land'); p.sq = 0.35; G.burst(p.x + p.w / 2, p.y + p.h, 4, { color: '#e2e8f0', speed: 1.4, life: 12, size: 2, angle: -Math.PI / 2, spread: 1.4 }); }
+    if (p.ground) p.walk += Math.abs(p.vx) * 0.13;
+    if (p.bump) {
+      const { c, r } = p.bump; p.bump = null;
+      if (grid[r][c] === '?') {
+        grid[r][c] = 'u'; totalCrates++; coins++; G.addScore(100); A.sfx('coin');
+        G.popup(c * T + T / 2, r * T - 6, '+100', '#fde047'); G.burst(c * T + T / 2, r * T, 8, { color: ['#fde047', '#fff'], speed: 3, life: 22, glow: true });
+        if (totalCrates >= 5) unlock('crate-catcher');
+      } else A.sfx('thud');
+    }
+    const x0 = Math.floor((p.x + 3) / T), x1 = Math.floor((p.x + p.w - 3) / T), y0 = Math.floor((p.y + 3) / T), y1 = Math.floor((p.y + p.h - 1) / T);
+    for (let r = y0; r <= y1; r++) for (let c = x0; c <= x1; c++) {
+      const ch = tile(c, r);
+      if (ch === 'o') {
+        grid[r][c] = ' '; coins++; G.addScore(50); A.sfx('coin');
+        G.burst(c * T + T / 2, r * T + T / 2, 6, { color: ['#fde047', '#fff'], speed: 2.5, life: 16, size: 2, glow: true });
+        if (coins >= 50) unlock('coin-cloud');
+      } else if (ch === '^') { if (p.y + p.h > r * T + 14) { hurt(p.vx >= 0 ? 1 : -1); p.vy = -7; } }
+      else if (ch === 'S') {
+        if (p.vy >= 0 && p.y + p.h > r * T + 14) { p.vy = -16; p.jumps = 1; p.sq = -0.4; A.sfx('bounce'); unlock('spring-step'); G.ring(c * T + T / 2, r * T + 20, springColor, 40, 16); }
+      } else if (ch === '>') {
+        if (Math.abs(p.vx) < 6) A.sfx('dash');
+        p.vx = p.face * Math.max(Math.abs(p.vx), 5.6);
+      } else if (ch === 'C') {
+        check = { x: c * T + 6, y: r * T + T - p.h }; grid[r][c] = 'c'; A.sfx('power'); unlock('checkpoint');
+        G.popup(c * T + T / 2, r * T - 30, 'CHECKPOINT', '#86efac', 14); G.ring(c * T + T / 2, r * T, '#86efac', 60, 24);
+      } else if (ch === 'F') { completeCourse(); return; }
+    }
+    if (p.y > rows * T + 60) die();
+    for (const e of en) {
+      if (e.dead) continue;
+      updEnemy(e);
+      if (p.dead || !A.overlap({ x: p.x + 2, y: p.y + 2, w: p.w - 4, h: p.h - 2 }, e)) continue;
+      if (p.vy > 0.5 && p.y + p.h - e.y < 18 && e.kind !== 's') {
+        e.dead = true; p.vy = jh ? -11 : -8; p.jumps = 1; G.addScore(100); A.sfx('hit'); G.freeze(3);
+        G.popup(e.x + e.w / 2, e.y - 8, '+100', '#fff'); G.burst(e.x + e.w / 2, e.y + e.h / 2, 12, { color: ['#fff', '#fbbf24'], speed: 3.5, life: 22 });
+      } else if (p.inv <= 0) hurt(e.x + e.w / 2 > p.x + p.w / 2 ? 1 : -1);
+    }
+    en = en.filter((e) => !e.dead);
+    if (G.score >= 10000) unlock('score-10000');
+    followCam();
+  }
+
+  function followCam() {
+    if (!p) return;
+    const target = Math.max(0, Math.min(cols * T - W, p.x + p.w / 2 - W / 2 + p.face * 40));
+    cam.x += (target - cam.x) * 0.12;
+  }
+
+  /* ---------- drawing ---------- */
+  function drawBackdrop(c, G) {
+    const theme = activePal(), t = G.clock;
+    A.sky(c, W, H, theme.sky);
+    const night = theme.sky[0] === '#1e1b4b' || theme.sky[0] === '#0b0716' || activeMode === 'storm';
+    if (night) A.drawStars(c, starsCache || (starsCache = A.makeStars(90, W, H * 0.8)), t, W, H, 0.04, '#e0e7ff');
+    c.save(); c.globalAlpha = 0.9; c.fillStyle = activeMode === 'storm' ? '#e0e7ff' : '#fff7d6';
+    c.beginPath(); c.arc(640 - cam.x * 0.02, night ? 82 : 96, night ? 30 : 38, 0, TAU); c.fill();
+    if (night) { c.fillStyle = theme.sky[0]; c.beginPath(); c.arc(628 - cam.x * 0.02, 76, 28, 0, TAU); c.fill(); }
+    c.restore();
+    P.ridge(c, 330, 30, 1, cam.x * 0.2, theme.far);
+    P.ridge(c, 380, 26, 4, cam.x * 0.45, theme.mid);
+    P.clouds(c, cam, t, 0.1, activeMode === 'storm' ? 'rgba(148,163,184,.25)' : 'rgba(255,255,255,.75)');
+  }
+
+  function drawTiles(c, G) {
+    const c0 = Math.max(0, Math.floor(cam.x / T)), c1 = Math.min(cols - 1, Math.floor((cam.x + W) / T));
+    const r0 = Math.max(0, Math.floor(0 / T)), r1 = Math.min(rows - 1, Math.floor(H / T)), t = G.clock;
+    const theme = activePal();
+    for (let r = r0; r <= r1; r++) for (let q = c0; q <= c1; q++) {
+      const ch = grid[r][q]; if (ch === ' ') continue;
+      const x = q * T, y = r * T;
+      if (ch === '#') {
+        c.fillStyle = theme.solid; c.fillRect(x, y, T, T);
+        c.fillStyle = 'rgba(0,0,0,.18)'; c.fillRect(x, y + T - 4, T, 4); c.fillRect(x + T - 3, y, 3, T);
+        c.fillStyle = 'rgba(255,255,255,.08)'; c.fillRect(x, y, T, 2);
+        if (!solid(q, r - 1)) {
+          c.fillStyle = theme.top; c.fillRect(x, y, T, 8);
+          c.fillStyle = A.shade(theme.top, 0.3); c.fillRect(x, y, T, 3);
+          c.fillStyle = A.shade(theme.top, -0.3); c.fillRect(x, y + 8, T, 2);
+        }
+      } else if (ch === '=') {
+        c.fillStyle = A.shade(theme.plat, -0.35); c.fillRect(x, y + 4, T, 8);
+        c.fillStyle = theme.plat; c.fillRect(x, y, T, 8); c.fillStyle = A.shade(theme.plat, 0.3); c.fillRect(x, y, T, 2);
+      } else if (ch === '?' || ch === 'u') {
+        const col = ch === '?' ? A.shade(theme.plat, 0.25) : A.shade(theme.solid, -0.2);
+        c.fillStyle = A.shade(col, -0.35); A.roundRect(c, x + 1, y + 2, T - 2, T - 2, 5); c.fill();
+        c.fillStyle = col; A.roundRect(c, x + 1, y + 1, T - 2, T - 4, 5); c.fill();
+        if (ch === '?') A.text(c, '?', x + T / 2, y + T / 2 + 6, 19, '#7c4a03', 'center', '800');
+      } else if (ch === '^') {
+        for (let i = 0; i < 2; i++) {
+          c.fillStyle = '#e2e8f0'; c.beginPath(); c.moveTo(x + i * 16, y + T); c.lineTo(x + i * 16 + 8, y + 10); c.lineTo(x + i * 16 + 16, y + T); c.fill();
+          c.fillStyle = '#94a3b8'; c.beginPath(); c.moveTo(x + i * 16 + 8, y + 10); c.lineTo(x + i * 16 + 16, y + T); c.lineTo(x + i * 16 + 8, y + T); c.fill();
+        }
+      } else if (ch === 'o') {
+        const sx = Math.abs(Math.cos(t * 0.06 + q)), cy = y + T / 2 + Math.sin(t * 0.05 + q) * 2;
+        c.save(); c.shadowColor = coinColor; c.shadowBlur = 8;
+        c.fillStyle = coinColor; c.beginPath(); c.ellipse(x + T / 2, cy, 8 * sx + 1.5, 9, 0, 0, TAU); c.fill(); c.restore();
+        c.fillStyle = A.shade(coinColor, 0.45); c.beginPath(); c.ellipse(x + T / 2, cy, 4 * sx + 0.8, 5, 0, 0, TAU); c.fill();
+      } else if (ch === 'S') {
+        c.strokeStyle = '#cbd5e1'; c.lineWidth = 3;
+        c.beginPath(); for (let i = 0; i < 4; i++) { const yy = y + T - 3 - i * 5; c.moveTo(x + 8, yy); c.lineTo(x + T - 8, yy - 2); } c.stroke();
+        c.fillStyle = springColor; A.roundRect(c, x + 4, y + 10, T - 8, 6, 3); c.fill();
+      } else if (ch === '>') {
+        c.save(); c.globalAlpha = 0.6 + 0.4 * Math.sin(t * 0.2 + q); c.fillStyle = '#22d3ee'; c.shadowColor = '#22d3ee'; c.shadowBlur = 8;
+        for (let i = 0; i < 2; i++) { c.beginPath(); c.moveTo(x + 4 + i * 12, y + T - 18); c.lineTo(x + 14 + i * 12, y + T - 10); c.lineTo(x + 4 + i * 12, y + T - 2); c.lineTo(x + 8 + i * 12, y + T - 10); c.fill(); }
+        c.restore();
+      } else if (ch === 'C' || ch === 'c') {
+        c.fillStyle = '#e2e8f0'; c.fillRect(x + 14, y - T + 8, 3, T * 2 - 8);
+        c.fillStyle = ch === 'c' ? '#4ade80' : '#94a3b8';
+        const w = Math.sin(t * 0.1) * 2; c.beginPath(); c.moveTo(x + 17, y - T + 10); c.lineTo(x + 34 + w, y - T + 16); c.lineTo(x + 17, y - T + 22); c.fill();
+      } else if (ch === 'F') {
+        c.save(); c.shadowColor = '#fde047'; c.shadowBlur = 16;
+        c.fillStyle = '#e2e8f0'; c.fillRect(x + 14, y - 2 * T, 4, T * 3);
+        c.fillStyle = '#fde047'; const w = Math.sin(t * 0.12) * 3;
+        c.beginPath(); c.moveTo(x + 18, y - 2 * T + 2); c.lineTo(x + 46 + w, y - 2 * T + 14); c.lineTo(x + 18, y - 2 * T + 26); c.fill(); c.restore();
+      }
+    }
+  }
+
+  function drawEnemy(c, e, G) {
+    const cx = e.x + e.w / 2, cy = e.y + e.h / 2, d = e.vx < 0 ? -1 : 1, t = G.clock;
+    A.shadow(c, cx, e.y + e.h + 1, e.w * 0.45, 3, 0.25);
+    if (e.kind === 'b') {
+      const fl = Math.sin(t * 0.35) * 8;
+      c.fillStyle = '#6d28d9'; c.beginPath(); c.moveTo(cx - 4, cy); c.lineTo(cx - 20, cy - fl - 4); c.lineTo(cx - 12, cy + 6); c.fill();
+      c.beginPath(); c.moveTo(cx + 4, cy); c.lineTo(cx + 20, cy - fl - 4); c.lineTo(cx + 12, cy + 6); c.fill();
+      c.fillStyle = '#7c3aed'; c.beginPath(); c.arc(cx, cy, 9, 0, TAU); c.fill();
+    } else {
+      const col = e.kind === 'h' ? '#22c55e' : e.kind === 's' ? '#94a3b8' : '#ef4444';
+      c.fillStyle = A.shade(col, -0.3); c.beginPath(); c.ellipse(cx, e.y + e.h - 3, e.w / 2, 5, 0, 0, TAU); c.fill();
+      c.fillStyle = col; c.beginPath(); c.ellipse(cx, cy, e.w / 2, e.h / 2, 0, Math.PI, 0); c.lineTo(cx + e.w / 2, e.y + e.h - 3); c.lineTo(cx - e.w / 2, e.y + e.h - 3); c.fill();
+      if (e.kind === 's') { c.fillStyle = '#e2e8f0'; for (let i = -1; i <= 1; i++) { c.beginPath(); c.moveTo(cx + i * 8 - 4, e.y + 4); c.lineTo(cx + i * 8, e.y - 5); c.lineTo(cx + i * 8 + 4, e.y + 4); c.fill(); } }
+    }
+    c.fillStyle = '#fff'; c.beginPath(); c.arc(cx - 5, cy - 2, 3.5, 0, TAU); c.arc(cx + 5, cy - 2, 3.5, 0, TAU); c.fill();
+    c.fillStyle = '#111'; c.beginPath(); c.arc(cx - 5 + d * 1.2, cy - 2, 1.6, 0, TAU); c.arc(cx + 5 + d * 1.2, cy - 2, 1.6, 0, TAU); c.fill();
+  }
+
+  function drawPip(c, px, G) {
+    const cx = px.x + px.w / 2, base = px.y + px.h, f = px.face, t = G.clock;
+    const run = px.ground ? Math.sin(px.walk) : 0, air = !px.ground;
+    A.shadow(c, cx, base + 1, 11, 3, 0.25);
+    if (px.gliding) {
+      c.fillStyle = 'rgba(103,232,249,.28)';
+      c.beginPath(); c.ellipse(cx - f * 13, base - 14, 15, 8, -f * 0.35, 0, TAU); c.fill();
+    }
+    c.save(); c.translate(cx, base); c.scale(f * (1 + px.sq * 0.5), 1 - px.sq * 0.5);
+    c.fillStyle = A.shade(pip.body, -0.3);
+    if (air) { c.fillRect(-9, -8, 5, 8); c.fillRect(4, -8, 5, 8); c.fillRect(-12, -3, 7, 4); }
+    else { c.fillRect(-9 + run * 3, -6, 6, 6); c.fillRect(3 - run * 3, -6, 6, 6); }
+    c.fillStyle = pip.body; A.roundRect(c, -10, -22, 20, 17, 8); c.fill();
+    c.fillStyle = pip.belly; c.beginPath(); c.ellipse(1, -10, 6, 5, 0, 0, TAU); c.fill();
+    c.fillStyle = pip.body; c.beginPath(); c.arc(-2, -25, 6, 0, TAU); c.arc(8, -25, 6, 0, TAU); c.fill();
+    c.fillStyle = '#fff'; c.beginPath(); c.arc(-2, -25, 4.2, 0, TAU); c.arc(8, -25, 4.2, 0, TAU); c.fill();
+    c.fillStyle = '#111'; c.beginPath(); c.arc(-1 + f * 1.2, -25, 2, 0, TAU); c.arc(9 + f * 1.2, -25, 2, 0, TAU); c.fill();
+    c.strokeStyle = '#166534'; c.lineWidth = 1.6; c.beginPath(); c.arc(4, -16, 5, 0.2, Math.PI - 0.2); c.stroke();
+    c.strokeStyle = trailColor; c.lineWidth = 3.4; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(-8, -18); c.lineTo(-15, -16 + Math.sin(t * 0.3) * 2 - (air ? 3 : 0)); c.stroke();
+    c.fillStyle = trailColor; A.roundRect(c, -12, -21, 5, 4, 2); c.fill();
+    c.restore();
+    if (px.gliding) {
+      c.strokeStyle = 'rgba(226,232,240,.5)'; c.lineWidth = 1.5;
+      c.beginPath(); c.moveTo(cx - 16, base - 12); c.quadraticCurveTo(cx - 26, base - 6, cx - 30, base - 18); c.stroke();
+    }
+  }
+
+  function drawTimer(c, G) {
+    if (!timerMode) return;
+    const m = Math.floor(Math.max(0, timer) / 60), s = Math.max(0, timer) % 60;
+    const col = timer <= 20 && Math.floor(G.clock / 15) % 2 ? '#fb7185' : '#67e8f9';
+    c.save(); c.fillStyle = 'rgba(5,7,15,.6)'; A.roundRect(c, W / 2 - 62, 36, 124, 30, 10); c.fill();
+    c.strokeStyle = A.alpha(col, 0.7); c.lineWidth = 1.5; A.roundRect(c, W / 2 - 62, 36, 124, 30, 10); c.stroke(); c.restore();
+    A.text(c, 'TIME ' + m + ':' + String(s).padStart(2, '0'), W / 2, 57, 17, col, 'center', '800', A.MONO);
+  }
+
+  function draw(G, c) {
+    drawBackdrop(c, G);
+    c.save(); c.translate(-Math.round(cam.x), 0);
+    drawTiles(c, G);
+    const theme = activePal();
+    for (const m of plats) {
+      c.save(); c.shadowColor = 'rgba(255,255,255,.45)'; c.shadowBlur = 10;
+      c.fillStyle = 'rgba(255,255,255,.85)'; A.roundRect(c, m.x, m.y, m.w, m.h, 6); c.fill(); c.restore();
+      c.fillStyle = A.shade(theme.plat, 0.2); A.roundRect(c, m.x + 4, m.y + 1, m.w - 8, 3, 2); c.fill();
+    }
+    for (const e of en) drawEnemy(c, e, G);
+    if (p && !p.dead && !(p.inv > 0 && Math.floor(p.inv / 4) % 2)) drawPip(c, p, G);
+    G.drawFX(c);
+    c.restore();
+    A.vignette(c, W, H, 0.3);
+    drawTimer(c, G);
+    if (banner > 0 && G.state === 'playing' && doneT === 0) {
+      const course = route[courseIndex] || {};
+      c.save(); c.globalAlpha = Math.min(1, banner / 40);
+      c.fillStyle = 'rgba(5,7,15,.5)'; A.roundRect(c, W / 2 - 230, 74, 460, 62, 16); c.fill();
+      A.glowText(c, course.name || 'Cloudhop Pip', W / 2, 104, 30, activeMode === 'storm' ? '#c4b5fd' : '#fde68a', 'center', 14);
+      if (course.hint) A.text(c, course.hint, W / 2, 128, 14, '#e6e9f5', 'center', '600');
+      c.restore();
+    }
+    if (doneT > 0) A.glowText(c, 'ISLE CLEAR!', W / 2, 190, 38, '#fde047', 'center', 20);
+  }
+
+  /* ---------- lifecycle ---------- */
+  function init(G) {
+    runSeed = activeMode === 'daily' ? dailySeed() : (FORCED_SEED || (((Date.now() & 0x7fffffff) ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0) || 1);
+    rngState = runSeed;
+    const cfg = modeCfg(), saved = window.Save && Save.load ? Save.load(GAME_ID) : {}, stats = saved.stats || {};
+    lives = cfg.lives; hpMax = cfg.hp; timerMode = cfg.timer > 0; timer = cfg.timer;
+    coins = 0; totalCrates = 0; doubleJumps = 0; runRecorded = false; runHit = false; runLostLife = false; maxCourse = 0; doneT = 0; check = null; courseOffset = 0; courseIndex = 0;
+    if (activeMode === 'campaign') {
+      const stage = Math.max(1, Math.min(3, Number(stats.campaignStage) || 1));
+      courseOffset = stage - 1;
+      route = STATIC_ROUTE.slice(courseOffset);
+      if (stage > 1) lives = Math.max(1, Math.min(cfg.lives, Number(stats.campaignLives) || cfg.lives));
+    } else if (activeMode === 'daily') {
+      route = [buildRoute(0), buildRoute(1), buildRoute(2)];
+    } else if (activeMode === 'endless') {
+      route = [buildRoute(0)];
+    } else {
+      route = STATIC_ROUTE.slice();
+    }
+    loadCourse(route[0]);
+    lastInitMode = activeMode;
+  }
+
+  const pipGame = Arcade.game({
+    id: GAME_ID, title: 'Cloudhop Pip', subtitle: 'Double-jump across the sky isles', color: '#4ade80',
+    controls: [['\u2190 \u2192  /  A D', 'Run'], ['Space  /  \u2191  /  W', 'Jump \u2014 press again for a double jump'], ['Shift', 'Hold while falling to glide'], ['\u2193 + Jump', 'Drop through thin platforms'], ['Land on enemies', 'Stomp them (spikes hurt)'], ['Reach the flag', 'Checkpoints save your spot']],
+    help: '\u2190 \u2192 or A D run \u00b7 Space, \u2191 or W jump, press again in mid-air to double jump \u00b7 hold Shift while falling to glide \u00b7 \u2193 + jump drops through thin platforms \u00b7 ride moving clouds \u00b7 stomp enemies, avoid spikes \u00b7 reach the flag',
+    w: W, h: H, touchL: [['\u25c0', 'ArrowLeft'], ['\u25b6', 'ArrowRight']], touchR: [['\u25b2', 'ArrowUp'], ['\u25cf', 'Space'], ['\u2726', 'ShiftLeft']],
+    init, update, draw,
+  });
+  const originalShake = pipGame.shake.bind(pipGame);
+  pipGame.shake = (amount) => originalShake(amount * shakeScale);
+
+  function applyCosmetic(slot, id) {
+    const key = String(id || '').split(':').pop();
+    if (slot === 'skin') {
+      if (key.includes('lilac')) pip = { body: '#a78bfa', belly: '#f5d0fe' };
+      else if (key.includes('sunset')) pip = { body: '#fb923c', belly: '#fde68a' };
+      else if (key.includes('midnight')) pip = { body: '#312e81', belly: '#c7d2fe' };
+      else pip = { body: '#22c55e', belly: '#fef08a' };
+    } else if (slot === 'palette') {
+      if (key.includes('cloud')) { coinColor = '#bae6fd'; springColor = '#67e8f9'; }
+      else if (key.includes('sunrise')) { coinColor = '#fdba74'; springColor = '#fb7185'; }
+      else if (key.includes('star')) { coinColor = '#c4b5fd'; springColor = '#a78bfa'; }
+      else { coinColor = '#fde047'; springColor = '#f472b6'; }
+    } else if (slot === 'trail') {
+      trailColor = key.includes('aurora') ? '#67e8f9' : key.includes('gold') ? '#fde047' : key.includes('mint') ? '#6ee7b7' : '#f43f5e';
+    } else if (slot === 'theme') {
+      themeOverride = key.includes('dawn') ? ['#0b1a2b', '#1d4ed8', '#93c5fd']
+        : key.includes('orchard') ? ['#14532d', '#4ade80', '#fef9c3']
+        : key.includes('starfall') ? ['#0b0716', '#4c1d95', '#f0abfc']
+        : null;
+    }
+  }
+
+  pipGame.ui = UI.mountGame(pipGame, {
+    id: GAME_ID, title: 'Cloudhop Pip', subtitle: 'Hop between drifting clouds and find the safe route.', accent: '#4ade80',
+    modes: [
+      { id: 'campaign', name: 'Campaign', blurb: 'Three sky isles, three lives, and a saved checkpoint.', seasonTargets: [2400, 5000, 8000] },
+      { id: 'dash', name: 'Breeze Dash', blurb: 'Race the wind across all three isles.', seasonTargets: [2600, 5200, 8800] },
+      { id: 'daily', name: 'Daily Drift', blurb: 'The same seeded sky route for everyone today.', seeded: true, seasonTargets: [3000, 6000, 10000] },
+      { id: 'endless', name: 'Endless Ascent', blurb: 'Procedural isles that climb higher and wider.', seasonTargets: [3200, 7000, 12000] },
+      { id: 'storm', name: 'Stormfront', blurb: 'One life, faster gusts, and a 1.5\u00d7 score bonus.', lockedHint: 'Clear 3 isles to unlock', requires: { stat: 'coursesCleared', gte: 3 }, seasonTargets: [3200, 6500, 11000] },
+    ],
+    settings: [
+      { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
+      { key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 },
+      { key: 'particles', label: 'Particles', type: 'select', options: ['lite', 'standard', 'ultra'], default: 'standard' },
+    ],
+    achievements: [
+      { id: 'first-hop', name: 'First Hop', desc: 'Clear your first sky isle.', rarity: 'common' },
+      { id: 'perfect-isle', name: 'Soft Landing', desc: 'Clear an isle without taking damage.', rarity: 'rare' },
+      { id: 'crate-catcher', name: 'Crate Catcher', desc: 'Bust five crates in one run.', rarity: 'common' },
+      { id: 'spring-step', name: 'Spring Step', desc: 'Launch off a spring.', rarity: 'common' },
+      { id: 'checkpoint', name: 'Cloud Anchor', desc: 'Light a checkpoint.', rarity: 'common' },
+      { id: 'coin-cloud', name: 'Coin Cloud', desc: 'Collect fifty coins in one run.', rarity: 'rare' },
+      { id: 'double-jumper', name: 'Double Jumper', desc: 'Perform twenty double jumps in one run.', rarity: 'rare' },
+      { id: 'all-isles', name: 'Sky Cleared', desc: 'Clear the three-isle campaign.', rarity: 'epic' },
+      { id: 'daily-drift', name: 'Daily Drifter', desc: 'Clear the Daily Drift.', rarity: 'rare' },
+      { id: 'endless-six', name: 'High Climber', desc: 'Reach isle six in Endless Ascent.', rarity: 'epic' },
+      { id: 'storm-clear', name: 'Stormbreaker', desc: 'Clear Stormfront.', rarity: 'legendary' },
+      { id: 'no-loss', name: 'Flawless Flight', desc: 'Clear the campaign without losing a life.', rarity: 'epic' },
+      { id: 'untouchable', name: 'Untouchable', desc: 'Clear Stormfront without taking damage.', rarity: 'legendary' },
+      { id: 'score-10000', name: 'Sky High', desc: 'Score 10,000 in one run.', rarity: 'legendary' },
+    ],
+    tutorial: { type: 'interactive', steps: [
+      { text: 'Run with A/D or the arrow keys and jump with Space.', hold: 'ArrowRight' },
+      { text: 'Press jump again in mid-air for a double jump.', hold: 'Space' },
+      { text: 'Hold Shift while falling to glide, then reach the flag.', hold: 'ShiftLeft' },
+    ] },
+    chapter: 'SKY ISLES \u00b7 3 COURSES', levels: [{}, {}, {}],
+    hooks: {
+      applyMode: (mode) => {
+        activeMode = MODES[mode] ? mode : 'campaign';
+        if (pipGame && lastInitMode !== activeMode) pipGame.restart(false);
+      },
+      applySetting: (key, value) => {
+        if (key === 'difficulty') difficulty = value;
+        if (key === 'shake') shakeScale = Number(value);
+        if (key === 'particles' && window.Perf && Perf.setTier) Perf.setTier(value);
+      },
+      applyCosmetic,
+      getResult: () => ({ score: pipGame.score, win: pipGame.state === 'won', mode: activeMode, course: absoluteCourse(), lives }),
+    },
+  });
+
+  if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+    window.CloudhopPipTest = {
+      state() {
+        return { mode: activeMode, difficulty: Arcade.difficulty, course: absoluteCourse(), courseIndex, courseOffset, total: route.length, lives, hp: p ? p.hp : 0, score: pipGame.score, seed: runSeed, state: pipGame.state, coins, timer, timerMode, check: !!check, title: pipGame.title, sub: pipGame.sub, maxCourse, jumps: p ? p.jumps : 0, doubleJumps, gliding: !!(p && p.gliding), ground: !!(p && p.ground), vy: p ? Math.round(p.vy * 100) / 100 : 0, x: p ? Math.round(p.x) : 0, y: p ? Math.round(p.y) : 0 };
+      },
+      layout() { return grid.map((row) => row.join('')); },
+      sequence(n) { const out = []; for (let i = 0; i < n; i++) out.push(Number(random().toFixed(6))); return out; },
+      setMode(mode) { return pipGame.ui.setMode(mode); },
+      setDifficulty(level) { difficulty = level; Arcade.difficulty = level; Arcade.speedMult = level === 'easy' ? 0.8 : level === 'hard' ? 1.35 : 1; },
+      restart(autostart) { pipGame.restart(autostart === true); },
+      award(points) { award(points); },
+      cosmetic: applyCosmetic,
+      colors() { return { body: pip.body, belly: pip.belly, trail: trailColor, coin: coinColor, spring: springColor, sky: activePal().sky.slice() }; },
+      stats() { return window.Save && Save.load ? Save.load(GAME_ID) : {}; },
+      clearCourse() { completeCourse(); },
+      die() { if (pipGame.state === 'playing' && p && !p.dead) die(); },
+      setTimer(n) { timer = n; },
+      teleportTile(c, r) { if (p) { p.x = c * T + 4; p.y = r * T + T - p.h; p.vx = 0; p.vy = 0; } },
+      spawnEnemy(kind, c, r) { addEnemy(kind || 'w', c == null ? 8 : c, r == null ? 11 : r); },
+      grantCoins(n) { coins += n == null ? 50 : n; },
+      setHp(n) { if (p) p.hp = n == null ? 3 : n; },
+      practiceDoubles(n) { doubleJumps += n == null ? 20 : n; if (doubleJumps >= 20) unlock('double-jumper'); },
+      routeNames() { return route.map((item) => item.name); },
+    };
+  }
+})();
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>
