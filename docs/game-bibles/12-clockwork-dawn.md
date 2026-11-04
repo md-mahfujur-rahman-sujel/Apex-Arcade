@@ -21,9 +21,9 @@ A mode change must reset only the state named by that mode. Pause and resume pre
 
 | Setting | Behavior |
 | --- | --- |
-| Easy | 0.8× simulation speed or a wider timing/mistake allowance; 1.0× score. |
-| Normal | Preserve the source page’s baseline rules at 1.0× speed and score. |
-| Hard | 1.35× simulation speed or a stricter opponent/puzzle target; 1.25× score. |
+| Easy | Enemy damage ×0.8 and player damage ×1.05; 1.0× score. |
+| Normal | Preserve the source page’s baseline rules at 1.0× score. |
+| Hard | Enemy damage ×1.2 and player damage ×1.1; 1.25× score. |
 | Performance | Respect Lite, Standard, and Ultra budgets; preserve essential playfield feedback. |
 | Reduced motion | Remove decorative movement, shake, and nonessential flashes; preserve input and game-state motion. |
 | Audio and palette | Inherit global settings, allow per-game overrides, and keep objects legible in colour-blind palettes. |
@@ -57,7 +57,7 @@ Support keyboard and touch. Board games must offer clear selected/active state a
 
 ## Current baseline and scope
 
-Canonical page: `12-chrono-adventure/index.html`; `Arcade.game` save id is `clockwork-dawn`. It builds a tile world with a village, bridge, wilds, and Gear Gate; the party starts with three potions, one ether, and 30 gold. Kai and Mira gain XP, stats, HP, and MP from wins; a shop sells potions/ethers and an inn fully restores the party for 10 gold. Encounters and combat damage use random values. The boss has 210 HP and must be defeated before entering the portal ends the run. Controls: arrows/WASD move, Space/Enter/Z confirm or talk, X/Escape/Backspace cancel/status, and number keys use items from status. This page currently lacks seeded randomness and a `UI.mountGame` config; proposed modes above need those additions.
+Canonical page: `12-chrono-adventure/index.html`; `Arcade.game` save id is `clockwork-dawn`. It builds a tile world with a village, bridge, wilds, and Gear Gate; the party starts with three potions, one ether, and 30 gold. Kai and Mira gain XP, stats, HP, and MP from wins; a shop sells potions/ethers and an inn fully restores the party for 10 gold. Encounters and combat damage use random values; Daily Dawn replaces them with a date-seeded xorshift stream (`seedForToday()` hashed with `clockwork-dawn`) so the map, obstacles, and encounter route repeat all day. The boss has 210 HP and must be defeated before entering the portal ends the run. The page mounts `UI.mountGame` with Story Journey, Daily Dawn, Warden Rematch (level-4 party, boss only), and New Dawn+ (locked until a Story clear, inherits the saved level, Warden 305 HP / 1.2× attack); Gold Rush supplies a ×1.25 mutator, all ten achievements and the interactive tutorial are wired, and 15 cosmetics (5 palettes, 4 Kai skins, 3 effects, 3 themes) repaint the world and party. Controls: arrows/WASD move, Space/Enter/Z confirm or talk, X/Escape/Backspace cancel/status, and number keys use items from status. `?test=1` exposes `ClockworkDawnTest` (state, world, seeded sequence, mode/restart, battle setup, cosmetics, stats); the React theater engine (`ChronoBattleEngine`) mirrors the three encounters, party skills, items, flee rules, boss patterns, XP curve, and scoring. Regression: `scripts/test-game-12.mjs`.
 
 ## Menu Identity Card
 
@@ -68,7 +68,7 @@ Canonical page: `12-chrono-adventure/index.html`; `Arcade.game` save id is `cloc
 - **Frame and buttons:** `sunrise-brasswork` frame with `gear-cut-banner` controls; warm, mechanical shapes distinguish this from Ember Serpent's dark basalt frame.
 - **Scene recipe:** Dawn gradient, layered Hearthwick roofline silhouettes, sparse gold dust, and a large original brass sunwheel on the right side.
 - **Music and UI sounds:** Slow Dorian bass, pad and lead; shared tick, select and back cues.
-- **Menu items:** Play, Options, About, Exit. Story Journey is the existing game; proposed Daily Dawn, Warden Rematch and New Dawn+ are not advertised as available yet.
-- **Settings:** Shared audio, display, controls and accessibility options; shared difficulty setting.
-- **Cosmetics:** No cosmetics page until the proposed set is implemented.
+- **Menu items:** Play, Modes, Customize, Options, More, Exit. All four modes are advertised: Story Journey, Daily Dawn, Warden Rematch, and New Dawn+ (locked until the first Story clear).
+- **Settings:** Shared audio, display, controls and accessibility options; shared difficulty setting, screen shake, and particle tier.
+- **Cosmetics:** 15 items: five palettes (Amber Sunrise, Roseglass Dawn, Jade Village, Frosted Morning, Violet Hour), four Kai skins, three effect sets, and three Hearthwick themes.
 - **Lite fallback:** Static village silhouette, brass sunwheel and dawn light.

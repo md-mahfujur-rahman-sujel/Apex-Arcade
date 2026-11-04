@@ -672,9 +672,41 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
           />
         );
       case 'street-brawler':
-        return <StreetBrawlerEngine {...commonProps} />;
+        return (
+          <StreetBrawlerEngine
+            {...commonProps}
+            highScore={highScore}
+            onLevelComplete={(level) => {
+              recordApexLevelProgress(game.id, level);
+              onStatsUpdated();
+            }}
+            onRestart={() => {
+              sessionEndedRef.current = false;
+              sessionStartRef.current = Date.now();
+              sessionBestRef.current = highScoreRef.current;
+              sessionNewBestRef.current = false;
+              setCurrentScore(0);
+            }}
+          />
+        );
       case 'chrono-battle':
-        return <ChronoBattleEngine {...commonProps} />;
+        return (
+          <ChronoBattleEngine
+            {...commonProps}
+            highScore={highScore}
+            onLevelComplete={(level) => {
+              recordApexLevelProgress(game.id, level);
+              onStatsUpdated();
+            }}
+            onRestart={() => {
+              sessionEndedRef.current = false;
+              sessionStartRef.current = Date.now();
+              sessionBestRef.current = highScoreRef.current;
+              sessionNewBestRef.current = false;
+              setCurrentScore(0);
+            }}
+          />
+        );
       case 'precision-platformer':
         return (
           <PrecisionPlatformerEngine
@@ -695,7 +727,24 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
           />
         );
       case 'action-combat':
-        return <ActionCombatEngine {...commonProps} variant={game.variant || 'hollow'} />;
+        return (
+          <ActionCombatEngine
+            {...commonProps}
+            variant={game.variant || 'hollow'}
+            highScore={highScore}
+            onLevelComplete={(level) => {
+              recordApexLevelProgress(game.id, level);
+              onStatsUpdated();
+            }}
+            onRestart={() => {
+              sessionEndedRef.current = false;
+              sessionStartRef.current = Date.now();
+              sessionBestRef.current = highScoreRef.current;
+              sessionNewBestRef.current = false;
+              setCurrentScore(0);
+            }}
+          />
+        );
       default:
         return (
           <div className="flex flex-col items-center justify-center p-8 text-center text-slate-400">

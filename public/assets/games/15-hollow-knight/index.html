@@ -21,36 +21,275 @@
 <script>
 /* Hollowbell — a moody cave-crawler: a small bell-masked wanderer with a needle, a shade-cloak dash,
    focus healing, benches, lost-shard retrieval and the Pale Warden. Built on act-kit.js. */
-const A = Arcade, K = Act, TAU = Math.PI * 2;
+const A = Arcade, K = Act, TAU = Math.PI * 2, GAME_ID = 'hollowbell';
+const NATIVE_RANDOM = Math.random.bind(Math);
 
-const CAVE = K.make('The Sunken Hollow', 134, 16, (g) => {
-  const gy = 12;
-  g.ground(0, 40, 13); g.set(2, gy, 'P'); g.set(10, gy, 'k'); g.set(18, gy, 'C'); g.set(25, gy, 'k'); g.set(31, 7, 'v'); g.plat(27, 9, 4); g.coins(27, 8, 4); g.coins(12, 11, 3);
-  g.ground(41, 52, 13); g.set(45, gy, 'k'); g.set(47, gy, 'D'); g.set(50, gy, 'C');
-  g.ground(58, 82, 13); g.set(61, gy, 'C'); g.set(65, gy, 'h'); g.set(70, gy, 'u'); g.set(74, gy, 'k'); g.set(68, 7, 'v'); g.plat(66, 9, 3); g.coins(66, 8, 3); g.set(79, gy, 'k');
-  g.ground(83, 90, 13); g.fill(83, 12, 3, 1, '^'); g.ground(92, 108, 13); g.set(95, gy, 'k'); g.set(98, 8, 'v'); g.set(101, gy, 'h'); g.plat(100, 9, 3); g.coins(100, 8, 3); g.set(105, gy, 'u');
-  g.ground(109, 134, 13); g.set(111, gy, 'C'); g.set(124, gy, 'B'); g.set(131, gy, 'F');
-});
-CAVE.hint = 'X strike · hold V to focus-heal · benches save your place';
-CAVE.theme = { solid: '#1d2a3b', top: '#2dd4bf', plat: '#334155', accent: '#5eead4', spike: '#cbd5e1' };
+let activeMode = 'story', difficulty = 'normal', dailySeed = 0, rngState = 1, lastInitMode = null;
+let runStarted = 0, runActive = false, runEnded = false, runKills = 0, runWalls = 0, runBossKills = 0;
+let runDeaths = 0, hurtThisStage = false, deadSeen = false, stageSeen = -1, startBest = 0, shakeScale = 1;
+let G0 = null, game = null, act = null, mapStage = -1;
+let skin = { cloak: '#0e1726', mask: '#e2e8f0', trim: '#5eead4', eye: '#020617' };
+let needleColor = '#bae6fd', effectColor = '#5eead4', skyTheme = 'hollow';
 
-function bg(c, cam, t) {
-  A.sky(c, 800, 480, ['#02060f', '#0a1626', '#10263a']);
+const MODES = {
+  story: { label: 'PILGRIMAGE' },
+  'shard-hunt': { label: 'SHARD HUNT' },
+  'boss-rush': { label: 'WARDEN GAUNTLET' },
+  daily: { label: 'DAILY DESCENT' },
+  'hollow-plus': { label: 'HOLLOW+' },
+};
+const STORY_NAMES = ['The Sunken Hollow', 'Mistveil Cistern', 'The Pale Sanctum'];
+const ARENA_NAMES = ['Duel 1 · Broken Crossroads', 'Duel 2 · Flooded Nave', 'Duel 3 · Pale Sanctum'];
+
+/* ---------- daily seed and records ---------- */
+function seedForToday() {
+  const d = new Date(), key = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  let x = key ^ 0x6d2b79f5;
+  for (const ch of GAME_ID) x = Math.imul(x ^ ch.charCodeAt(0), 16777619);
+  return x >>> 0 || 1;
+}
+function dailySequence(n, seed) {
+  let s = (seed || dailySeed || 1) >>> 0; const out = [];
+  for (let i = 0; i < n; i++) { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; out.push(Number(((s >>> 0) / 4294967296).toFixed(6))); }
+  return out;
+}
+function applyRng() {
+  if (activeMode !== 'daily') { Math.random = NATIVE_RANDOM; return; }
+  rngState = dailySeed || seedForToday();
+  Math.random = () => { rngState ^= rngState << 13; rngState ^= rngState >>> 17; rngState ^= rngState << 5; return (rngState >>> 0) / 4294967296; };
+}
+function saved() { return (window.Save && Save.load(GAME_ID)) || {}; }
+function stats() { const s = saved(); return s.stats || {}; }
+function award(id, label) {
+  const s = saved(), earned = Array.isArray(s.achievements) ? s.achievements : [];
+  if (earned.includes(id)) return;
+  Save.update(GAME_ID, { achievements: [id] });
+  if (window.Apex && Apex.unlockAchievement) Apex.unlockAchievement(id, GAME_ID);
+  UI.toast(label || id.replace(/-/g, ' '), { color: '#5eead4' });
+}
+function stageNeed() { return activeMode === 'shard-hunt' ? 4 : 0; }
+function stageName() { const n = act ? act.level : 0; return (activeMode === 'boss-rush' ? ARENA_NAMES : STORY_NAMES)[n] || STORY_NAMES[0]; }
+
+function recordRun(won, sec) {
+  const st = stats(), stage = act ? act.level + 1 : 1;
+  const patch = {
+    runs: (st.runs || 0) + 1,
+    seconds: (st.seconds || 0) + sec,
+    kills: (st.kills || 0) + runKills,
+    walls: (st.walls || 0) + runWalls,
+    deaths: (st.deaths || 0) + runDeaths,
+    highestStage: Math.max(st.highestStage || 0, stage),
+    bestScore: Math.max(st.bestScore || 0, G0 ? G0.score : 0),
+    lastMode: activeMode,
+    bossesFelled: (st.bossesFelled || 0) + runBossKills,
+    storyCompletions: (st.storyCompletions || 0) + (won && activeMode === 'story' ? 1 : 0),
+    shardCompletions: (st.shardCompletions || 0) + (won && activeMode === 'shard-hunt' ? 1 : 0),
+    dailyCompletions: (st.dailyCompletions || 0) + (won && activeMode === 'daily' ? 1 : 0),
+    hollowCompletions: (st.hollowCompletions || 0) + (won && activeMode === 'hollow-plus' ? 1 : 0),
+    bossRushCompletions: (st.bossRushCompletions || 0) + (won && activeMode === 'boss-rush' ? 1 : 0),
+    dailyBest: activeMode === 'daily' ? Math.max(st.dailyBest || 0, G0 ? G0.score : 0) : (st.dailyBest || 0),
+  };
+  if (won && activeMode === 'story') patch.bestTimeSec = Math.min(st.bestTimeSec || 99999, sec);
+  Save.update(GAME_ID, { stats: patch });
+}
+function finishRun(G, won, coins) {
+  if (runEnded) return 'Score ' + G.score;
+  const sec = Math.max(1, Math.round((Date.now() - (runStarted || Date.now())) / 1000));
+  recordRun(won, sec);
+  if (won) {
+    if (!hurtThisStage) award('untouched', 'Untouched');
+    if (activeMode === 'story') {
+      award('story-clear', 'Pilgrimage Complete');
+      if (G.score > startBest) award('personal-best', 'Personal Best');
+      if (runDeaths === 0) award('iron-heart', 'Iron Heart');
+      if (sec <= 360) award('speed-run', 'Hollow Sprint');
+    }
+    if (activeMode === 'shard-hunt') award('shard-keeper', 'Shard Keeper');
+    if (activeMode === 'daily') award('daily-player', 'Daily Descent');
+    if (activeMode === 'hollow-plus') award('hollow-clear', 'Hollow Adept');
+    if (activeMode === 'boss-rush') award('gauntlet-clear', 'Gauntlet Run');
+  }
+  runEnded = true;
+  return won
+    ? 'Score ' + G.score + ' · ' + coins + ' shards · ' + sec + 's'
+    : 'Score ' + G.score + ' · reached ' + stageName();
+}
+function trackStage() {
+  if (!act) return;
+  const lvl = act.level;
+  if (lvl === stageSeen) return;
+  if (stageSeen >= 0 && !hurtThisStage) award('untouched', 'Untouched');
+  stageSeen = lvl; hurtThisStage = false;
+  const st = stats();
+  if ((st.highestStage || 0) < lvl + 1) Save.update(GAME_ID, { stats: { highestStage: lvl + 1 } });
+}
+function checkMilestones() {
+  if (G0 && G0.score >= 10000) award('score-10000', 'Shard Legend');
+}
+function onKill(e, G) {
+  runKills++;
+  if (runKills >= 1) award('first-wound', 'First Wound');
+  if (runKills >= 25) award('hunter', 'Relentless Hunter');
+  if (e.d && e.d.ai === 'boss') { runBossKills++; award('warden-slayer', 'Pale Warden Slain'); }
+  checkMilestones();
+}
+function onBreak(ch) {
+  if (ch !== 'x') return;
+  runWalls++;
+  if (runWalls >= 6) award('wall-breaker', 'Wall Breaker');
+}
+function onHurt() { hurtThisStage = true; }
+function onToken(tokens) { if (tokens >= 4) UI.toast('The gate bell rings — find the door', { color: '#f0abfc' }); }
+
+/* ---------- cosmetics ---------- */
+function applyCosmetic(slot, id) {
+  const key = String(id || '').split(':').pop();
+  if (slot === 'skin') {
+    const skins = {
+      wanderer: { cloak: '#0e1726', mask: '#e2e8f0', trim: '#5eead4', eye: '#020617' },
+      'cloak-ember': { cloak: '#3b0a12', mask: '#fecaca', trim: '#fb7185', eye: '#450a0a' },
+      'cloak-frost': { cloak: '#0c1e3a', mask: '#dbeafe', trim: '#93c5fd', eye: '#082f49' },
+      'cloak-gilded': { cloak: '#3b2a06', mask: '#fef3c7', trim: '#fbbf24', eye: '#451a03' },
+      'cloak-void': { cloak: '#1e1b4b', mask: '#c7d2fe', trim: '#a78bfa', eye: '#0f0a2e' },
+    };
+    if (skins[key]) skin = Object.assign({}, skins[key]);
+  } else if (slot === 'palette') {
+    needleColor = key.includes('ember') ? '#fb923c' : key.includes('frost') ? '#a5f3fc' : key.includes('dream') ? '#f0abfc' : '#bae6fd';
+    if (act) act.weapon.color = needleColor;
+  } else if (slot === 'effect') {
+    effectColor = key.includes('soul') ? '#a78bfa' : key.includes('nightmare') ? '#fb7185' : '#5eead4';
+  } else if (slot === 'theme') {
+    skyTheme = key.includes('mistveil') ? 'mistveil' : key.includes('ember') ? 'ember-hollow' : key.includes('pale-garden') ? 'pale-garden' : 'hollow';
+  }
+}
+
+/* ---------- stages ---------- */
+function hollowStage() {
+  const g = K.make(STORY_NAMES[0], 134, 16, (g) => {
+    const gy = 12;
+    g.ground(0, 40, 13); g.set(2, gy, 'P'); g.set(9, gy, 'D'); g.set(20, gy, 'k'); g.set(30, gy, 'h'); g.set(26, 8, 'v');
+    g.plat(14, 10, 4); g.coins(14, 9, 4); g.set(6, gy, 'C'); g.set(36, gy, 'C');
+    g.ground(45, 82, 13); g.set(48, gy, 'k'); g.set(52, gy, 'h'); g.set(58, gy, 'u'); g.set(62, gy, 'k'); g.set(70, gy, 'C'); g.set(74, 8, 'v');
+    g.fill(64, 11, 1, 2, 'x');
+    g.plat(66, 10, 4); g.coins(66, 9, 4); g.set(78, gy, 'k');
+    g.ground(87, 134, 13); g.set(90, gy, 'C'); g.set(96, gy, 'h'); g.set(104, gy, 'k'); g.set(108, 8, 'v'); g.set(112, gy, 'u'); g.set(118, gy, 'k');
+    g.plat(100, 10, 3); g.coins(100, 9, 3);
+    g.set(131, gy, 'F');
+    if (activeMode === 'shard-hunt') { for (const [x, y] of [[6, 12], [33, 12], [68, 12], [100, 12]]) g.set(x, y, 'g'); }
+  });
+  g.theme = { solid: '#1d2a3b', top: '#2dd4bf', plat: '#334155', accent: '#5eead4', spike: '#cbd5e1' };
+  g.hint = activeMode === 'shard-hunt' ? 'Collect 4 lost bells to open the gate' : 'X strike · hold V to focus-heal · benches save your place';
+  g.need = stageNeed();
+  return g;
+}
+function cisternStage() {
+  const g = K.make(STORY_NAMES[1], 140, 16, (g) => {
+    const gy = 12;
+    g.ground(0, 30, 13); g.set(2, gy, 'P'); g.set(12, gy, 'k'); g.set(24, gy, 'C'); g.set(18, 8, 'v');
+    g.ground(34, 78, 13); g.set(38, gy, 'k'); g.set(44, gy, 'h'); g.set(48, gy, 'C'); g.set(56, gy, 'u'); g.set(66, 8, 'v'); g.set(72, gy, 'k');
+    g.fill(60, 11, 1, 2, 'x');
+    g.ground(83, 140, 13); g.set(88, gy, 'k'); g.set(92, gy, 'C'); g.set(98, gy, 'h'); g.set(104, 8, 'v'); g.set(112, gy, 'u'); g.set(120, gy, 'k');
+    g.plat(108, 10, 3); g.coins(108, 9, 3); g.set(137, gy, 'F');
+    if (activeMode === 'shard-hunt') { for (const [x, y] of [[6, 12], [40, 12], [72, 12], [124, 12]]) g.set(x, y, 'g'); }
+  });
+  g.theme = { solid: '#16283a', top: '#38bdf8', plat: '#2c3e50', accent: '#7dd3fc', spike: '#e2e8f0' };
+  g.hint = activeMode === 'shard-hunt' ? 'Collect 4 lost bells to open the gate' : 'Mind the drowned gaps · the cistern hums with bells';
+  g.need = stageNeed();
+  return g;
+}
+function sanctumStage() {
+  const g = K.make(STORY_NAMES[2], 128, 16, (g) => {
+    const gy = 12;
+    g.ground(0, 22, 13); g.set(2, gy, 'P'); g.set(6, gy, 'C'); g.set(12, gy, 'k'); g.set(18, 8, 'v');
+    g.ground(26, 58, 13); g.set(30, gy, 'k'); g.set(36, gy, 'h'); g.set(42, gy, 'C'); g.set(46, 8, 'v'); g.set(52, gy, 'u');
+    g.ground(62, 128, 13); g.set(66, gy, 'C'); g.set(72, gy, 'k'); g.set(76, 10, 'v'); g.set(90, gy, 'u'); g.set(96, gy, 'h');
+    g.plat(78, 10, 4); g.coins(78, 9, 4);
+    g.set(108, gy, 'B'); g.set(125, gy, 'F');
+    if (activeMode === 'shard-hunt') { for (const [x, y] of [[6, 12], [30, 12], [72, 12], [100, 12]]) g.set(x, y, 'g'); }
+  });
+  g.theme = { solid: '#241a33', top: '#a78bfa', plat: '#3b3355', accent: '#c4b5fd', spike: '#f1f5f9' };
+  g.hint = activeMode === 'shard-hunt' ? 'Collect 4 lost bells to open the gate' : 'The Pale Warden waits — strike, pogo, and end the bell';
+  g.need = stageNeed();
+  return g;
+}
+function arenaStage(n) {
+  const g = K.make(ARENA_NAMES[n], 40, 15, (g) => {
+    g.ground(0, 40);
+    g.set(2, 11, 'P'); g.set(6, 11, 'C');
+    g.set(9, 11, 'k'); g.set(14, 11, 'h'); g.set(20, 11, 'u'); g.set(26, 11, 'k');
+    g.plat(8, 9, 3); g.plat(16, 7, 3); g.plat(27, 9, 3);
+    g.set(31, 10, 'B'); g.set(37, 11, 'F');
+  });
+  g.theme = n === 0 ? { solid: '#1d2a3b', top: '#2dd4bf', plat: '#334155', accent: '#5eead4', spike: '#cbd5e1' }
+    : n === 1 ? { solid: '#16283a', top: '#38bdf8', plat: '#2c3e50', accent: '#7dd3fc', spike: '#e2e8f0' }
+      : { solid: '#241a33', top: '#a78bfa', plat: '#3b3355', accent: '#c4b5fd', spike: '#f1f5f9' };
+  g.hint = n === 0 ? 'Three wardens. No quarter. Keep moving' : n === 1 ? 'The warden remembers your needle' : 'End the gauntlet';
+  return g;
+}
+function buildLevel(i) { return activeMode === 'boss-rush' ? arenaStage(i) : [hollowStage, cisternStage, sanctumStage][i](); }
+
+/* ---------- enemy defs (Hollow+ scales HP, speed, and rewards) ---------- */
+const ENEMY_BASE = {
+  k: { w: 28, h: 22, hp: 2, ai: 'walk', sp: 0.7, sight: 120, score: 60, color: '#78716c' },
+  h: { w: 24, h: 26, hp: 2, ai: 'hop', sp: 2.4, jump: 9, every: 75, score: 90, color: '#57534e' },
+  v: { w: 24, h: 18, hp: 1, ai: 'fly', sp: 1.5, sight: 200, range: 60, bob: 22, score: 60, color: '#44403c' },
+  u: { w: 28, h: 30, hp: 3, ai: 'turret', fixed: true, score: 120, color: '#57534e', sight: 360, shoot: { speed: 3.2, color: '#fb923c' }, every: 100, aim: true },
+  B: { w: 40, h: 64, hp: 26, ai: 'boss', name: 'THE PALE WARDEN', wake: 340, score: 3000, color: '#e2e8f0', dmg: 2 },
+};
+const enemies = {};
+for (const key of Object.keys(ENEMY_BASE)) {
+  Object.defineProperty(enemies, key, {
+    enumerable: true, configurable: true,
+    get() {
+      const base = ENEMY_BASE[key];
+      if (activeMode !== 'hollow-plus') return base;
+      if (base.ai === 'boss') return Object.assign({}, base, { hp: Math.round(base.hp * 1.5), dmg: 3, score: Math.round(base.score * 1.5) });
+      return Object.assign({}, base, { hp: Math.ceil(base.hp * 1.5), sp: (base.sp || 1) * 1.15, score: Math.round((base.score || 100) * 1.5) });
+    },
+  });
+}
+
+/* ---------- backdrop ---------- */
+const SKY = {
+  hollow: [['#02060f', '#0a1626', '#10263a'], ['#031018', '#0d2233', '#16324a'], ['#05070f', '#120c26', '#241238']],
+  mistveil: [['#04121a', '#0c2a2e', '#134e4a'], ['#03121c', '#0e2f3a', '#155e75'], ['#051018', '#12303d', '#1e3a5f']],
+  'ember-hollow': [['#160409', '#3b0a12', '#7f1d1d'], ['#180604', '#451a03', '#9a3412'], ['#14040f', '#3b0764', '#831843']],
+  'pale-garden': [['#0a0a18', '#1e1b4b', '#4c1d95'], ['#081018', '#1c2a4a', '#3730a3'], ['#0c0a1c', '#2e1065', '#581c87']],
+};
+function bg(c, cam, t, lvl, G) {
+  const pal = SKY[skyTheme] || SKY.hollow, band = pal[Math.min(2, Math.max(0, lvl))];
+  A.sky(c, 800, 480, band);
   for (let i = 0; i < 22; i++) { const x = ((i * 101 - cam.x * 0.18) % 920 + 920) % 920 - 60, h = 50 + (i * 41) % 110; c.fillStyle = 'rgba(15,40,60,.8)'; c.beginPath(); c.moveTo(x - 18, 0); c.lineTo(x, h); c.lineTo(x + 18, 0); c.fill(); }
   K.ridge(c, 380, 34, 2.1, cam.x * 0.25, 'rgba(8,24,38,.85)'); K.ridge(c, 430, 22, 5.4, cam.x * 0.5, '#050d18');
-  for (let i = 0; i < 26; i++) { const x = ((i * 79 - cam.x * 0.35 + Math.sin(t * 0.01 + i) * 20) % 880 + 880) % 880 - 40, y = 60 + (i * 61) % 340; c.globalAlpha = 0.25 + 0.25 * Math.sin(t * 0.04 + i); c.fillStyle = '#5eead4'; c.fillRect(x, y - Math.sin(t * 0.02 + i) * 8, 2, 2); } c.globalAlpha = 1;
+  c.fillStyle = effectColor;
+  for (let i = 0; i < 26; i++) { const x = ((i * 79 - cam.x * 0.35 + Math.sin(t * 0.01 + i) * 20) % 880 + 880) % 880 - 40, y = 60 + (i * 61) % 340; c.globalAlpha = 0.25 + 0.25 * Math.sin(t * 0.04 + i); c.fillRect(x, y - Math.sin(t * 0.02 + i) * 8, 2, 2); }
+  c.globalAlpha = 1;
+  if (skyTheme === 'mistveil') { c.fillStyle = 'rgba(186,230,253,.06)'; for (let i = 0; i < 5; i++) c.fillRect(0, 120 + i * 70 + Math.sin(t * 0.005 + i) * 8, 800, 18); }
+  if (skyTheme === 'ember-hollow') { c.fillStyle = 'rgba(251,113,133,.07)'; c.fillRect(0, 0, 800, 480); for (let i = 0; i < 18; i++) { const x = (i * 89 + t * 0.6) % 800, y = 480 - ((i * 53 + t * 1.4) % 480); c.globalAlpha = 0.5; c.fillStyle = '#fb923c'; c.fillRect(x, y, 2, 3); } c.globalAlpha = 1; }
+  if (skyTheme === 'pale-garden') { c.fillStyle = 'rgba(216,180,254,.30)'; for (let i = 0; i < 34; i++) { const x = (i * 97 + t * 0.25) % 800, y = (i * 61 + t * 0.9) % 480; c.fillRect(x, y, 2, 2); } }
+  if (G && G.state === 'playing' && !runActive) { runActive = true; runStarted = Date.now(); runEnded = false; }
+  if (G && (G.state === 'ready' || G.state === 'over' || G.state === 'won')) runActive = false;
+  if (act && act.player) {
+    if (act.player.dead > 0 && !deadSeen) { deadSeen = true; runDeaths++; }
+    else if (act.player.dead === 0) deadSeen = false;
+  }
+  trackStage();
+  checkMilestones();
 }
+
+/* ---------- characters ---------- */
 function drawHero(c, p, G, wp) {
   const cx = p.x + p.w / 2, f = p.face, b = p.y + p.h, run = p.ground ? Math.sin(p.walk) : 0;
-  if (p.dashT > 0) { c.save(); c.globalAlpha = 0.35; c.fillStyle = '#5eead4'; for (let i = 1; i < 4; i++) A.roundRect(c, p.x - f * i * 12, p.y, 20, 28, 8), c.fill(); c.restore(); }
+  if (p.dashT > 0) { c.save(); c.globalAlpha = 0.35; c.fillStyle = effectColor; for (let i = 1; i < 4; i++) A.roundRect(c, p.x - f * i * 12, p.y, 20, 28, 8), c.fill(); c.restore(); }
   A.shadow(c, cx, b + 1, 10, 3, 0.3); c.save(); c.translate(cx, b); c.scale(f * (1 + p.sq * 0.4), 1 - p.sq * 0.4);
-  c.fillStyle = '#0b1220'; c.fillRect(-6 + (p.ground ? run * 3 : 0), -8, 5, 8); c.fillRect(1 - (p.ground ? run * 3 : 0), -8, 5, 8);
+  c.fillStyle = skin.cloak; c.fillRect(-6 + (p.ground ? run * 3 : 0), -8, 5, 8); c.fillRect(1 - (p.ground ? run * 3 : 0), -8, 5, 8);
   c.beginPath(); c.moveTo(-9, -6); c.quadraticCurveTo(-8, -24, 0, -26); c.quadraticCurveTo(8, -24, 9, -6); c.fill();
-  c.fillStyle = '#e2e8f0'; c.beginPath(); c.ellipse(0, -30, 9, 9, 0, 0, TAU); c.fill(); c.beginPath(); c.moveTo(-7, -36); c.lineTo(-11, -46); c.lineTo(-2, -38); c.moveTo(7, -36); c.lineTo(11, -46); c.lineTo(2, -38); c.fill();
-  c.fillStyle = '#020617'; c.beginPath(); c.ellipse(-3, -30, 2.2, 3.6, 0.2, 0, TAU); c.ellipse(4, -30, 2.2, 3.6, -0.2, 0, TAU); c.fill();
-  if (p.heal) { c.save(); c.globalAlpha = 0.6; c.shadowColor = '#a5f3fc'; c.shadowBlur = 16; c.fillStyle = '#a5f3fc'; c.beginPath(); c.arc(0, -16, 12 + Math.sin(G.clock * 0.5) * 3, 0, TAU); c.fill(); c.restore(); }
+  c.fillStyle = skin.trim; c.fillRect(-9, -10, 18, 3);
+  c.fillStyle = skin.mask; c.beginPath(); c.ellipse(0, -30, 9, 9, 0, 0, TAU); c.fill(); c.beginPath(); c.moveTo(-7, -36); c.lineTo(-11, -46); c.lineTo(-2, -38); c.moveTo(7, -36); c.lineTo(11, -46); c.lineTo(2, -38); c.fill();
+  c.fillStyle = skin.eye; c.beginPath(); c.ellipse(-3, -30, 2.2, 3.6, 0.2, 0, TAU); c.ellipse(4, -30, 2.2, 3.6, -0.2, 0, TAU); c.fill();
+  if (p.heal) { c.save(); c.globalAlpha = 0.6; c.shadowColor = effectColor; c.shadowBlur = 16; c.fillStyle = effectColor; c.beginPath(); c.arc(0, -16, 12 + Math.sin(G.clock * 0.5) * 3, 0, TAU); c.fill(); c.restore(); }
   if (p.atk > 0) {
-    const k = 1 - p.atk / wp.dur; c.save(); c.strokeStyle = 'rgba(226,246,255,' + (1 - k * 0.6) + ')'; c.lineWidth = 5; c.lineCap = 'round'; c.shadowColor = '#7dd3fc'; c.shadowBlur = 10; c.beginPath();
+    const k = 1 - p.atk / wp.dur; c.save(); c.strokeStyle = needleColor + 'cc'; c.lineWidth = 5; c.lineCap = 'round'; c.shadowColor = needleColor; c.shadowBlur = 10; c.beginPath();
     if (p.atkDir) c.arc(0, -4, 22, 0.3, Math.PI - 0.3); else c.arc(-4, -16, 34, -0.9 + k * 0.5, 0.9 - k * 0.2);
     c.stroke(); c.restore();
   }
@@ -64,17 +303,17 @@ function drawEnemy(c, e, G) {
   if (k === 'u') { c.fillStyle = hit ? '#fff' : '#292524'; A.roundRect(c, e.x, e.y + 6, e.w, e.h - 6, 8); c.fill(); c.fillStyle = hit ? '#fff' : '#57534e'; c.beginPath(); c.ellipse(cx, e.y + 8, 12, 9, 0, Math.PI, 0); c.fill(); c.fillStyle = '#f97316'; c.shadowColor = '#f97316'; c.shadowBlur = 8; c.beginPath(); c.arc(cx + f * 3, e.y + 12, 4, 0, TAU); c.fill(); c.shadowBlur = 0; return true; }
   if (k === 'B') {
     c.save(); c.translate(cx, e.y + e.h); c.scale(f, 1); const tell = e.tell && Math.floor(t / 4) % 2;
-    c.fillStyle = tell ? '#fca5a5' : hit ? '#fff' : '#e2e8f0'; c.shadowColor = '#bae6fd'; c.shadowBlur = tell ? 24 : 10;
+    c.fillStyle = tell ? '#fca5a5' : hit ? '#fff' : '#e2e8f0'; c.shadowColor = effectColor; c.shadowBlur = tell ? 24 : 10;
     c.beginPath(); c.moveTo(-18, 0); c.quadraticCurveTo(-24, -34, -10, -50); c.lineTo(10, -50); c.quadraticCurveTo(24, -34, 18, 0); c.fill();
     c.shadowBlur = 0; c.fillStyle = '#0f172a'; c.beginPath(); c.ellipse(-3, -40, 3.5, 6, 0.1, 0, TAU); c.ellipse(9, -40, 3.5, 6, -0.1, 0, TAU); c.fill();
     c.fillStyle = tell ? '#fca5a5' : '#e2e8f0'; c.beginPath(); c.moveTo(-8, -50); c.lineTo(-14, -64); c.lineTo(-2, -52); c.moveTo(10, -50); c.lineTo(16, -64); c.lineTo(4, -52); c.fill();
-    c.strokeStyle = '#f8fafc'; c.lineWidth = 4; c.lineCap = 'round'; c.beginPath(); c.moveTo(14, -26); c.lineTo(46, -36 + (e.vx ? -8 : 0)); c.stroke();
+    c.strokeStyle = needleColor; c.lineWidth = 4; c.lineCap = 'round'; c.beginPath(); c.moveTo(14, -26); c.lineTo(46, -36 + (e.vx ? -8 : 0)); c.stroke();
     c.restore(); return true;
   }
 }
 function boss(e, x) {
   const p = x.p, low = e.hp < e.hmax * 0.5, per = low ? 96 : 128, ph = e.t % per, d = p.x < e.x ? -1 : 1; e.t++;
-  if (!e.ground) e.air = true; else if (e.air) { e.air = false; e.vx = 0; x.G.shake(8); A.sfx('thud'); x.shoot(e, 4.2, 0, { color: '#e0f2fe', r: 9, y: e.y + e.h - 10 }); x.shoot(e, -4.2, 0, { color: '#e0f2fe', r: 9, y: e.y + e.h - 10 }); }
+  if (!e.ground) e.air = true; else if (e.air) { e.air = false; e.vx = 0; x.G.shake(8); A.sfx('thud'); x.shoot(e, 4.2, 0, { color: effectColor, r: 9, y: e.y + e.h - 10 }); x.shoot(e, -4.2, 0, { color: effectColor, r: 9, y: e.y + e.h - 10 }); }
   e.tell = ph >= 40 && ph < 62;
   if (ph < 40) e.vx = A.approach(e.vx, d * 1.4, 0.2);
   else if (ph < 62) e.vx = 0;
@@ -83,21 +322,157 @@ function boss(e, x) {
   else if (ph > 66 && ph < 86) e.vx *= 0.985; else if (ph > 90 && e.ground) e.vx *= 0.8;
 }
 
-K.game({
-  id: 'hollowbell', title: 'Hollowbell', subtitle: 'A quiet descent into a living cave', color: '#5eead4', soul: true, lives: 0,
+/* ---------- minimap HUD ---------- */
+const vis = new Set();
+function hud(c, G, p) {
+  if (!act || !act.grid) return;
+  if (mapStage !== act.level) { vis.clear(); mapStage = act.level; }
+  const ncols = act.cols, nrows = act.rows, mw = 150, mh = 30, ox = 800 - mw - 14, oy = 64;
+  const pc = Math.floor(p.x / 32), pr = Math.floor(p.y / 32);
+  for (let dx = -12; dx <= 12; dx++) for (let dy = -6; dy <= 6; dy++) vis.add((pc + dx) + ',' + (pr + dy));
+  c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(ox - 3, oy - 3, mw + 6, mh + 6);
+  const sx = mw / ncols, sy = mh / nrows;
+  for (let r = 0; r < nrows; r++) for (let q = 0; q < ncols; q++) {
+    if (!vis.has(q + ',' + r)) continue;
+    const ch = act.grid[r][q];
+    if (ch === '#') c.fillStyle = '#334155'; else if (ch === 'x') c.fillStyle = '#a3a3a3'; else if (ch === 'C' || ch === 'c' || ch === 'F' || ch === 'D') c.fillStyle = '#4ade80'; else if (ch === 'g') c.fillStyle = '#f0abfc'; else if (ch === '^') c.fillStyle = '#fecaca'; else continue;
+    c.fillRect(ox + q * sx, oy + r * sy, Math.max(1, sx), Math.max(1, sy));
+  }
+  if (Math.floor(G.clock / 20) % 2) { c.fillStyle = '#fff'; c.fillRect(ox + pc * sx - 1, oy + pr * sy - 1, 3, 3); }
+  const ab = p.ab, items = [['CLOAK', ab.dash], ['FOCUS', true], ['POGO', true]];
+  items.forEach((it, i) => A.text(c, it[0], 14 + i * 62, 98, 11, it[1] ? needleColor : 'rgba(255,255,255,.25)', 'left', '800'));
+}
+
+const levels = [0, 1, 2].map((i) => () => buildLevel(i));
+
+function onInit(G) {
+  G0 = G; runStarted = 0; runActive = false; runEnded = false; runKills = 0; runWalls = 0; runBossKills = 0;
+  runDeaths = 0; deadSeen = false; hurtThisStage = false; stageSeen = -1; mapStage = -1; vis.clear(); startBest = Number(stats().bestScore) || 0;
+  dailySeed = activeMode === 'daily' ? seedForToday() : 0;
+  applyRng();
+  if (G) G.scoreMultiplier = activeMode === 'hollow-plus' ? 1.3 : 1;
+  if (act) act.weapon.color = needleColor;
+  lastInitMode = activeMode;
+}
+
+game = K.game({
+  id: GAME_ID, title: 'Hollowbell', subtitle: 'A quiet descent into a living cave', color: '#5eead4', soul: true, lives: 0,
   controls: [['← →  /  A D', 'Walk'], ['Space  /  ↑  /  W  /  Z', 'Jump (hold for height)'], ['X  /  J', 'Needle strike — hit enemies to gain focus'], ['↓ + X in the air', 'Pogo off enemies'], ['Shift  /  L', 'Shade dash (after the Cloak)'], ['Hold V  /  H', 'Focus: spend 1/3 of the bar to heal'], ['P / M', 'Pause / mute']],
   help: '← → walk · Space jump · X strike (↓+X in air to pogo) · Shift dash · hold V to heal · benches save progress · if you fall, retrieve your lost shards from your shade',
-  levels: [CAVE], bg, hero: { hp: 5, run: 3.3, jump: 10.8, dashSpd: 9.5, dashT: 11, dashInv: true, heal: true, ab: {}, weapon: { type: 'melee', dmg: 1, range: 54, h: 40, cd: 17, dur: 9, pogo: true } },
+  levels, bg, hud, hero: { hp: 5, run: 3.3, jump: 10.8, dashSpd: 9.5, dashT: 11, dashInv: true, heal: true, ab: {}, weapon: { type: 'melee', dmg: 1, range: 54, h: 40, cd: 17, dur: 9, pogo: true } },
   pickups: { D: { ab: 'dash', msg: 'SHADE CLOAK — press Shift to dash', icon: 'D' } },
-  enemies: {
-    k: { w: 28, h: 22, hp: 2, ai: 'walk', sp: 0.7, sight: 120, score: 60, color: '#78716c' },
-    h: { w: 24, h: 26, hp: 2, ai: 'hop', sp: 2.4, jump: 9, every: 75, score: 90, color: '#57534e' },
-    v: { w: 24, h: 18, hp: 1, ai: 'fly', sp: 1.5, sight: 200, range: 60, bob: 22, score: 60, color: '#44403c' },
-    u: { w: 28, h: 30, hp: 3, ai: 'turret', fixed: true, score: 120, color: '#57534e', sight: 360, shoot: { speed: 3.2, color: '#fb923c' }, every: 100, aim: true },
-    B: { w: 40, h: 64, hp: 26, ai: 'boss', name: 'THE PALE WARDEN', wake: 340, score: 3000, color: '#e2e8f0', dmg: 2 },
-  },
-  boss, drawEnemy, drawHero, clear: 'THE WARDEN FALLS', winTitle: 'The Bell Falls Silent', winSub: (G, coins) => coins + ' shards carried · Score ' + G.score,
+  enemies,
+  boss, drawEnemy, drawHero, clear: 'THE WARDEN FALLS', winTitle: 'The Bell Falls Silent',
+  winSub: (G, coins) => finishRun(G, true, coins),
+  overTitle: 'The Bell Cracks',
+  overSub: (G, coins) => finishRun(G, false, coins),
+  onKill, onBreak, onHurt, onToken,
+  debug: (d) => { act = d; },
+  touchL: [['◀', 'ArrowLeft'], ['▶', 'ArrowRight']],
+  touchR: [['✦', 'KeyX'], ['➤', 'ShiftLeft'], ['▲', 'Space']],
+  onInit,
 });
+const originalShake = game.shake.bind(game);
+game.shake = (amount) => originalShake(amount * shakeScale);
+
+game.ui = UI.mountGame(game, {
+  id: GAME_ID, title: 'Hollowbell', subtitle: 'Descend three depths, keep your mask, and silence the Pale Warden.', accent: '#5eead4',
+  modes: [
+    { id: 'story', name: 'Pilgrimage', blurb: 'Three depths, one mask, the Pale Warden at the bottom.', seasonTargets: [6000, 12000, 20000] },
+    { id: 'shard-hunt', name: 'Shard Hunt', blurb: 'Gather four lost bells in each depth to open the gates.', seasonTargets: [7000, 14000, 22000] },
+    { id: 'boss-rush', name: 'Warden Gauntlet', blurb: 'Three back-to-back warden duels with no cave safety.', seasonTargets: [8000, 16000, 24000] },
+    { id: 'daily', name: 'Daily Descent', blurb: "A seeded descent fixed for today's date.", seeded: true, seasonTargets: [6500, 13000, 21000] },
+    { id: 'hollow-plus', name: 'Hollow+', blurb: 'Stronger enemies, 1.3× score, no mercy.', lockedHint: 'Complete Pilgrimage to unlock', requires: { stat: 'storyCompletions', gte: 1 }, seasonTargets: [9000, 18000, 27000] },
+  ],
+  settings: [
+    { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
+    { key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 },
+    { key: 'particles', label: 'Particles', type: 'select', options: ['lite', 'standard', 'ultra'], default: 'standard' },
+  ],
+  achievements: [
+    { id: 'first-wound', name: 'First Wound', desc: 'Defeat your first enemy.', rarity: 'common' },
+    { id: 'wall-breaker', name: 'Wall Breaker', desc: 'Break six cracked walls in one run.', rarity: 'common' },
+    { id: 'hunter', name: 'Relentless Hunter', desc: 'Defeat 25 enemies in one run.', rarity: 'common' },
+    { id: 'score-10000', name: 'Shard Legend', desc: 'Score 10,000 in one run.', rarity: 'rare' },
+    { id: 'warden-slayer', name: 'Pale Warden Slain', desc: 'Defeat the Pale Warden.', rarity: 'rare' },
+    { id: 'personal-best', name: 'Personal Best', desc: 'Finish Pilgrimage with a new best score.', rarity: 'rare' },
+    { id: 'story-clear', name: 'Pilgrimage Complete', desc: 'Finish Pilgrimage.', rarity: 'rare' },
+    { id: 'shard-keeper', name: 'Shard Keeper', desc: 'Finish Shard Hunt.', rarity: 'rare' },
+    { id: 'daily-player', name: 'Daily Descent', desc: 'Finish the Daily Descent.', rarity: 'rare' },
+    { id: 'untouched', name: 'Untouched', desc: 'Clear a depth without taking damage.', rarity: 'epic' },
+    { id: 'iron-heart', name: 'Iron Heart', desc: 'Finish Pilgrimage without falling once.', rarity: 'epic' },
+    { id: 'speed-run', name: 'Hollow Sprint', desc: 'Finish Pilgrimage in under six minutes.', rarity: 'epic' },
+    { id: 'hollow-clear', name: 'Hollow Adept', desc: 'Finish Hollow+.', rarity: 'legendary' },
+    { id: 'gauntlet-clear', name: 'Gauntlet Run', desc: 'Win all three warden duels.', rarity: 'legendary' },
+  ],
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Move with A/D or the arrow keys and jump with Space.', hold: 'KeyD' },
+    { text: 'Press X or J to strike. Down+X in the air pogos off enemies.', hold: 'KeyX' },
+    { text: 'Pick up the Shade Cloak, then press Shift to dash through danger.', hold: 'ShiftLeft' },
+    { text: 'Hold V with a full focus bar to heal, then silence the Pale Warden.', hold: 'KeyV' },
+  ] },
+  chapter: 'HOLLOWBELL · 3 DEPTHS', levels: [{}, {}, {}],
+  hooks: {
+    applyMode: (mode) => {
+      const next = MODES[mode] ? mode : 'story';
+      if (next === 'hollow-plus' && !(Number(stats().storyCompletions) > 0)) { UI.toast('Complete Pilgrimage to unlock Hollow+', { color: '#5eead4' }); return false; }
+      activeMode = next;
+      applyRng();
+      if (game && lastInitMode !== activeMode) game.restart(false);
+      return true;
+    },
+    applySetting: (key, value) => {
+      if (key === 'difficulty') {
+        difficulty = value; Arcade.difficulty = value;
+        Arcade.speedMult = value === 'easy' ? 0.8 : value === 'hard' ? 1.35 : 1;
+      }
+      if (key === 'shake') shakeScale = Number(value);
+      if (key === 'particles' && window.Perf && Perf.setTier) Perf.setTier(value);
+    },
+    applyCosmetic,
+  },
+});
+
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  window.HollowbellTest = {
+    state() {
+      const p = act && act.player, b = act && act.boss;
+      return {
+        mode: activeMode, difficulty, state: game.state, score: game.score, hi: game.hi, title: game.title, sub: game.sub,
+        level: act ? act.level : 0, stage: stageName(), tokens: act ? act.tokens : 0, need: stageNeed(), lives: act ? act.lives : 0,
+        hp: p ? p.hp : 0, maxhp: p ? p.maxhp : 0, ammo: p ? p.ammo : 0, focus: p ? p.focus : 0, x: p ? Math.round(p.x) : 0, y: p ? Math.round(p.y) : 0,
+        boss: b ? { hp: b.hp, hmax: b.hmax, awake: b.awake } : null, enemies: act ? act.enemies.length : 0,
+        seed: dailySeed, elapsed: runStarted ? Date.now() - runStarted : 0,
+        kills: runKills, walls: runWalls, deaths: runDeaths, startBest, levelCount: levels.length,
+      };
+    },
+    sequence(n) { return dailySequence(n == null ? 12 : n, dailySeed || seedForToday()); },
+    world() { return act && act.grid ? act.grid.map((row) => row.join('')).join('\n') : ''; },
+    levelName(n) { const i = n == null ? (act ? act.level : 0) : n; return (activeMode === 'boss-rush' ? ARENA_NAMES : STORY_NAMES)[i] || ''; },
+    setMode(mode) { return game.ui.setMode(mode); },
+    restart(autostart) { game.restart(autostart === true); },
+    setDifficulty(level) { difficulty = level; Arcade.difficulty = level; Arcade.speedMult = level === 'easy' ? 0.8 : level === 'hard' ? 1.35 : 1; },
+    award(points) { game.addScore(points == null ? 1000 : points); },
+    cosmetic(slot, id) { applyCosmetic(slot, id); },
+    colors() { return { cloak: skin.cloak, mask: skin.mask, trim: skin.trim, eye: skin.eye, needle: needleColor, effect: effectColor, theme: skyTheme }; },
+    stats() { return (window.Save && Save.load(GAME_ID)) || {}; },
+    goLevel(i) { if (act) act.goLevel(i); },
+    setTokens(n) { if (act) act.setTokens(n); },
+    hurt(n) { if (act) act.hurt(n); },
+    wakeBoss() { if (act) act.wakeBoss(); },
+    damageBoss(n) { if (act) act.damageBoss(n); },
+    killBoss() { if (act) { act.wakeBoss(); act.damageBoss(9999); } },
+    clearEnemies() { if (act) act.clearEnemies(); },
+    finishLevel() { if (act) act.finishLevel(); },
+    breakTile(c, r) { if (act) act.breakTile(c, r); },
+    teleport(x, y) { if (act) act.teleport(x, y); },
+    spawn(ch, x, y) { const e = act && act.spawn(ch, x, y); return e ? { k: e.k, hp: e.hp, hmax: e.hmax } : null; },
+    setAmmo(n) { if (act) act.setAmmo(n); },
+    enemyStats() { return act ? act.enemies.map((e) => ({ k: e.k, hp: e.hp, hmax: e.hmax })) : []; },
+    gridAt(c, r) { return act ? act.tile(c, r) : ' '; },
+    stageCount() { return levels.length; },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

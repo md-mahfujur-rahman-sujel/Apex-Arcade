@@ -20,38 +20,286 @@
 <script src="../../kits/ui-kit.js"></script>
 <script>
 /* Deepcore Drifter — sci-fi cavern shooter: find Spring Boots (double jump), the Charge Cell and Missiles,
-   open cyan and red doors, break weak walls, and defeat the Brood Warden. Built on act-kit.js. */
-const A = Arcade, K = Act, TAU = Math.PI * 2;
+   shoot cyan doors, break weak walls, blow red doors and stop the Brood Warden. Built on act-kit.js. */
+const A = Arcade, K = Act, TAU = Math.PI * 2, GAME_ID = 'deepcore-drifter';
 
-const CORE = K.make('Deepcore', 150, 20, (g) => {
-  const gy = 16; /* row the player stands on */
-  g.ground(0, 34, 17); g.set(2, gy, 'P'); g.set(12, gy, 'k'); g.set(22, gy, 'k'); g.set(28, 11, 'v'); g.plat(14, 13, 4); g.coins(14, 12, 4); g.set(31, gy, 'C');
-  g.fill(34, 8, 1, 9, 'd');
-  g.ground(35, 58, 17); g.set(42, gy, 'h'); g.set(48, gy, 'k'); g.set(54, gy, 'u'); g.set(52, gy, 'J'); g.set(38, 12, 'v'); g.coins(44, 14, 3);
-  g.ground(64, 106, 17); g.set(66, gy, 'C'); g.set(72, gy, 'k'); g.set(78, gy, 'h'); g.set(76, 10, 'v');
-  g.plat(84, 14, 3); g.plat(88, 11, 3); g.set(89, 10, 'H'); g.set(92, gy, 'u'); g.set(94, gy, 'k'); g.coins(84, 13, 3);
-  g.fill(96, 8, 1, 9, 'x'); g.set(100, gy, 'k'); g.set(101, gy, 'M'); g.set(104, gy, 'T'); g.set(103, 12, 'v');
-  g.fill(107, 8, 1, 9, 'e');
-  g.ground(108, 150, 17); g.set(112, gy, 'C'); g.set(130, gy, 'B'); g.set(147, gy, 'F');
-});
-CORE.hint = 'Shoot cyan doors · find the Spring Boots to cross the chasm';
-CORE.theme = { solid: '#2a2f4a', top: '#6d28d9', plat: '#475569', accent: '#22d3ee', spike: '#f0abfc' };
+const NATIVE_RANDOM = Math.random.bind(Math);
 
-const vis = new Set();
-function bg(c, cam, t) {
-  A.sky(c, 800, 480, ['#07061a', '#14103a', '#2a1650']);
-  for (let i = 0; i < 24; i++) { const x = ((i * 97 - cam.x * 0.15) % 900 + 900) % 900 - 50, h = 40 + (i * 37) % 90; c.fillStyle = 'rgba(88,28,135,.35)'; c.beginPath(); c.moveTo(x - 14, 0); c.lineTo(x, h); c.lineTo(x + 14, 0); c.fill(); }
-  K.ridge(c, 360, 40, 1.7, cam.x * 0.2, 'rgba(30,27,75,.8)'); K.ridge(c, 420, 26, 4.2, cam.x * 0.45, '#120e30');
-  c.fillStyle = 'rgba(103,232,249,.5)'; for (let i = 0; i < 18; i++) { const x = ((i * 131 - cam.x * 0.3) % 960 + 960) % 960 - 80, y = 90 + (i * 53) % 280, a = 0.4 + Math.sin(t * 0.03 + i) * 0.3; c.globalAlpha = a; c.fillRect(x, y, 3, 3); } c.globalAlpha = 1;
+let activeMode = 'story', difficulty = 'normal', dailySeed = 0, rngState = 1, lastInitMode = null;
+let runStarted = 0, runActive = false, runEnded = false, runKills = 0, runDoors = 0, runBossKills = 0;
+let runDeaths = 0, lastLives = 3, hurtThisStage = false, stageSeen = -1, startBest = 0, shakeScale = 1;
+let G0 = null, game = null, act = null, currentStage = 0, mapStage = -1;
+let skin = { suit: '#f97316', trim: '#b45309', helm: '#fdba74', visor: '#22d3ee', gun: '#7c2d12' };
+let beamColor = '#67e8f9', effectColor = '#22d3ee', skyTheme = 'deepcore';
+
+const MODES = {
+  story: { label: 'STORY DRIFT' },
+  'core-hunt': { label: 'CORE HUNT' },
+  'boss-rush': { label: 'WARDEN GAUNTLET' },
+  daily: { label: 'DAILY DESCENT' },
+  'nightcore-plus': { label: 'NIGHTCORE+' },
+};
+const STORY_NAMES = ['Sector 1 · Collapsed Core', 'Sector 2 · Ion Trench', 'Sector 3 · Brood Nest'];
+const ARENA_NAMES = ['Duel 1 · Deep Vault', 'Duel 2 · Pressure Lock', 'Duel 3 · Warden Chamber'];
+
+/* ---------- daily seed and records ---------- */
+function seedForToday() {
+  const d = new Date(), key = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  let x = key ^ 0x6d2b79f5;
+  for (const ch of GAME_ID) x = Math.imul(x ^ ch.charCodeAt(0), 16777619);
+  return x >>> 0 || 1;
 }
+function dailySequence(n, seed) {
+  let s = (seed || dailySeed || 1) >>> 0; const out = [];
+  for (let i = 0; i < n; i++) { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; out.push(Number(((s >>> 0) / 4294967296).toFixed(6))); }
+  return out;
+}
+function applyRng() {
+  if (activeMode !== 'daily') { Math.random = NATIVE_RANDOM; return; }
+  rngState = dailySeed || seedForToday();
+  Math.random = () => { rngState ^= rngState << 13; rngState ^= rngState >>> 17; rngState ^= rngState << 5; return (rngState >>> 0) / 4294967296; };
+}
+function saved() { return (window.Save && Save.load(GAME_ID)) || {}; }
+function stats() { const s = saved(); return s.stats || {}; }
+function award(id, label) {
+  const s = saved(), earned = Array.isArray(s.achievements) ? s.achievements : [];
+  if (earned.includes(id)) return;
+  Save.update(GAME_ID, { achievements: [id] });
+  if (window.Apex && Apex.unlockAchievement) Apex.unlockAchievement(id, GAME_ID);
+  UI.toast(label || id.replace(/-/g, ' '), { color: '#22d3ee' });
+}
+function stageNeed() { return activeMode === 'core-hunt' ? 4 : 0; }
+function stageName() { const n = act ? act.level : 0; return (activeMode === 'boss-rush' ? ARENA_NAMES : STORY_NAMES)[n] || STORY_NAMES[0]; }
+
+function recordRun(won, coins, sec) {
+  const st = stats(), stage = act ? act.level + 1 : 1, deaths = Math.max(runDeaths, act ? Math.max(0, 3 - act.lives) : 0);
+  const patch = {
+    runs: (st.runs || 0) + 1,
+    seconds: (st.seconds || 0) + sec,
+    kills: (st.kills || 0) + runKills,
+    doors: (st.doors || 0) + runDoors,
+    deaths: (st.deaths || 0) + deaths,
+    highestStage: Math.max(st.highestStage || 0, stage),
+    bestScore: Math.max(st.bestScore || 0, G0 ? G0.score : 0),
+    lastMode: activeMode,
+    bossesFelled: (st.bossesFelled || 0) + runBossKills,
+    storyCompletions: (st.storyCompletions || 0) + (won && activeMode === 'story' ? 1 : 0),
+    coreCompletions: (st.coreCompletions || 0) + (won && activeMode === 'core-hunt' ? 1 : 0),
+    dailyCompletions: (st.dailyCompletions || 0) + (won && activeMode === 'daily' ? 1 : 0),
+    nightcoreCompletions: (st.nightcoreCompletions || 0) + (won && activeMode === 'nightcore-plus' ? 1 : 0),
+    bossRushCompletions: (st.bossRushCompletions || 0) + (won && activeMode === 'boss-rush' ? 1 : 0),
+    dailyBest: activeMode === 'daily' ? Math.max(st.dailyBest || 0, G0 ? G0.score : 0) : (st.dailyBest || 0),
+  };
+  if (won && activeMode === 'story') patch.bestTimeSec = Math.min(st.bestTimeSec || 99999, sec);
+  Save.update(GAME_ID, { stats: patch });
+  void coins;
+}
+function finishRun(G, won, coins) {
+  if (runEnded) return 'Score ' + G.score;
+  const sec = Math.max(1, Math.round((Date.now() - (runStarted || Date.now())) / 1000));
+  recordRun(won, coins, sec);
+  if (won) {
+    if (!hurtThisStage) award('untouched', 'Untouched');
+    if (activeMode === 'story') {
+      award('story-clear', 'Core Stabilised');
+      if (G.score > startBest) award('personal-best', 'Personal Best');
+      const deaths = Math.max(runDeaths, act ? Math.max(0, 3 - act.lives) : 0);
+      if (deaths === 0) award('iron-drifter', 'Iron Drifter');
+      if (sec <= 360) award('speed-run', 'Core Sprint');
+    }
+    if (activeMode === 'core-hunt') award('core-keeper', 'Core Keeper');
+    if (activeMode === 'daily') award('daily-player', 'Daily Descent');
+    if (activeMode === 'nightcore-plus') award('nightcore-clear', 'Nightcore Adept');
+    if (activeMode === 'boss-rush') award('gauntlet-clear', 'Gauntlet Run');
+  }
+  runEnded = true;
+  return won
+    ? 'Score ' + G.score + ' · ' + coins + ' shards · ' + sec + 's'
+    : 'Score ' + G.score + ' · reached ' + stageName();
+}
+function trackStage() {
+  if (!act) return;
+  const lvl = act.level;
+  if (lvl === stageSeen) return;
+  if (stageSeen >= 0 && !hurtThisStage) award('untouched', 'Untouched');
+  stageSeen = lvl; hurtThisStage = false; currentStage = lvl;
+  const st = stats();
+  if ((st.highestStage || 0) < lvl + 1) Save.update(GAME_ID, { stats: { highestStage: lvl + 1 } });
+}
+function checkMilestones() {
+  if (G0 && G0.score >= 10000) award('score-10000', 'Deepcore Legend');
+}
+function onKill(e, G) {
+  runKills++;
+  if (runKills >= 1) award('first-blood', 'First Blood');
+  if (runKills >= 25) award('hunter', 'Relentless Hunter');
+  if (e.d && e.d.ai === 'boss') { runBossKills++; award('warden-slayer', 'Brood Warden Slain'); }
+  checkMilestones();
+}
+function onBreak(ch) {
+  if (!'dex'.includes(ch)) return;
+  runDoors++;
+  if (runDoors >= 8) award('scavenger', 'Scavenger');
+}
+function onHurt() { hurtThisStage = true; }
+function onToken(tokens) { if (tokens >= 4) UI.toast('Core charged — find the gate', { color: '#a3e635' }); }
+
+/* ---------- cosmetics ---------- */
+function applyCosmetic(slot, id) {
+  const key = String(id || '').split(':').pop();
+  if (slot === 'skin') {
+    const skins = {
+      'drifter-standard': { suit: '#f97316', trim: '#b45309', helm: '#fdba74', visor: '#22d3ee', gun: '#7c2d12' },
+      'drifter-ember': { suit: '#ef4444', trim: '#fca5a5', helm: '#fde047', visor: '#fb923c', gun: '#450a0a' },
+      'drifter-arctic': { suit: '#38bdf8', trim: '#bae6fd', helm: '#e0f2fe', visor: '#0ea5e9', gun: '#082f49' },
+      'drifter-toxic': { suit: '#4ade80', trim: '#bbf7d0', helm: '#dcfce7', visor: '#a3e635', gun: '#14532d' },
+      'drifter-void': { suit: '#6366f1', trim: '#c7d2fe', helm: '#818cf8', visor: '#f0abfc', gun: '#1e1b4b' },
+    };
+    if (skins[key]) skin = Object.assign({}, skins[key]);
+  } else if (slot === 'palette') {
+    beamColor = key.includes('plasma') ? '#f472b6' : key.includes('solar') ? '#fde047' : key.includes('void') ? '#c084fc' : '#67e8f9';
+    if (act) act.weapon.color = beamColor;
+  } else if (slot === 'effect') {
+    effectColor = key === 'static' ? '#a3e635' : key === 'nova' ? '#fb7185' : '#22d3ee';
+  } else if (slot === 'theme') {
+    skyTheme = key.includes('magma') ? 'magma-core' : key.includes('frozen') ? 'frozen-abyss' : key.includes('overgrown') ? 'overgrown-nest' : 'deepcore';
+  }
+}
+
+/* ---------- stages ---------- */
+function coreStage() {
+  const g = K.make(STORY_NAMES[0], 150, 20, (g) => {
+    const gy = 16;
+    g.ground(0, 34, 17); g.set(2, gy, 'P'); g.set(12, gy, 'k'); g.set(22, gy, 'k'); g.set(28, 11, 'v'); g.plat(14, 13, 4); g.coins(14, 12, 4); g.set(31, gy, 'C');
+    g.fill(34, 8, 1, 9, 'd');
+    g.ground(35, 58, 17); g.set(42, gy, 'h'); g.set(48, gy, 'k'); g.set(54, gy, 'u'); g.set(52, gy, 'J'); g.set(38, 12, 'v'); g.coins(44, 14, 3);
+    g.ground(64, 106, 17); g.set(66, gy, 'C'); g.set(72, gy, 'k'); g.set(78, gy, 'h'); g.set(76, 10, 'v');
+    g.plat(84, 14, 3); g.plat(88, 11, 3); g.set(89, 10, 'H'); g.set(92, gy, 'u'); g.set(94, gy, 'k'); g.coins(84, 13, 3);
+    g.fill(96, 8, 1, 9, 'x'); g.set(100, gy, 'k'); g.set(101, gy, 'M'); g.set(104, gy, 'T'); g.set(103, 12, 'v');
+    g.fill(107, 8, 1, 9, 'e');
+    g.ground(108, 150, 17); g.set(112, gy, 'C'); g.set(147, gy, 'F');
+    if (activeMode === 'core-hunt') { for (const [x, y] of [[6, 16], [46, 16], [88, 16], [142, 16]]) g.set(x, y, 'g'); }
+  });
+  g.theme = { solid: '#2a2f4a', top: '#6d28d9', plat: '#475569', accent: '#22d3ee', spike: '#f0abfc' };
+  g.hint = activeMode === 'core-hunt' ? 'Collect 4 core shards to open the gate' : activeMode === 'daily' ? "Today's descent is fixed — learn the route" : 'Shoot cyan doors · find the Spring Boots to cross the deep';
+  g.need = stageNeed();
+  return g;
+}
+function trenchStage() {
+  const g = K.make(STORY_NAMES[1], 128, 18, (g) => {
+    const gy = 14;
+    g.ground(0, 20, 15); g.set(2, gy, 'P'); g.set(8, gy, 'k'); g.plat(12, 11, 4); g.set(13, 10, 'v'); g.coins(12, 10, 4); g.set(18, gy, 'C');
+    g.ground(23, 40, 15); g.set(27, gy, 'h'); g.set(31, gy, 'k'); g.set(36, gy, 'u'); g.set(38, 12, 'v');
+    g.fill(40, 9, 1, 6, 'd');
+    g.ground(41, 64, 15); g.set(44, gy, 'k'); g.set(48, gy, 'h'); g.plat(52, 11, 3); g.set(53, 10, 'J'); g.coins(52, 10, 3); g.set(58, gy, 'C'); g.set(61, gy, 'u');
+    g.fill(64, 9, 1, 6, 'x');
+    g.ground(65, 90, 15); g.set(68, gy, 'k'); g.set(72, gy, 'h'); g.set(76, 8, 'v'); g.set(80, gy, 'u'); g.set(84, gy, 'T'); g.coins(74, 13, 4);
+    g.ground(93, 128, 15); g.set(96, gy, 'k'); g.set(100, gy, 'h'); g.plat(104, 11, 4); g.set(105, 10, 'H'); g.coins(104, 10, 4); g.set(110, gy, 'u'); g.set(118, gy, 'k'); g.set(125, gy, 'F');
+    if (activeMode === 'core-hunt') { for (const [x, y] of [[6, 14], [34, 14], [62, 14], [86, 14]]) g.set(x, y, 'g'); }
+  });
+  g.theme = { solid: '#1f2a3a', top: '#0ea5e9', plat: '#334155', accent: '#22d3ee', spike: '#f0abfc' };
+  g.hint = activeMode === 'core-hunt' ? 'Collect 4 core shards to open the gate' : 'Mind the gaps · shoot the blue door · missiles open red doors';
+  g.need = stageNeed();
+  return g;
+}
+function nestStage() {
+  const g = K.make(STORY_NAMES[2], 132, 18, (g) => {
+    const gy = 14;
+    g.ground(0, 30, 15); g.set(2, gy, 'P'); g.set(9, gy, 'k'); g.set(15, gy, 'h'); g.plat(19, 11, 4); g.set(20, 10, 'v'); g.coins(19, 10, 4); g.set(26, gy, 'C');
+    g.fill(30, 9, 1, 6, 'd');
+    g.ground(31, 62, 15); g.set(35, gy, 'k'); g.set(40, gy, 'u'); g.set(45, gy, 'h'); g.plat(49, 11, 3); g.set(50, 10, 'T'); g.coins(49, 10, 3); g.set(56, gy, 'C'); g.set(59, gy, 'v');
+    g.fill(62, 9, 1, 6, 'x');
+    g.ground(63, 96, 15); g.set(66, gy, 'k'); g.set(71, gy, 'h'); g.set(76, 9, 'v'); g.set(80, gy, 'u'); g.set(85, gy, 'k'); g.set(90, gy, 'C'); g.coins(68, 13, 4);
+    g.ground(96, 132, 15); g.set(100, gy, 'k'); g.set(104, gy, 'h'); g.set(108, gy, 'u'); g.set(112, 10, 'B'); g.set(128, gy, 'F');
+    if (activeMode === 'core-hunt') { for (const [x, y] of [[6, 14], [38, 14], [70, 14], [104, 14]]) g.set(x, y, 'g'); }
+  });
+  g.theme = { solid: '#2b2138', top: '#84cc16', plat: '#4b5563', accent: '#a3e635', spike: '#f0abfc' };
+  g.hint = activeMode === 'core-hunt' ? 'Collect 4 core shards to open the gate' : 'The Brood Warden guards the core — break through';
+  g.need = stageNeed();
+  return g;
+}
+function arenaStage(n) {
+  const g = K.make(ARENA_NAMES[n], 40, 15, (g) => {
+    g.ground(0, 40);
+    g.set(2, 11, 'P'); g.set(6, 11, 'C');
+    g.set(9, 11, 'T'); g.set(12, 11, 'T');
+    g.plat(8, 9, 3); g.plat(16, 7, 3); g.plat(27, 9, 3);
+    g.set(18, 6, 'H'); g.set(28, 8, 'M');
+    g.set(31, 10, 'B'); g.set(37, 11, 'F');
+  });
+  g.theme = n === 0 ? { solid: '#2a2f4a', top: '#6d28d9', plat: '#475569', accent: '#22d3ee', spike: '#f0abfc' }
+    : n === 1 ? { solid: '#1f2a3a', top: '#0ea5e9', plat: '#334155', accent: '#22d3ee', spike: '#f0abfc' }
+      : { solid: '#2b2138', top: '#84cc16', plat: '#4b5563', accent: '#a3e635', spike: '#f0abfc' };
+  g.hint = n === 0 ? 'Three wardens. No quarter. Keep moving' : n === 1 ? 'The warden remembers your beam' : 'End the gauntlet';
+  return g;
+}
+function buildLevel(i) { return activeMode === 'boss-rush' ? arenaStage(i) : [coreStage, trenchStage, nestStage][i](); }
+
+/* ---------- enemy defs (Nightcore+ scales HP and rewards) ---------- */
+const ENEMY_BASE = {
+  k: { w: 28, h: 18, hp: 2, ai: 'walk', sp: 0.7, score: 80, color: '#84cc16' },
+  h: { w: 24, h: 24, hp: 2, ai: 'hop', sp: 2.2, jump: 9, every: 70, score: 100, color: '#f43f5e' },
+  v: { w: 24, h: 18, hp: 1, ai: 'fly', sp: 1.7, sight: 210, range: 60, bob: 24, score: 80, color: '#a78bfa' },
+  u: { w: 28, h: 30, hp: 4, ai: 'turret', fixed: true, score: 150, color: '#ef4444', sight: 400, shoot: { speed: 3.4, color: '#fb7185' }, every: 90, aim: true },
+  B: { w: 80, h: 76, hp: 36, ai: 'boss', name: 'BROOD WARDEN', wake: 380, score: 3000, color: '#65a30d', dmg: 2 },
+};
+const enemies = {};
+for (const key of Object.keys(ENEMY_BASE)) {
+  Object.defineProperty(enemies, key, {
+    enumerable: true, configurable: true,
+    get() {
+      const base = ENEMY_BASE[key];
+      if (activeMode !== 'nightcore-plus') return base;
+      if (base.ai === 'boss') return Object.assign({}, base, { hp: Math.round(base.hp * 1.5), dmg: 3, score: Math.round(base.score * 1.5) });
+      return Object.assign({}, base, { hp: Math.ceil(base.hp * 1.5), sp: (base.sp || 1) * 1.15, score: Math.round((base.score || 100) * 1.5) });
+    },
+  });
+}
+
+/* ---------- backdrop ---------- */
+const SKY = {
+  deepcore: [['#07061a', '#14103a', '#2a1650'], ['#050b1a', '#0c1e3a', '#1e3a8a'], ['#0a0518', '#1e1b4b', '#4c1d95']],
+  'magma-core': [['#160412', '#3f0d1d', '#7f1d1d'], ['#180a04', '#451a03', '#9a3412'], ['#120312', '#3b0764', '#831843']],
+  'frozen-abyss': [['#040c1c', '#0c1e3a', '#1e40af'], ['#031018', '#0e2a33', '#155e75'], ['#020a14', '#111c3d', '#312e81']],
+  'overgrown-nest': [['#04120c', '#064e3b', '#166534'], ['#050f08', '#14532d', '#3f6212'], ['#08120c', '#0f3d2e', '#365314']],
+};
+function bg(c, cam, t, lvl, G) {
+  const pal = SKY[skyTheme] || SKY.deepcore, band = pal[Math.min(2, Math.max(0, lvl))];
+  A.sky(c, 800, 480, band);
+  for (let i = 0; i < 24; i++) {
+    const x = ((i * 97 - cam.x * 0.15) % 900 + 900) % 900 - 50, h = 40 + (i * 37) % 90;
+    c.fillStyle = 'rgba(88,28,135,.30)'; c.beginPath(); c.moveTo(x - 14, 0); c.lineTo(x, h); c.lineTo(x + 14, 0); c.fill();
+  }
+  K.ridge(c, 360, 40, 1.7, cam.x * 0.2, 'rgba(30,27,75,.8)');
+  K.ridge(c, 420, 26, 4.2, cam.x * 0.45, '#120e30');
+  c.fillStyle = beamColor + '88';
+  for (let i = 0; i < 18; i++) {
+    const x = ((i * 131 - cam.x * 0.3) % 960 + 960) % 960 - 80, y = 90 + (i * 53) % 280;
+    c.globalAlpha = 0.4 + Math.sin(t * 0.03 + i) * 0.3; c.fillRect(x, y, 3, 3);
+  }
+  c.globalAlpha = 1;
+  if (skyTheme === 'frozen-abyss') { c.fillStyle = 'rgba(191,219,254,.30)'; for (let i = 0; i < 40; i++) { const x = (i * 97 + t * 0.4) % 800, y = (i * 61 + t * 1.1) % 480; c.fillRect(x, y, 2, 2); } }
+  if (skyTheme === 'magma-core') { c.fillStyle = 'rgba(251,113,133,.08)'; c.fillRect(0, 0, 800, 480); }
+  if (G && G.state === 'playing' && !runActive) { runActive = true; runStarted = Date.now(); runEnded = false; }
+  if (G && (G.state === 'ready' || G.state === 'over' || G.state === 'won')) runActive = false;
+  if (act) {
+    if (act.lives < lastLives) { runDeaths += lastLives - act.lives; lastLives = act.lives; }
+    else if (act.lives > lastLives) lastLives = act.lives;
+  }
+  trackStage();
+  checkMilestones();
+}
+
+/* ---------- characters ---------- */
 function drawHero(c, p, G) {
   const cx = p.x + p.w / 2, f = p.face, b = p.y + p.h, run = p.ground ? Math.sin(p.walk) : 0;
   A.shadow(c, cx, b + 1, 11, 3, 0.25); c.save(); c.translate(cx, b); c.scale(f * (1 + p.sq * 0.4), 1 - p.sq * 0.4);
-  c.fillStyle = '#b45309'; c.fillRect(-7 + (p.ground ? run * 3 : 0), -10, 6, 10); c.fillRect(1 - (p.ground ? run * 3 : 0), -10, 6, 10);
-  c.fillStyle = '#f97316'; A.roundRect(c, -9, -26, 18, 18, 6); c.fill(); c.fillStyle = '#fb923c'; c.fillRect(-9, -26, 18, 4);
-  c.fillStyle = '#fdba74'; A.roundRect(c, -7, -36, 14, 12, 5); c.fill(); c.fillStyle = '#22d3ee'; c.shadowColor = '#22d3ee'; c.shadowBlur = 6; c.fillRect(0, -32, 6, 5); c.shadowBlur = 0;
-  c.fillStyle = '#7c2d12'; A.roundRect(c, 4, -22, 14, 7, 3); c.fill();
-  if (p.chg > 8) { c.fillStyle = p.chg >= 45 ? '#fff' : '#67e8f9'; c.shadowColor = '#22d3ee'; c.shadowBlur = 14; c.beginPath(); c.arc(19, -19, 2 + p.chg / 14, 0, TAU); c.fill(); }
+  c.fillStyle = skin.trim; c.fillRect(-7 + (p.ground ? run * 3 : 0), -10, 6, 10); c.fillRect(1 - (p.ground ? run * 3 : 0), -10, 6, 10);
+  c.fillStyle = skin.suit; A.roundRect(c, -9, -26, 18, 18, 6); c.fill(); c.fillStyle = skin.trim; c.fillRect(-9, -26, 18, 4);
+  c.fillStyle = skin.helm; A.roundRect(c, -7, -36, 14, 12, 5); c.fill();
+  c.fillStyle = skin.visor; c.shadowColor = skin.visor; c.shadowBlur = 6; c.fillRect(0, -32, 6, 5); c.shadowBlur = 0;
+  c.fillStyle = skin.gun; A.roundRect(c, 4, -22, 14, 7, 3); c.fill();
+  if (p.chg > 8) { c.fillStyle = p.chg >= 45 ? '#fff' : beamColor; c.shadowColor = beamColor; c.shadowBlur = 14; c.beginPath(); c.arc(19, -19, 2 + p.chg / 14, 0, TAU); c.fill(); }
   c.restore();
 }
 function drawEnemy(c, e, G) {
@@ -65,51 +313,180 @@ function drawEnemy(c, e, G) {
     c.beginPath(); c.ellipse(0, -34, 40, 34 - sq * 4, 0, Math.PI, 0); c.fill(); c.fillRect(-40, -34, 80, 26);
     for (let i = 0; i < 5; i++) { c.fillRect(-36 + i * 16, -10 + Math.sin(t * 0.3 + i) * 2, 8, 10); }
     c.fillStyle = hit ? '#fff' : '#3f6212'; for (let i = -2; i <= 2; i++) { c.beginPath(); c.moveTo(i * 14 - 6, -60); c.lineTo(i * 14, -76 + Math.abs(i) * 5); c.lineTo(i * 14 + 6, -60); c.fill(); }
-    c.fillStyle = '#fef08a'; c.shadowColor = '#fde047'; c.shadowBlur = 12; c.beginPath(); c.arc(22, -42, 8, 0, TAU); c.fill(); c.beginPath(); c.arc(4, -48, 6, 0, TAU); c.fill(); c.shadowBlur = 0; c.fillStyle = '#111'; c.fillRect(22, -45, 4, 6);
+    c.fillStyle = '#fef08a'; c.shadowColor = effectColor; c.shadowBlur = 12; c.beginPath(); c.arc(22, -42, 8, 0, TAU); c.fill(); c.beginPath(); c.arc(4, -48, 6, 0, TAU); c.fill(); c.shadowBlur = 0; c.fillStyle = '#111'; c.fillRect(22, -45, 4, 6);
     c.restore(); return true;
   }
 }
 function boss(e, x) {
   const p = x.p, low = e.hp < e.hmax * 0.5, per = low ? 56 : 82; e.t++;
-  if (e.ground) { e.vx *= 0.8; if (e.t % per === 0) { e.vy = -12.5; e.vx = (p.x < e.x ? -1 : 1) * (low ? 4.4 : 3.5); A.sfx('jump2'); } else if (e.t % per === Math.floor(per / 2)) { const a = Math.atan2(p.y - e.y - 20, p.x - e.x); for (let i = -1; i <= 1; i++) x.shoot(e, Math.cos(a + i * 0.3) * 4, Math.sin(a + i * 0.3) * 4, { color: '#bef264', r: 7 }); A.sfx('shoot'); } }
+  if (e.ground) {
+    e.vx *= 0.8;
+    if (e.t % per === 0) { e.vy = -12.5; e.vx = (p.x < e.x ? -1 : 1) * (low ? 4.4 : 3.5); A.sfx('jump2'); }
+    else if (e.t % per === Math.floor(per / 2)) {
+      const a = Math.atan2(p.y - e.y - 20, p.x - e.x);
+      for (let i = -1; i <= 1; i++) x.shoot(e, Math.cos(a + i * 0.3) * 4, Math.sin(a + i * 0.3) * 4, { color: effectColor, r: 7 });
+      A.sfx('shoot');
+    }
+  }
   if (e.ground && e.vy === 0 && e.t % per === 1) x.G.shake(5);
 }
+
+/* ---------- minimap HUD ---------- */
+const vis = new Set();
 function hud(c, G, p) {
-  const rows = CORE.rows, mw = 150, mh = 20, ox = 800 - mw - 14, oy = 64;
-  if (G.t < 4) vis.clear();
+  if (!act || !act.grid) return;
+  if (mapStage !== act.level) { vis.clear(); mapStage = act.level; }
+  const cols = act.cols, nrows = act.rows, mw = 150, mh = 30, ox = 800 - mw - 14, oy = 64;
   const pc = Math.floor(p.x / 32), pr = Math.floor(p.y / 32);
-  for (let dx = -9; dx <= 9; dx++) for (let dy = -5; dy <= 5; dy++) vis.add((pc + dx) + ',' + (pr + dy));
-  c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(ox - 3, oy - 3, mw + 6, mh * 1.5 + 6);
-  for (let r = 0; r < mh; r++) for (let q = 0; q < mw; q++) {
-    if (!vis.has(q + ',' + r)) continue; const ch = rows[r][q];
-    if (ch === '#') c.fillStyle = '#6d28d9'; else if (ch === 'd') c.fillStyle = '#22d3ee'; else if (ch === 'e') c.fillStyle = '#fb7185'; else if (ch === 'x') c.fillStyle = '#a3a3a3'; else if (ch === 'C' || ch === 'F') c.fillStyle = '#4ade80'; else continue;
-    c.fillRect(ox + q, oy + r * 1.5, 1, 1.5);
+  for (let dx = -12; dx <= 12; dx++) for (let dy = -6; dy <= 6; dy++) vis.add((pc + dx) + ',' + (pr + dy));
+  c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(ox - 3, oy - 3, mw + 6, mh + 6);
+  const sx = mw / cols, sy = mh / nrows;
+  for (let r = 0; r < nrows; r++) for (let q = 0; q < cols; q++) {
+    if (!vis.has(q + ',' + r)) continue;
+    const ch = act.grid[r][q];
+    if (ch === '#') c.fillStyle = '#6d28d9'; else if (ch === 'd') c.fillStyle = '#22d3ee'; else if (ch === 'e') c.fillStyle = '#fb7185'; else if (ch === 'x') c.fillStyle = '#a3a3a3'; else if (ch === 'C' || ch === 'c' || ch === 'F') c.fillStyle = '#4ade80'; else if (ch === 'g') c.fillStyle = '#f0abfc'; else continue;
+    c.fillRect(ox + q * sx, oy + r * sy, Math.max(1, sx), Math.max(1, sy));
   }
-  if (Math.floor(G.clock / 20) % 2) { c.fillStyle = '#fff'; c.fillRect(ox + pc - 1, oy + pr * 1.5 - 1, 3, 3); }
+  if (Math.floor(G.clock / 20) % 2) { c.fillStyle = '#fff'; c.fillRect(ox + pc * sx - 1, oy + pr * sy - 1, 3, 3); }
   const ab = p.ab, items = [['BOOTS', ab.dj], ['CHARGE', ab.charge], ['MISSILE', ab.sub]];
-  items.forEach((it, i) => A.text(c, it[0], 14 + i * 70, 98, 11, it[1] ? '#67e8f9' : 'rgba(255,255,255,.25)', 'left', '800'));
+  items.forEach((it, i) => A.text(c, it[0], 14 + i * 70, 98, 11, it[1] ? beamColor : 'rgba(255,255,255,.25)', 'left', '800'));
 }
 
-K.game({
-  id: 'deepcore-drifter', title: 'Deepcore Drifter', subtitle: 'Explore, upgrade, unlock, survive', color: '#22d3ee',
+const levels = [0, 1, 2].map((i) => () => buildLevel(i));
+
+function onInit(G) {
+  G0 = G; runStarted = 0; runActive = false; runEnded = false; runKills = 0; runDoors = 0; runBossKills = 0;
+  runDeaths = 0; lastLives = 3; hurtThisStage = false; stageSeen = -1; mapStage = -1; vis.clear(); startBest = Number(stats().bestScore) || 0;
+  dailySeed = activeMode === 'daily' ? seedForToday() : 0;
+  applyRng();
+  if (G) G.scoreMultiplier = activeMode === 'nightcore-plus' ? 1.3 : 1;
+  if (act) act.weapon.color = beamColor;
+  lastInitMode = activeMode;
+}
+
+game = K.game({
+  id: GAME_ID, title: 'Deepcore Drifter', subtitle: 'Explore, upgrade, unlock, survive', color: '#22d3ee',
   controls: [['← →  /  A D', 'Move'], ['Space  /  ↑  /  W  /  Z', 'Jump (double jump after Spring Boots)'], ['X  /  J', 'Fire beam — hold to charge after the Charge Cell'], ['C  /  K', 'Missile (after pickup) — opens red doors'], ['Shoot cyan doors / cracked walls', 'Opens the way'], ['P / M', 'Pause / mute']],
   help: '← → move · Space jump · X fire (hold to charge) · C missile · shoot cyan doors and cracked walls · find 3 upgrades · defeat the Brood Warden',
-  levels: [CORE], bg, hud, hero: { hp: 6, run: 3.3, jump: 10.6, ab: { sub: false }, ammo: 0, weapon: { type: 'shot', dmg: 1, speed: 9, cd: 14, life: 55, size: 5, color: '#67e8f9' }, sub: { name: 'missile', cost: 1, dmg: 6, vx: 8, grav: 0, life: 90, size: 6, color: '#fb7185', glow: true, sfx: 'boom' } },
+  levels, bg, hud, hero: { hp: 6, run: 3.3, jump: 10.6, ab: { sub: false }, ammo: 0, weapon: { type: 'shot', dmg: 1, speed: 9, cd: 14, life: 55, size: 5, color: '#67e8f9' }, sub: { name: 'missile', cost: 1, dmg: 6, vx: 8, grav: 0, life: 90, size: 6, color: '#fb7185', glow: true, sfx: 'boom' } },
   pickups: {
     J: { ab: 'dj', msg: 'SPRING BOOTS — jump again in mid-air', icon: 'J' },
     H: { ab: 'charge', msg: 'CHARGE CELL — hold fire, release for a big shot', icon: 'C' },
     M: { ab: 'sub', ammo: 8, msg: 'MISSILES — press C, opens red doors', icon: 'M' },
     T: { hp: 2, msg: 'ENERGY TANK +2', icon: '+' },
   },
-  enemies: {
-    k: { w: 28, h: 18, hp: 2, ai: 'walk', sp: 0.7, score: 80, color: '#84cc16' },
-    h: { w: 24, h: 24, hp: 2, ai: 'hop', sp: 2.2, jump: 9, every: 70, score: 100, color: '#f43f5e' },
-    v: { w: 24, h: 18, hp: 1, ai: 'fly', sp: 1.7, sight: 210, range: 60, bob: 24, score: 80, color: '#a78bfa' },
-    u: { w: 28, h: 30, hp: 4, ai: 'turret', fixed: true, score: 150, color: '#ef4444', sight: 400, shoot: { speed: 3.4, color: '#fb7185' }, every: 90, aim: true },
-    B: { w: 80, h: 76, hp: 36, ai: 'boss', name: 'BROOD WARDEN', wake: 380, score: 3000, color: '#65a30d', dmg: 2 },
-  },
-  boss, drawEnemy, drawHero, clear: 'SECTOR CLEAR', winTitle: 'Warden Down', winSub: (G) => 'Sector secured · Score ' + G.score,
+  enemies,
+  boss, drawEnemy, drawHero, clear: 'SECTOR CLEAR', winTitle: 'Core Stabilised',
+  winSub: (G, coins) => finishRun(G, true, coins),
+  overTitle: 'Signal Lost',
+  overSub: (G, coins) => finishRun(G, false, coins),
+  onKill, onBreak, onHurt, onToken,
+  debug: (d) => { act = d; },
+  touchL: [['◀', 'ArrowLeft'], ['▶', 'ArrowRight']],
+  touchR: [['✦', 'KeyX'], ['➤', 'KeyC'], ['▲', 'Space']],
+  onInit,
 });
+const originalShake = game.shake.bind(game);
+game.shake = (amount) => originalShake(amount * shakeScale);
+
+game.ui = UI.mountGame(game, {
+  id: GAME_ID, title: 'Deepcore Drifter', subtitle: 'Descend three sectors, claim the upgrades and stop the Brood Warden.', accent: '#22d3ee',
+  modes: [
+    { id: 'story', name: 'Story Drift', blurb: 'Three sectors, three lives, the Brood Warden at the bottom.', seasonTargets: [6000, 12000, 20000] },
+    { id: 'core-hunt', name: 'Core Hunt', blurb: 'Gather four core shards in each sector to open the gates.', seasonTargets: [7000, 14000, 22000] },
+    { id: 'boss-rush', name: 'Warden Gauntlet', blurb: 'Three back-to-back warden duels with no sector safety.', seasonTargets: [8000, 16000, 24000] },
+    { id: 'daily', name: 'Daily Descent', blurb: "A seeded descent fixed for today's date.", seeded: true, seasonTargets: [6500, 13000, 21000] },
+    { id: 'nightcore-plus', name: 'Nightcore+', blurb: 'Stronger enemies, 1.3× score, no mercy.', lockedHint: 'Complete Story Drift to unlock', requires: { stat: 'storyCompletions', gte: 1 }, seasonTargets: [9000, 18000, 27000] },
+  ],
+  settings: [
+    { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
+    { key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 },
+    { key: 'particles', label: 'Particles', type: 'select', options: ['lite', 'standard', 'ultra'], default: 'standard' },
+  ],
+  achievements: [
+    { id: 'first-blood', name: 'First Blood', desc: 'Defeat your first enemy.', rarity: 'common' },
+    { id: 'scavenger', name: 'Scavenger', desc: 'Break eight doors or weak walls in one run.', rarity: 'common' },
+    { id: 'hunter', name: 'Relentless Hunter', desc: 'Defeat 25 enemies in one run.', rarity: 'common' },
+    { id: 'score-10000', name: 'Deepcore Legend', desc: 'Score 10,000 in one run.', rarity: 'rare' },
+    { id: 'warden-slayer', name: 'Brood Warden Slain', desc: 'Defeat the Brood Warden.', rarity: 'rare' },
+    { id: 'personal-best', name: 'Personal Best', desc: 'Finish Story Drift with a new best score.', rarity: 'rare' },
+    { id: 'story-clear', name: 'Core Stabilised', desc: 'Finish Story Drift.', rarity: 'rare' },
+    { id: 'core-keeper', name: 'Core Keeper', desc: 'Finish Core Hunt.', rarity: 'rare' },
+    { id: 'daily-player', name: 'Daily Descent', desc: 'Finish the Daily Descent.', rarity: 'rare' },
+    { id: 'untouched', name: 'Untouched', desc: 'Clear a sector without taking damage.', rarity: 'epic' },
+    { id: 'iron-drifter', name: 'Iron Drifter', desc: 'Finish Story Drift without losing a life.', rarity: 'epic' },
+    { id: 'speed-run', name: 'Core Sprint', desc: 'Finish Story Drift in under six minutes.', rarity: 'epic' },
+    { id: 'nightcore-clear', name: 'Nightcore Adept', desc: 'Finish Nightcore+.', rarity: 'legendary' },
+    { id: 'gauntlet-clear', name: 'Gauntlet Run', desc: 'Win all three warden duels.', rarity: 'legendary' },
+  ],
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Move with A/D or the arrow keys and jump with Space.', hold: 'KeyD' },
+    { text: 'Press X or J to fire the beam. The Spring Boots add a mid-air jump.', hold: 'KeyX' },
+    { text: 'Find the Missiles, then press C or K to blow open red doors.', hold: 'KeyC' },
+    { text: 'Shoot cyan doors and cracked walls, then stop the Brood Warden.', hold: 'Space' },
+  ] },
+  chapter: 'DEEPCORE DRIFTER · 3 SECTORS', levels: [{}, {}, {}],
+  hooks: {
+    applyMode: (mode) => {
+      const next = MODES[mode] ? mode : 'story';
+      if (next === 'nightcore-plus' && !(Number(stats().storyCompletions) > 0)) { UI.toast('Complete Story Drift to unlock Nightcore+', { color: '#22d3ee' }); return false; }
+      activeMode = next;
+      applyRng();
+      if (game && lastInitMode !== activeMode) game.restart(false);
+      return true;
+    },
+    applySetting: (key, value) => {
+      if (key === 'difficulty') {
+        difficulty = value; Arcade.difficulty = value;
+        Arcade.speedMult = value === 'easy' ? 0.8 : value === 'hard' ? 1.35 : 1;
+      }
+      if (key === 'shake') shakeScale = Number(value);
+      if (key === 'particles' && window.Perf && Perf.setTier) Perf.setTier(value);
+    },
+    applyCosmetic,
+  },
+});
+
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  window.DeepcoreTest = {
+    state() {
+      const p = act && act.player, b = act && act.boss;
+      return {
+        mode: activeMode, difficulty, state: game.state, score: game.score, hi: game.hi, title: game.title, sub: game.sub,
+        level: act ? act.level : 0, stage: stageName(), tokens: act ? act.tokens : 0, need: stageNeed(), lives: act ? act.lives : 0,
+        hp: p ? p.hp : 0, maxhp: p ? p.maxhp : 0, ammo: p ? p.ammo : 0, x: p ? Math.round(p.x) : 0, y: p ? Math.round(p.y) : 0,
+        boss: b ? { hp: b.hp, hmax: b.hmax, awake: b.awake } : null, enemies: act ? act.enemies.length : 0,
+        seed: dailySeed, elapsed: runStarted ? Date.now() - runStarted : 0,
+        kills: runKills, doors: runDoors, deaths: runDeaths, startBest, levelCount: levels.length,
+      };
+    },
+    sequence(n) { return dailySequence(n == null ? 12 : n, dailySeed || seedForToday()); },
+    world() { return act && act.grid ? act.grid.map((row) => row.join('')).join('\n') : ''; },
+    levelName(n) { const i = n == null ? (act ? act.level : 0) : n; return (activeMode === 'boss-rush' ? ARENA_NAMES : STORY_NAMES)[i] || ''; },
+    setMode(mode) { return game.ui.setMode(mode); },
+    restart(autostart) { game.restart(autostart === true); },
+    setDifficulty(level) { difficulty = level; Arcade.difficulty = level; Arcade.speedMult = level === 'easy' ? 0.8 : level === 'hard' ? 1.35 : 1; },
+    award(points) { game.addScore(points == null ? 1000 : points); },
+    cosmetic(slot, id) { applyCosmetic(slot, id); },
+    colors() { return { suit: skin.suit, trim: skin.trim, helm: skin.helm, visor: skin.visor, gun: skin.gun, beam: beamColor, effect: effectColor, theme: skyTheme }; },
+    stats() { return (window.Save && Save.load(GAME_ID)) || {}; },
+    goLevel(i) { if (act) act.goLevel(i); },
+    setTokens(n) { if (act) act.setTokens(n); },
+    hurt(n) { if (act) act.hurt(n); },
+    wakeBoss() { if (act) act.wakeBoss(); },
+    damageBoss(n) { if (act) act.damageBoss(n); },
+    killBoss() { if (act) { act.wakeBoss(); act.damageBoss(9999); } },
+    clearEnemies() { if (act) act.clearEnemies(); },
+    finishLevel() { if (act) act.finishLevel(); },
+    breakTile(c, r) { if (act) act.breakTile(c, r); },
+    teleport(x, y) { if (act) act.teleport(x, y); },
+    spawn(ch, x, y) { const e = act && act.spawn(ch, x, y); return e ? { k: e.k, hp: e.hp, hmax: e.hmax } : null; },
+    setAmmo(n) { if (act) act.setAmmo(n); },
+    enemyStats() { return act ? act.enemies.map((e) => ({ k: e.k, hp: e.hp, hmax: e.hmax })) : []; },
+    gridAt(c, r) { return act ? act.tile(c, r) : ' '; },
+    stageCount() { return levels.length; },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

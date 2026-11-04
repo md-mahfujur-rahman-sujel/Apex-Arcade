@@ -12,7 +12,7 @@
     ['08-mario','fox-courier','Fox Courier','storybook','#fb923c','parcel','Carry the last parcel across three lively routes.','Arrows or A/D move; Space jumps; stomp enemies and reach each flag.'],
     ['09-mario-world','cloudhop-pip','Cloudhop Pip','storybook','#67e8f9','cloud','Hop between drifting clouds and find the safe route.','Arrows or A/D move; Space jumps; use springs to reach high paths.'],
     ['10-sonic','rollo-rush','Rollo Rush','crt','#facc15','wheel','Build speed and keep your momentum through the course.','Arrows move; Space jumps; avoid hazards and keep your speed.'],
-    ['11-street-fighter','iron-circuit','Iron Circuit','machine','#22d3ee','gauntlet','Enter the circuit and outlast every challenger.','A/D move; W jumps; S crouches; J/K punch; U/I kick.'],
+    ['11-street-fighter','iron-circuit','Iron Circuit','machine','#22d3ee','gauntlet','Enter the circuit and outlast every challenger.','A/D move; W jumps; S blocks; F punches; G kicks; H Rift Rush.'],
     ['13-castlevania','lanternbound','Lanternbound','banner','#f59e0b','lantern','Carry a small light through the haunted crypt.','A/D walk; Space jumps; X/J whips; C/K throws an axe.'],
     ['14-metroid','deepcore-drifter','Deepcore Drifter','machine','#22d3ee','scanner','Read the cave, find the route, and push deeper.','Arrows or WASD move; Space jumps; X fires.'],
     ['15-hollow-knight','hollowbell','Hollowbell','banner','#d6a56f','bell','Follow the bell through a quiet, misted world.','Arrows or A/D move; Space jumps; X attacks.'],

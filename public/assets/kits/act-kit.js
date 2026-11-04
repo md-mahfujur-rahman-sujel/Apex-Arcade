@@ -99,6 +99,7 @@
       if (p.inv > 0 || p.dead) return;
       p.hp -= n || 1; p.inv = 90; p.vy = -5.5; p.vx = -dir * 4; p.dashT = 0; p.atk = 0; p.chg = 0; G.shake(7); G.freeze(4); A.sfx('hurt');
       G.burst(p.x + p.w / 2, p.y + p.h / 2, 12, { color: ['#fff', '#fca5a5'], speed: 4, life: 24 });
+      if (cfg.onHurt) cfg.onHurt(n || 1, ctx(G));
       if (p.hp <= 0) die(G);
     }
     function die(G) {
@@ -135,6 +136,7 @@
     }
     function breakTile(G, c, r, byMissile) {
       const ch = tile(c, r);
+      if (cfg.onBreak) cfg.onBreak(ch, c, r, ctx(G));
       if (ch === 'x') { grid[r][c] = ' '; A.sfx('boom'); G.burst(c * T + 16, r * T + 16, 12, { color: [th.solid, '#fff'], speed: 4, life: 24 }); G.shake(4); }
       else if (ch === 'd') { grid[r][c] = ' '; A.sfx('door'); G.ring(c * T + 16, r * T + 16, '#67e8f9', 40, 16); }
       else if (ch === 'e' && byMissile) { grid[r][c] = ' '; A.sfx('door'); G.ring(c * T + 16, r * T + 16, '#fb7185', 40, 16); }
@@ -184,6 +186,7 @@
     function init(G) {
       G0 = G; Object.assign(wp, wp0); coins = 0; lives = cfg.lives == null ? 3 : cfg.lives; cam = { x: 0, y: 0 }; shade = null; msgT = 0; p = null;
       load(G, 0);
+      if (cfg.onInit) cfg.onInit(G);
     }
     function update(G) {
       if (banner > 0) banner--; if (msgT > 0) msgT--;
@@ -270,7 +273,7 @@
       for (let r = y0; r <= y1; r++) for (let c = x0; c <= x1; c++) {
         const ch = tile(c, r);
         if (ch === 'o') { grid[r][c] = ' '; coins++; G.addScore(50); A.sfx('coin'); G.burst(c * T + 16, r * T + 16, 5, { color: ['#fde047', '#fff'], speed: 2.5, life: 16, size: 2, glow: true }); }
-        else if (ch === 'g') { grid[r][c] = ' '; tokens++; G.addScore(200); A.sfx('gem'); G.ring(c * T + 16, r * T + 16, '#f0abfc', 40, 18); G.popup(c * T + 16, r * T, tokens + '/' + (lv.need || '?'), '#f0abfc'); }
+        else if (ch === 'g') { grid[r][c] = ' '; tokens++; G.addScore(200); A.sfx('gem'); G.ring(c * T + 16, r * T + 16, '#f0abfc', 40, 18); G.popup(c * T + 16, r * T, tokens + '/' + (lv.need || '?'), '#f0abfc'); if (cfg.onToken) cfg.onToken(tokens, ctx(G)); }
         else if (ch === '^') { if (p.y + p.h > r * T + 14 && p.inv <= 0) { hurt(G, 0, 1); if (p.hp > 0) { p.x = p.safe.x; p.y = p.safe.y; p.vx = p.vy = 0; } } }
         else if ((ch === 'r' && beat === 0) || (ch === 'R' && beat === 1)) { if (p.inv <= 0) hurt(G, p.face, 1); }
         else if (ch === 'C' || ch === 'c') {
@@ -409,6 +412,26 @@
       if (p.dead > 0 && soul) { c.fillStyle = 'rgba(0,0,0,' + Math.min(0.6, (80 - p.dead) / 60) + ')'; c.fillRect(0, 0, W, H); }
     }
     function K_heart(c, x, y, s, col) { c.fillStyle = col; c.beginPath(); c.moveTo(x, y + s * 0.35); c.bezierCurveTo(x - s * 0.7, y - s * 0.3, x - s * 0.9, y + s * 0.5, x, y + s); c.bezierCurveTo(x + s * 0.9, y + s * 0.5, x + s * 0.7, y - s * 0.3, x, y + s * 0.35); c.fill(); }
+
+    if (typeof cfg.debug === 'function') cfg.debug({
+      get player() { return p; }, get enemies() { return en; }, get shots() { return shots; }, get items() { return items; },
+      get level() { return lvl; }, get boss() { return boss; }, get tokens() { return tokens; }, get lives() { return lives; },
+      get grid() { return grid; }, get cols() { return cols; }, get rows() { return rows; }, get check() { return check; },
+      get weapon() { return wp; }, get cam() { return cam; }, get levelCount() { return levels.length; },
+      tile,
+      hurt(n) { if (p && !p.dead) { p.inv = 0; hurt(G0, 0, n == null ? 1 : n); } },
+      damageBoss(n) { if (boss && !boss.dead) { boss.awake = true; boss.hp -= (n == null ? 10 : n); boss.hurt = 6; A.sfx('hit'); if (boss.hp <= 0) killEnemy(G0, boss); } },
+      wakeBoss() { if (boss) boss.awake = true; },
+      clearEnemies() { for (const e of en.slice()) if (!e.dead) killEnemy(G0, e); },
+      goLevel(i) { if (i >= 0 && i < levels.length) load(G0, i); },
+      finishLevel() { doneT = 2; },
+      breakTile(c, r) { breakTile(G0, c, r, false); },
+      teleport(x, y) { if (p) { p.x = x; p.y = y; p.vx = p.vy = 0; p.safe = { x, y }; camFollow(true); } },
+      setTokens(n) { tokens = Math.max(0, Math.floor(n) || 0); },
+      spawn(ch, x, y) { if (defs[ch]) { addEnemy(ch, Math.floor(x / T), Math.floor(y / T)); return en[en.length - 1]; } return null; },
+      setAmmo(n) { if (p) p.ammo = Math.max(0, Math.floor(n) || 0); },
+      addScore(n) { G0.addScore(n); },
+    });
 
     return Arcade.game({
       id: cfg.id, title: cfg.title, subtitle: cfg.subtitle, color: cfg.color, help: cfg.help, controls: cfg.controls,

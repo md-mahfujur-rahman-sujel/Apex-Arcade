@@ -1,14 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lanternbound</title>
 <script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
 </head>
 <body>
-
 
 <script src="../../kits/perf-kit.js"></script>
 <script src="../../kits/save-kit.js"></script>
@@ -18,68 +16,288 @@
 <script src="../../kits/act-kit.js"></script>
 <script src="../../kits/score-bridge.js"></script>
 <script src="../../kits/ui-kit.js"></script>
+<script src="../../kits/fx-kit.js"></script>
 <script>
 /* Lanternbound — gothic action platformer: a lantern-bearing knight, a flicking chain-whip, candles that
    drop ammo for the throwing axe, three haunted stages and a floating duke at the end. Built on act-kit.js. */
-const A = Arcade, K = Act, TAU = Math.PI * 2;
+const A = Arcade, K = Act, TAU = Math.PI * 2, GAME_ID = 'lanternbound';
+const NATIVE_RANDOM = Math.random.bind(Math);
 
-const S1 = K.make('Stage 1 · Moonlit Courtyard', 112, 15, (g) => {
-  g.ground(0, 22); g.set(2, 11, 'P'); g.set(8, 11, 'i'); g.set(14, 11, 'i'); g.set(17, 11, 'k'); g.coins(10, 10, 3);
-  g.ground(25, 48); g.plat(27, 9, 3); g.set(28, 8, 'i'); g.set(33, 11, 'k'); g.set(38, 6, 'v'); g.set(41, 11, 'i'); g.set(45, 11, '^'); g.set(46, 11, '^');
-  g.ground(51, 71); g.plat(54, 9, 3); g.plat(58, 7, 3); g.set(60, 11, 'C'); g.set(66, 11, 'u'); g.set(63, 11, 'k'); g.set(55, 8, 'i'); g.coins(58, 6, 3);
-  g.ground(74, 94); g.fill(79, 10, 3, 2, '#'); g.set(85, 11, 'k'); g.set(89, 11, 'w'); g.set(77, 11, 'i'); g.set(81, 9, 'i');
-  g.ground(97, 112); g.set(100, 11, 'k'); g.set(103, 11, 'i'); g.set(108, 11, 'F');
-});
-S1.hint = 'X whip · light candles for axe ammo · C throw axe';
+let activeMode = 'story', difficulty = 'normal', dailySeed = 0, rngState = 1, lastInitMode = null;
+let runStarted = 0, runActive = false, runEnded = false, runKills = 0, runCandles = 0, runBossKills = 0;
+let runDeaths = 0, lastLives = 3, hurtThisStage = false, stageSeen = -1, startBest = 0, shakeScale = 1;
+let G0 = null, game = null, act = null, currentStage = 0;
+let skin = { armor: '#94a3b8', trim: '#64748b', plume: '#7f1d1d', cloth: '#1e293b' };
+let whipColor = '#fef3c7', effectColor = '#fbbf24', skyTheme = 'courtyard';
 
-const S2 = K.make('Stage 2 · Haunted Library', 124, 15, (g) => {
-  g.ground(0, 14); g.set(2, 11, 'P'); g.set(9, 11, 'k'); g.set(6, 11, 'i');
-  g.plat(17, 10, 3); g.plat(22, 8, 3); g.plat(27, 6, 3); g.set(28, 5, 'i'); g.set(23, 7, 'v');
-  g.ground(31, 52, 9); g.set(36, 8, 'k'); g.set(40, 8, 'w'); g.set(44, 8, 'C'); g.set(47, 8, 'i'); g.set(50, 8, 'u');
-  g.fill(52, 6, 2, 6, '#'); g.plat(54, 8, 3);
-  g.ground(57, 76, 11); g.set(60, 10, 'k'); g.set(63, 10, 'k'); g.set(67, 5, 'v'); g.set(70, 10, '^'); g.set(71, 10, '^'); g.set(73, 10, 'i'); g.coins(60, 8, 4);
-  g.plat(79, 9, 2); g.plat(83, 7, 2); g.plat(87, 9, 2); g.set(84, 6, 'i');
-  g.ground(91, 112, 11); g.set(94, 10, 'w'); g.set(98, 10, 'k'); g.set(101, 10, 'C'); g.set(104, 10, 'u'); g.set(107, 10, 'k'); g.set(96, 10, 'i');
-  g.ground(113, 124, 11); g.set(120, 10, 'F');
-});
-S2.hint = 'Wraiths drift toward you — whip them from range';
+const MODES = {
+  story: { label: 'STORY HUNT' },
+  'relic-hunt': { label: 'RELIC HUNT' },
+  'boss-rush': { label: "DUKE'S GAUNTLET" },
+  daily: { label: 'DAILY CRYPT' },
+  'nocturne-plus': { label: 'NOCTURNE+' },
+};
+const STORY_NAMES = ['Stage 1 · Moonlit Courtyard', 'Stage 2 · Haunted Library', 'Stage 3 · Clock Tower'];
+const ARENA_NAMES = ['Duel 1 · Belfry Ascent', 'Duel 2 · Broken Nave', "Duel 3 · Duke's Court"];
 
-const S3 = K.make('Stage 3 · Clock Tower', 128, 15, (g) => {
-  g.ground(0, 12); g.set(2, 11, 'P'); g.set(8, 11, 'k'); g.set(10, 11, 'i');
-  g.plat(15, 10, 2); g.plat(19, 8, 2); g.plat(23, 6, 2); g.plat(27, 8, 2); g.set(24, 5, 'i'); g.set(20, 5, 'v');
-  g.ground(31, 50); g.set(35, 11, 'k'); g.set(39, 11, 'w'); g.set(43, 11, 'C'); g.set(46, 11, 'i'); g.set(48, 11, 'u'); g.fill(40, 8, 3, 1, '=');
-  g.plat(53, 9, 2); g.plat(57, 7, 2); g.plat(61, 9, 2); g.set(58, 6, 'v');
-  g.ground(65, 84); g.set(68, 11, 'k'); g.set(71, 11, 'k'); g.set(75, 11, 'u'); g.set(78, 11, 'w'); g.set(80, 11, 'C'); g.set(82, 11, 'i'); g.set(69, 11, 'i');
-  g.ground(87, 128); g.set(90, 11, 'i'); g.set(93, 11, 'i'); g.set(96, 11, 'C'); g.set(108, 11, 'B'); g.set(125, 11, 'F'); g.fill(87, 5, 1, 7, '#');
-  g.fill(88, 5, 1, 1, '#');
-});
-S3.hint = 'The Hollow Duke waits in the belfry';
-S1.theme = { solid: '#3b3a52', top: '#6b7280', plat: '#78716c', accent: '#fbbf24' };
-S2.theme = { solid: '#4a3326', top: '#92400e', plat: '#a16207', accent: '#fbbf24' };
-S3.theme = { solid: '#2b3350', top: '#94a3b8', plat: '#64748b', accent: '#fbbf24' };
+/* ---------- daily seed and records ---------- */
+function seedForToday() {
+  const d = new Date(), key = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  let x = key ^ 0x6d2b79f5;
+  for (const ch of GAME_ID) x = Math.imul(x ^ ch.charCodeAt(0), 16777619);
+  return x >>> 0 || 1;
+}
+function dailySequence(n, seed) {
+  let s = (seed || dailySeed || 1) >>> 0; const out = [];
+  for (let i = 0; i < n; i++) { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; out.push(Number(((s >>> 0) / 4294967296).toFixed(6))); }
+  return out;
+}
+function applyRng() {
+  if (activeMode !== 'daily') { Math.random = NATIVE_RANDOM; return; }
+  rngState = dailySeed || seedForToday();
+  Math.random = () => { rngState ^= rngState << 13; rngState ^= rngState >>> 17; rngState ^= rngState << 5; return (rngState >>> 0) / 4294967296; };
+}
+function saved() { return (window.Save && Save.load(GAME_ID)) || {}; }
+function stats() { const s = saved(); return s.stats || {}; }
+function award(id, label) {
+  const s = saved(), earned = Array.isArray(s.achievements) ? s.achievements : [];
+  if (earned.includes(id)) return;
+  Save.update(GAME_ID, { achievements: [id] });
+  if (window.Apex && Apex.unlockAchievement) Apex.unlockAchievement(id, GAME_ID);
+  UI.toast(label || id.replace(/-/g, ' '), { color: '#f59e0b' });
+}
+function stageNeed() { return activeMode === 'relic-hunt' ? 4 : 0; }
+function stageName() { const n = act ? act.level : 0; return (activeMode === 'boss-rush' ? ARENA_NAMES : STORY_NAMES)[n] || STORY_NAMES[0]; }
 
-const SKY = [['#0b1026', '#2a1b4a', '#6d3a5a'], ['#1a0f0a', '#3b1d12', '#7c3a1a'], ['#050816', '#1b2559', '#3f2b79']];
-function bg(c, cam, t, lvl) {
-  A.sky(c, 800, 480, SKY[lvl]);
+function recordRun(won, coins, sec) {
+  const st = stats(), stage = act ? act.level + 1 : 1, deaths = Math.max(runDeaths, act ? Math.max(0, 3 - act.lives) : 0);
+  const patch = {
+    runs: (st.runs || 0) + 1,
+    seconds: (st.seconds || 0) + sec,
+    kills: (st.kills || 0) + runKills,
+    candles: (st.candles || 0) + runCandles,
+    deaths: (st.deaths || 0) + deaths,
+    highestStage: Math.max(st.highestStage || 0, stage),
+    bestScore: Math.max(st.bestScore || 0, G0 ? G0.score : 0),
+    lastMode: activeMode,
+    bossesFelled: (st.bossesFelled || 0) + runBossKills,
+    storyCompletions: (st.storyCompletions || 0) + (won && activeMode === 'story' ? 1 : 0),
+    relicCompletions: (st.relicCompletions || 0) + (won && activeMode === 'relic-hunt' ? 1 : 0),
+    dailyCompletions: (st.dailyCompletions || 0) + (won && activeMode === 'daily' ? 1 : 0),
+    nocturneCompletions: (st.nocturneCompletions || 0) + (won && activeMode === 'nocturne-plus' ? 1 : 0),
+    bossRushCompletions: (st.bossRushCompletions || 0) + (won && activeMode === 'boss-rush' ? 1 : 0),
+    dailyBest: activeMode === 'daily' ? Math.max(st.dailyBest || 0, G0 ? G0.score : 0) : (st.dailyBest || 0),
+  };
+  if (won && activeMode === 'story') patch.bestTimeSec = Math.min(st.bestTimeSec || 99999, sec);
+  Save.update(GAME_ID, { stats: patch });
+  void coins;
+}
+function finishRun(G, won, coins) {
+  if (runEnded) return won ? 'Score ' + G.score : 'Score ' + G.score;
+  const sec = Math.max(1, Math.round((Date.now() - (runStarted || Date.now())) / 1000));
+  recordRun(won, coins, sec);
+  if (won) {
+    if (!hurtThisStage) award('untouched', 'Untouched');
+    if (activeMode === 'story') {
+      award('story-clear', 'The Manor Is Silent');
+      if (G.score > startBest) award('personal-best', 'Personal Best');
+      const deaths = Math.max(runDeaths, act ? Math.max(0, 3 - act.lives) : 0);
+      if (deaths === 0) award('iron-lantern', 'Iron Lantern');
+      if (sec <= 360) award('speed-run', 'Lantern Sprint');
+    }
+    if (activeMode === 'relic-hunt') award('relic-keeper', 'Relic Keeper');
+    if (activeMode === 'daily') award('daily-player', 'Daily Cryptographer');
+    if (activeMode === 'nocturne-plus') award('nocturne-clear', 'Nocturne Adept');
+    if (activeMode === 'boss-rush') award('gauntlet-clear', 'Gauntlet Run');
+  }
+  runEnded = true;
+  return won
+    ? 'Score ' + G.score + ' · ' + coins + ' relics · ' + sec + 's'
+    : 'Score ' + G.score + ' · reached ' + stageName();
+}
+function trackStage()
+{
+  if (!act) return;
+  const lvl = act.level;
+  if (lvl === stageSeen) return;
+  if (stageSeen >= 0 && !hurtThisStage) award('untouched', 'Untouched');
+  stageSeen = lvl; hurtThisStage = false; currentStage = lvl;
+  const st = stats();
+  if ((st.highestStage || 0) < lvl + 1) Save.update(GAME_ID, { stats: { highestStage: lvl + 1 } });
+}
+function checkMilestones() {
+  if (G0 && G0.score >= 10000) award('score-10000', 'Candlelight Legend');
+}
+function onKill(e, G) {
+  runKills++;
+  if (runKills >= 1) award('first-light', 'First Light');
+  if (runKills >= 25) award('hunter', 'Relentless Hunter');
+  if (e.d && e.d.ai === 'boss') { runBossKills++; award('duke-slayer', 'Hollow Duke Slain'); }
+  checkMilestones();
+}
+function onBreak(ch) {
+  if (ch !== 'i') return;
+  runCandles++;
+  if (runCandles >= 10) award('candlelight', 'Candle Lighter');
+}
+function onHurt() { hurtThisStage = true; }
+function onToken(tokens) { if (tokens >= 4) UI.toast('Reliquary charged — find the gate', { color: '#f0abfc' }); }
+
+/* ---------- cosmetics ---------- */
+function applyCosmetic(slot, id) {
+  const key = String(id || '').split(':').pop();
+  if (slot === 'skin') {
+    const skins = {
+      'knight-ivory': { armor: '#94a3b8', trim: '#64748b', plume: '#7f1d1d', cloth: '#1e293b' },
+      'knight-crimson': { armor: '#b91c1c', trim: '#fca5a5', plume: '#fde047', cloth: '#450a0a' },
+      'knight-azure': { armor: '#38bdf8', trim: '#bae6fd', plume: '#f0abfc', cloth: '#082f49' },
+      'knight-verdant': { armor: '#34d399', trim: '#a7f3d0', plume: '#fbbf24', cloth: '#064e3b' },
+      'knight-obsidian': { armor: '#475569', trim: '#cbd5e1', plume: '#ef4444', cloth: '#0f172a' },
+    };
+    if (skins[key]) skin = Object.assign({}, skins[key]);
+  } else if (slot === 'palette') {
+    whipColor = key.includes('frost') ? '#a5f3fc' : key.includes('blood') ? '#fb7185' : key.includes('prism') ? '#e879f9' : '#fef3c7';
+  } else if (slot === 'effect') {
+    effectColor = key === 'ash' ? '#cbd5e1' : key === 'embers' ? '#fb923c' : key === 'moonlight' ? '#93c5fd' : '#fbbf24';
+  } else if (slot === 'theme') {
+    skyTheme = key.includes('bloodmoon') ? 'bloodmoon' : key.includes('frostfall') ? 'frostfall' : key.includes('belfry') ? 'belfry' : 'courtyard';
+  }
+}
+
+/* ---------- stages ---------- */
+function stageOne() {
+  const g = K.make(STORY_NAMES[0], 112, 15, (g) => {
+    g.ground(0, 22); g.set(2, 11, 'P'); g.set(8, 11, 'i'); g.set(14, 11, 'i'); g.set(17, 11, 'k'); g.coins(10, 10, 3);
+    g.ground(25, 48); g.plat(27, 9, 3); g.set(28, 8, 'i'); g.set(33, 11, 'k'); g.set(38, 6, 'v'); g.set(41, 11, 'i'); g.set(45, 11, '^'); g.set(46, 11, '^');
+    g.coins(27, 8, 3); g.set(30, 11, 'i');
+    g.ground(51, 71); g.plat(54, 9, 3); g.plat(58, 7, 3); g.set(60, 11, 'C'); g.set(66, 11, 'u'); g.set(63, 11, 'k'); g.set(55, 8, 'i'); g.coins(58, 6, 3);
+    g.coins(54, 8, 3); g.set(52, 11, 'i');
+    g.ground(74, 94); g.fill(79, 10, 3, 2, '#'); g.set(85, 11, 'k'); g.set(89, 11, 'w'); g.set(77, 11, 'i'); g.set(81, 9, 'i');
+    g.coins(79, 9, 3); g.set(88, 11, 'C'); g.set(92, 11, 'i');
+    g.ground(97, 112); g.set(100, 11, 'k'); g.set(103, 11, 'i'); g.set(108, 11, 'F'); g.coins(97, 10, 3); g.set(98, 11, 'i');
+    if (activeMode === 'relic-hunt') { for (const [x, y] of [[6, 11], [32, 11], [55, 11], [78, 11]]) g.set(x, y, 'g'); }
+  });
+  g.theme = { solid: '#3b3a52', top: '#6b7280', plat: '#78716c', accent: '#fbbf24' };
+  g.hint = activeMode === 'relic-hunt' ? 'Collect 4 relics to open the gate' : activeMode === 'daily' ? "Today's crypt is fixed — learn the route" : 'X whip · light candles for axe ammo · C throw axe';
+  g.need = stageNeed();
+  return g;
+}
+function stageTwo() {
+  const g = K.make(STORY_NAMES[1], 124, 15, (g) => {
+    g.ground(0, 14); g.set(2, 11, 'P'); g.set(9, 11, 'k'); g.set(6, 11, 'i'); g.coins(3, 10, 3);
+    g.plat(17, 10, 3); g.plat(22, 8, 3); g.plat(27, 6, 3); g.set(28, 5, 'i'); g.set(23, 7, 'v'); g.coins(17, 9, 3); g.coins(22, 7, 3);
+    g.ground(31, 52, 9); g.set(36, 8, 'k'); g.set(40, 8, 'w'); g.set(44, 8, 'C'); g.set(47, 8, 'i'); g.set(50, 8, 'u'); g.set(33, 8, 'i'); g.coins(34, 7, 4);
+    g.fill(52, 6, 2, 6, '#'); g.plat(54, 8, 3);
+    g.ground(57, 76, 11); g.set(60, 10, 'k'); g.set(63, 10, 'k'); g.set(67, 5, 'v'); g.set(70, 10, '^'); g.set(71, 10, '^'); g.set(73, 10, 'i'); g.coins(60, 8, 4);
+    g.set(58, 10, 'i'); g.set(66, 10, 'C');
+    g.plat(79, 9, 2); g.plat(83, 7, 2); g.plat(87, 9, 2); g.set(84, 6, 'i'); g.coins(79, 8, 2);
+    g.ground(91, 112, 11); g.set(94, 10, 'w'); g.set(98, 10, 'k'); g.set(101, 10, 'C'); g.set(104, 10, 'u'); g.set(107, 10, 'k'); g.set(96, 10, 'i');
+    g.coins(91, 10, 4); g.set(110, 10, 'i');
+    g.ground(113, 124, 11); g.set(120, 10, 'F');
+    if (activeMode === 'relic-hunt') { for (const [x, y] of [[5, 11], [38, 8], [66, 9], [100, 9]]) g.set(x, y, 'g'); }
+  });
+  g.theme = { solid: '#4a3326', top: '#92400e', plat: '#a16207', accent: '#fbbf24' };
+  g.hint = activeMode === 'relic-hunt' ? 'Collect 4 relics to open the gate' : 'Wraiths drift toward you — whip them from range';
+  g.need = stageNeed();
+  return g;
+}
+function stageThree() {
+  const g = K.make(STORY_NAMES[2], 128, 15, (g) => {
+    g.ground(0, 12); g.set(2, 11, 'P'); g.set(8, 11, 'k'); g.set(10, 11, 'i'); g.coins(4, 10, 3);
+    g.plat(15, 10, 2); g.plat(19, 8, 2); g.plat(23, 6, 2); g.plat(27, 8, 2); g.set(24, 5, 'i'); g.set(20, 5, 'v'); g.coins(15, 9, 2); g.coins(19, 7, 2);
+    g.ground(31, 50); g.set(35, 11, 'k'); g.set(39, 11, 'w'); g.set(43, 11, 'C'); g.set(46, 11, 'i'); g.set(48, 11, 'u'); g.fill(40, 8, 3, 1, '='); g.set(33, 11, 'i'); g.coins(31, 10, 4);
+    g.plat(53, 9, 2); g.plat(57, 7, 2); g.plat(61, 9, 2); g.set(58, 6, 'v'); g.coins(53, 8, 2); g.coins(57, 6, 2);
+    g.ground(65, 84); g.set(68, 11, 'k'); g.set(71, 11, 'k'); g.set(75, 11, 'u'); g.set(78, 11, 'w'); g.set(80, 11, 'C'); g.set(82, 11, 'i'); g.set(69, 11, 'i'); g.set(74, 11, 'i'); g.set(70, 11, 'C');
+    g.ground(87, 128); g.set(90, 11, 'i'); g.set(93, 11, 'i'); g.set(96, 11, 'C'); g.set(108, 11, 'B'); g.set(125, 11, 'F'); g.fill(87, 5, 1, 7, '#'); g.fill(88, 5, 1, 1, '#');
+    g.coins(87, 10, 4); g.set(92, 11, 'i'); g.set(112, 11, 'i');
+    if (activeMode === 'relic-hunt') { for (const [x, y] of [[6, 11], [35, 11], [70, 10], [100, 11]]) g.set(x, y, 'g'); }
+  });
+  g.theme = { solid: '#2b3350', top: '#94a3b8', plat: '#64748b', accent: '#fbbf24' };
+  g.hint = activeMode === 'relic-hunt' ? 'Collect 4 relics to open the gate' : 'The Hollow Duke waits in the belfry';
+  g.need = stageNeed();
+  return g;
+}
+function arenaStage(n) {
+  const g = K.make(ARENA_NAMES[n], 40, 15, (g) => {
+    g.ground(0, 40);
+    g.set(2, 11, 'P'); g.set(6, 11, 'C');
+    g.set(9, 11, 'i'); g.set(12, 11, 'i'); g.set(15, 11, 'i');
+    g.plat(8, 9, 3); g.plat(16, 7, 3); g.plat(27, 9, 3);
+    g.set(18, 6, 'i'); g.set(28, 8, 'i');
+    g.set(31, 10, 'B'); g.set(37, 11, 'F');
+  });
+  g.theme = n === 0 ? { solid: '#3b3a52', top: '#6b7280', plat: '#78716c', accent: '#fbbf24' } : n === 1 ? { solid: '#4a3326', top: '#92400e', plat: '#a16207', accent: '#f0abfc' } : { solid: '#2b3350', top: '#94a3b8', plat: '#64748b', accent: '#fb7185' };
+  g.hint = n === 0 ? 'Three dukes. No quarter. Hold the lantern high' : n === 1 ? 'The duke remembers your whip' : 'End the gauntlet';
+  return g;
+}
+function buildLevel(i) { return activeMode === 'boss-rush' ? arenaStage(i) : [stageOne, stageTwo, stageThree][i](); }
+
+/* ---------- enemy defs (Nocturne scales HP and rewards) ---------- */
+const ENEMY_BASE = {
+  k: { w: 24, h: 32, hp: 2, ai: 'walk', sp: 0.8, sight: 140, score: 100, color: '#e5e7eb' },
+  v: { w: 26, h: 18, hp: 1, ai: 'fly', sp: 1.6, sight: 200, range: 70, bob: 22, score: 80, color: '#7c3aed' },
+  w: { w: 28, h: 32, hp: 3, ai: 'fly', sp: 0.9, sight: 260, range: 40, bob: 30, score: 200, color: '#a5b4fc', shoot: { speed: 2.6, color: '#a5b4fc' }, every: 120, aim: true },
+  u: { w: 28, h: 30, hp: 4, ai: 'turret', fixed: true, score: 150, color: '#64748b', sight: 380, shoot: { speed: 3.2, color: '#f87171' }, every: 100, aim: true },
+  B: { w: 56, h: 74, hp: 30, ai: 'boss', name: 'THE HOLLOW DUKE', wake: 380, grav: false, score: 3000, color: '#7c3aed', dmg: 2 },
+};
+const enemies = {};
+for (const key of Object.keys(ENEMY_BASE)) {
+  Object.defineProperty(enemies, key, {
+    enumerable: true, configurable: true,
+    get() {
+      const base = ENEMY_BASE[key];
+      if (activeMode !== 'nocturne-plus') return base;
+      if (base.ai === 'boss') return Object.assign({}, base, { hp: Math.round(base.hp * 1.5), dmg: 3, score: Math.round(base.score * 1.5) });
+      return Object.assign({}, base, { hp: Math.ceil(base.hp * 1.5), sp: (base.sp || 1) * 1.15, score: Math.round((base.score || 100) * 1.5) });
+    },
+  });
+}
+
+/* ---------- backdrop ---------- */
+const SKY = {
+  courtyard: [['#0b1026', '#2a1b4a', '#6d3a5a'], ['#1a0f0a', '#3b1d12', '#7c3a1a'], ['#050816', '#1b2559', '#3f2b79']],
+  bloodmoon: [['#17040c', '#3f0d1d', '#7f1d1d'], ['#1a0a06', '#451a03', '#9a3412'], ['#140412', '#3b0764', '#831843']],
+  frostfall: [['#050d1a', '#0c1e3a', '#1e40af'], ['#071018', '#0e2a33', '#155e75'], ['#040a14', '#111c3d', '#312e81']],
+  belfry: [['#0b0718', '#1e1b4b', '#4c1d95'], ['#0d0710', '#3b0764', '#7e22ce'], ['#080412', '#1e1b4b', '#9d174d']],
+};
+function bg(c, cam, t, lvl, G) {
+  const pal = SKY[skyTheme] || SKY.courtyard, band = pal[Math.min(2, Math.max(0, lvl))];
+  A.sky(c, 800, 480, band);
   A.drawStars(c, bg.st || (bg.st = A.makeStars(70, 800, 300)), t, 800, 480, 0.04, '#fef3c7');
-  c.fillStyle = '#fef9c3'; c.beginPath(); c.arc(620, 90, 34, 0, TAU); c.fill(); c.fillStyle = SKY[lvl][1]; c.beginPath(); c.arc(634, 82, 30, 0, TAU); c.fill();
+  c.fillStyle = skyTheme === 'bloodmoon' ? '#fca5a5' : '#fef9c3'; c.beginPath(); c.arc(620, 90, 34, 0, TAU); c.fill();
+  c.fillStyle = band[1]; c.beginPath(); c.arc(634, 82, 30, 0, TAU); c.fill();
   K.ridge(c, 330, 30, 2 + lvl, cam.x * 0.12, 'rgba(10,8,25,.7)');
-  for (let i = 0; i < 6; i++) { const x = ((i * 300 - cam.x * 0.3) % 1800 + 1800) % 1800 - 150; c.fillStyle = '#0c0a1f'; c.fillRect(x, 260, 70, 220); c.fillRect(x + 10, 230, 14, 40); c.fillRect(x + 46, 240, 14, 30); c.beginPath(); c.moveTo(x + 7, 230); c.lineTo(x + 17, 205); c.lineTo(x + 27, 230); c.fill(); c.fillStyle = 'rgba(251,191,36,.5)'; c.fillRect(x + 28, 300, 8, 14); }
+  for (let i = 0; i < 6; i++) {
+    const x = ((i * 300 - cam.x * 0.3) % 1800 + 1800) % 1800 - 150;
+    c.fillStyle = '#0c0a1f'; c.fillRect(x, 260, 70, 220); c.fillRect(x + 10, 230, 14, 40); c.fillRect(x + 46, 240, 14, 30);
+    c.beginPath(); c.moveTo(x + 7, 230); c.lineTo(x + 17, 205); c.lineTo(x + 27, 230); c.fill();
+    c.fillStyle = effectColor + '88'; c.fillRect(x + 28, 300, 8, 14);
+  }
   K.ridge(c, 400, 22, 6 + lvl, cam.x * 0.4, '#0a0818');
+  if (skyTheme === 'frostfall') { c.fillStyle = 'rgba(191,219,254,.35)'; for (let i = 0; i < 40; i++) { const x = (i * 97 + t * 0.4) % 800, y = (i * 61 + t * 1.1) % 480; c.fillRect(x, y, 2, 2); } }
+  if (skyTheme === 'bloodmoon') { c.fillStyle = 'rgba(248,113,113,.10)'; c.fillRect(0, 0, 800, 480); }
+  if (G && G.state === 'playing' && !runActive) { runActive = true; runStarted = Date.now(); runEnded = false; }
+  if (G && (G.state === 'ready' || G.state === 'over' || G.state === 'won')) runActive = false;
+  if (act) {
+    if (act.lives < lastLives) { runDeaths += lastLives - act.lives; lastLives = act.lives; }
+    else if (act.lives > lastLives) lastLives = act.lives;
+  }
+  trackStage();
+  checkMilestones();
 }
 function drawKnight(c, p, G, wp) {
   const cx = p.x + p.w / 2, f = p.face, b = p.y + p.h, run = p.ground ? Math.sin(p.walk) : 0, air = !p.ground;
   A.shadow(c, cx, b + 1, 11, 3, 0.25);
   c.save(); c.translate(cx, b); c.scale(f * (1 + p.sq * 0.4), 1 - p.sq * 0.4);
-  c.fillStyle = '#7f1d1d'; c.beginPath(); c.moveTo(-5, -24); c.lineTo(-15 - Math.min(5, Math.abs(p.vx) * 1.5), air ? -10 : -4); c.lineTo(-4, -4); c.fill();
-  c.fillStyle = '#1e293b'; c.fillRect(-7 + (air ? 0 : run * 3), -9, 6, 9); c.fillRect(1 - (air ? 3 : run * 3), -9, 6, 9);
-  c.fillStyle = '#94a3b8'; A.roundRect(c, -8, -25, 16, 17, 4); c.fill(); c.fillStyle = '#64748b'; c.fillRect(-8, -14, 16, 3);
-  c.fillStyle = '#cbd5e1'; A.roundRect(c, -7, -34, 14, 11, 4); c.fill(); c.fillStyle = '#0f172a'; c.fillRect(0, -30, 7, 3);
-  c.fillStyle = '#dc2626'; c.fillRect(-3, -39, 5, 6);
+  c.fillStyle = skin.plume; c.beginPath(); c.moveTo(-5, -24); c.lineTo(-15 - Math.min(5, Math.abs(p.vx) * 1.5), air ? -10 : -4); c.lineTo(-4, -4); c.fill();
+  c.fillStyle = skin.cloth; c.fillRect(-7 + (air ? 0 : run * 3), -9, 6, 9); c.fillRect(1 - (air ? 3 : run * 3), -9, 6, 9);
+  c.fillStyle = skin.armor; A.roundRect(c, -8, -25, 16, 17, 4); c.fill(); c.fillStyle = skin.trim; c.fillRect(-8, -14, 16, 3);
+  c.fillStyle = skin.trim; A.roundRect(c, -7, -34, 14, 11, 4); c.fill(); c.fillStyle = '#0f172a'; c.fillRect(0, -30, 7, 3);
+  c.fillStyle = skin.plume; c.fillRect(-3, -39, 5, 6);
   c.fillStyle = '#92400e'; c.fillRect(6, -22, 3, 8); const fl = Math.sin(G.clock * 0.3) * 1.5;
-  c.save(); c.shadowColor = '#fbbf24'; c.shadowBlur = 14; c.fillStyle = '#fbbf24'; c.beginPath(); c.arc(8, -12 + fl * 0.3, 4.2, 0, TAU); c.fill(); c.restore();
+  c.save(); c.shadowColor = effectColor; c.shadowBlur = 14; c.fillStyle = effectColor; c.beginPath(); c.arc(8, -12 + fl * 0.3, 4.2, 0, TAU); c.fill(); c.restore();
   if (p.atk > 0 && wp.type === 'melee') {
-    const k = 1 - p.atk / wp.dur, L = wp.range * Math.min(1, k * 2.5); c.strokeStyle = '#fef3c7'; c.lineWidth = 3; c.lineCap = 'round'; c.beginPath();
+    const k = 1 - p.atk / wp.dur, L = wp.range * Math.min(1, k * 2.5); c.strokeStyle = whipColor; c.lineWidth = 3; c.lineCap = 'round'; c.beginPath();
     if (p.atkDir) { c.moveTo(6, -14); c.lineTo(8, -14 + L * 0.8); } else { c.moveTo(6, -18); c.quadraticCurveTo(6 + L * 0.5, -18 - 10 * (1 - k), 6 + L, -16); }
     c.stroke(); c.fillStyle = '#fff'; c.beginPath(); c.arc(p.atkDir ? 8 : 6 + L, p.atkDir ? -14 + L * 0.8 : -16, 3, 0, TAU); c.fill();
   }
@@ -110,20 +328,134 @@ function boss(e, x) {
   else if (ph < per - 30) { /* dash */ } else { e.vx *= 0.88; e.vy *= 0.88; }
 }
 
-K.game({
-  id: 'lanternbound', title: 'Lanternbound', subtitle: 'Whip, burn and axe your way through the manor', color: '#fbbf24',
+const levels = [0, 1, 2].map((i) => () => buildLevel(i));
+
+function onInit(G) {
+  G0 = G; runStarted = 0; runActive = false; runEnded = false; runKills = 0; runCandles = 0; runBossKills = 0;
+  runDeaths = 0; lastLives = 3; hurtThisStage = false; stageSeen = -1; startBest = Number(stats().bestScore) || 0;
+  dailySeed = activeMode === 'daily' ? seedForToday() : 0;
+  applyRng();
+  if (G) G.scoreMultiplier = activeMode === 'nocturne-plus' ? 1.3 : 1;
+  lastInitMode = activeMode;
+}
+
+game = K.game({
+  id: GAME_ID, title: 'Lanternbound', subtitle: 'Whip, burn and axe your way through the manor', color: '#f59e0b',
   controls: [['← →  /  A D', 'Walk'], ['Space  /  ↑  /  W  /  Z', 'Jump (hold for height)'], ['X  /  J', 'Whip (hits candles too)'], ['C  /  K', 'Throw axe (uses ammo)'], ['↓ + Jump', 'Drop through thin floors'], ['P / M', 'Pause / mute']],
   help: '← → walk · Space jump · X whip · C throw axe (ammo from candles) · ↓+Jump drops through thin floors · Defeat the Hollow Duke',
-  levels: [S1, S2, S3], bg, hero: { hp: 6, run: 3.2, jump: 10.4, ammo: 5, stomp: false, weapon: { type: 'melee', dmg: 1, range: 74, h: 22, cd: 22, dur: 11 }, sub: { name: 'axe', cost: 1, dmg: 3, vx: 4.2, vy: -8, grav: 0.35, life: 140, size: 8, color: '#e2e8f0', pierce: true, spin: true, sfx: 'slash' } },
-  enemies: {
-    k: { w: 24, h: 32, hp: 2, ai: 'walk', sp: 0.8, sight: 140, score: 100, color: '#e5e7eb' },
-    v: { w: 26, h: 18, hp: 1, ai: 'fly', sp: 1.6, sight: 200, range: 70, bob: 22, score: 80, color: '#7c3aed' },
-    w: { w: 28, h: 32, hp: 3, ai: 'fly', sp: 0.9, sight: 260, range: 40, bob: 30, score: 200, color: '#a5b4fc', shoot: { speed: 2.6, color: '#a5b4fc' }, every: 120, aim: true },
-    u: { w: 28, h: 30, hp: 4, ai: 'turret', fixed: true, score: 150, color: '#64748b', sight: 380, shoot: { speed: 3.2, color: '#f87171' }, every: 100, aim: true },
-    B: { w: 56, h: 74, hp: 30, ai: 'boss', name: 'THE HOLLOW DUKE', wake: 380, grav: false, score: 3000, color: '#7c3aed', dmg: 2 },
-  },
-  boss, drawEnemy, drawHero: drawKnight, winTitle: 'The Manor Is Silent', winSub: (G) => 'The Hollow Duke is no more · Score ' + G.score,
+  levels, bg, hero: { hp: 6, run: 3.2, jump: 10.4, ammo: 5, stomp: false, weapon: { type: 'melee', dmg: 1, range: 74, h: 22, cd: 22, dur: 11, deflect: true }, sub: { name: 'axe', cost: 1, dmg: 3, vx: 4.2, vy: -8, grav: 0.35, life: 140, size: 8, color: '#e2e8f0', pierce: true, spin: true, sfx: 'slash' } },
+  enemies,
+  boss, drawEnemy, drawHero: drawKnight, winTitle: 'The Manor Is Silent',
+  winSub: (G, coins) => finishRun(G, true, coins),
+  overTitle: 'The Lantern Gutters',
+  overSub: (G, coins) => finishRun(G, false, coins),
+  onKill, onBreak, onHurt, onToken,
+  debug: (d) => { act = d; },
+  touchL: [['◀', 'ArrowLeft'], ['▶', 'ArrowRight']],
+  touchR: [['⚔', 'KeyX'], ['🪓', 'KeyC'], ['▲', 'Space']],
+  onInit,
 });
+const originalShake = game.shake.bind(game);
+game.shake = (amount) => originalShake(amount * shakeScale);
+
+game.ui = UI.mountGame(game, {
+  id: GAME_ID, title: 'Lanternbound', subtitle: 'Carry the lantern through three haunted stages and silence the Hollow Duke.', accent: '#f59e0b',
+  modes: [
+    { id: 'story', name: 'Story Hunt', blurb: 'Three haunted stages, three lives, the Hollow Duke at the end.', seasonTargets: [6000, 12000, 20000] },
+    { id: 'relic-hunt', name: 'Relic Hunt', blurb: 'Gather four relics in each stage to open the gates.', seasonTargets: [7000, 14000, 22000] },
+    { id: 'boss-rush', name: "Duke's Gauntlet", blurb: 'Three back-to-back duke duels with no stage safety.', seasonTargets: [8000, 16000, 24000] },
+    { id: 'daily', name: 'Daily Crypt', blurb: "A seeded crypt fixed for today's date.", seeded: true, seasonTargets: [6500, 13000, 21000] },
+    { id: 'nocturne-plus', name: 'Nocturne+', blurb: 'Stronger enemies, 1.3× score, no mercy.', lockedHint: 'Complete Story Hunt to unlock', requires: { stat: 'storyCompletions', gte: 1 }, seasonTargets: [9000, 18000, 27000] },
+  ],
+  settings: [
+    { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
+    { key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 },
+    { key: 'particles', label: 'Particles', type: 'select', options: ['lite', 'standard', 'ultra'], default: 'standard' },
+  ],
+  achievements: [
+    { id: 'first-light', name: 'First Light', desc: 'Defeat your first enemy.', rarity: 'common' },
+    { id: 'candlelight', name: 'Candle Lighter', desc: 'Break ten candles in one run.', rarity: 'common' },
+    { id: 'hunter', name: 'Relentless Hunter', desc: 'Defeat 25 enemies in one run.', rarity: 'common' },
+    { id: 'score-10000', name: 'Candlelight Legend', desc: 'Score 10,000 in one run.', rarity: 'rare' },
+    { id: 'duke-slayer', name: 'Hollow Duke Slain', desc: 'Defeat the Hollow Duke.', rarity: 'rare' },
+    { id: 'personal-best', name: 'Personal Best', desc: 'Finish Story Hunt with a new best score.', rarity: 'rare' },
+    { id: 'story-clear', name: 'The Manor Is Silent', desc: 'Finish Story Hunt.', rarity: 'rare' },
+    { id: 'relic-keeper', name: 'Relic Keeper', desc: 'Finish Relic Hunt.', rarity: 'rare' },
+    { id: 'daily-player', name: 'Daily Cryptographer', desc: 'Finish the Daily Crypt.', rarity: 'rare' },
+    { id: 'untouched', name: 'Untouched', desc: 'Clear a stage without taking damage.', rarity: 'epic' },
+    { id: 'iron-lantern', name: 'Iron Lantern', desc: 'Finish Story Hunt without losing a life.', rarity: 'epic' },
+    { id: 'speed-run', name: 'Lantern Sprint', desc: 'Finish Story Hunt in under six minutes.', rarity: 'epic' },
+    { id: 'nocturne-clear', name: 'Nocturne Adept', desc: 'Finish Nocturne+.', rarity: 'legendary' },
+    { id: 'gauntlet-clear', name: "Duke's Gauntlet", desc: 'Win all three duke duels.', rarity: 'legendary' },
+  ],
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Walk with A/D or the arrow keys and jump with Space.', hold: 'KeyD' },
+    { text: 'Press X or J to swing the whip. It breaks candles and stops projectiles.', hold: 'KeyX' },
+    { text: 'Candles drop axe ammo. Press C or K to throw an axe.', hold: 'KeyC' },
+    { text: 'Survive three stages and defeat the Hollow Duke to end the night.', hold: 'Space' },
+  ] },
+  chapter: 'LANTERNBOUND · 3 STAGES', levels: [{}, {}, {}],
+  hooks: {
+    applyMode: (mode) => {
+      const next = MODES[mode] ? mode : 'story';
+      if (next === 'nocturne-plus' && !(Number(stats().storyCompletions) > 0)) { UI.toast('Complete Story Hunt to unlock Nocturne+', { color: '#f59e0b' }); return false; }
+      activeMode = next;
+      applyRng();
+      if (game && lastInitMode !== activeMode) game.restart(false);
+      return true;
+    },
+    applySetting: (key, value) => {
+      if (key === 'difficulty') {
+        difficulty = value; Arcade.difficulty = value;
+        Arcade.speedMult = value === 'easy' ? 0.8 : value === 'hard' ? 1.35 : 1;
+      }
+      if (key === 'shake') shakeScale = Number(value);
+      if (key === 'particles' && window.Perf && Perf.setTier) Perf.setTier(value);
+    },
+    applyCosmetic,
+  },
+});
+
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  window.LanternboundTest = {
+    state() {
+      const p = act && act.player, b = act && act.boss;
+      return {
+        mode: activeMode, difficulty, state: game.state, score: game.score, hi: game.hi, title: game.title, sub: game.sub,
+        level: act ? act.level : 0, stage: stageName(), tokens: act ? act.tokens : 0, need: stageNeed(), lives: act ? act.lives : 0,
+        hp: p ? p.hp : 0, maxhp: p ? p.maxhp : 0, ammo: p ? p.ammo : 0, x: p ? Math.round(p.x) : 0, y: p ? Math.round(p.y) : 0,
+        boss: b ? { hp: b.hp, hmax: b.hmax, awake: b.awake } : null, enemies: act ? act.enemies.length : 0,
+        seed: dailySeed, elapsed: runStarted ? Date.now() - runStarted : 0,
+        kills: runKills, candles: runCandles, deaths: runDeaths, startBest, levelCount: levels.length,
+      };
+    },
+    sequence(n) { return dailySequence(n == null ? 12 : n, dailySeed || seedForToday()); },
+    world() { return act && act.grid ? act.grid.map((row) => row.join('')).join('\n') : ''; },
+    levelName(n) { const i = n == null ? (act ? act.level : 0) : n; return (activeMode === 'boss-rush' ? ARENA_NAMES : STORY_NAMES)[i] || ''; },
+    setMode(mode) { return game.ui.setMode(mode); },
+    restart(autostart) { game.restart(autostart === true); },
+    setDifficulty(level) { difficulty = level; Arcade.difficulty = level; Arcade.speedMult = level === 'easy' ? 0.8 : level === 'hard' ? 1.35 : 1; },
+    award(points) { game.addScore(points == null ? 1000 : points); },
+    cosmetic(slot, id) { applyCosmetic(slot, id); },
+    colors() { return { armor: skin.armor, trim: skin.trim, plume: skin.plume, cloth: skin.cloth, whip: whipColor, effect: effectColor, theme: skyTheme }; },
+    stats() { return (window.Save && Save.load(GAME_ID)) || {}; },
+    goLevel(i) { if (act) act.goLevel(i); },
+    setTokens(n) { if (act) act.setTokens(n); },
+    hurt(n) { if (act) act.hurt(n); },
+    wakeBoss() { if (act) act.wakeBoss(); },
+    damageBoss(n) { if (act) act.damageBoss(n); },
+    killBoss() { if (act) { act.wakeBoss(); act.damageBoss(9999); } },
+    clearEnemies() { if (act) act.clearEnemies(); },
+    finishLevel() { if (act) act.finishLevel(); },
+    breakTile(c, r) { if (act) act.breakTile(c, r); },
+    teleport(x, y) { if (act) act.teleport(x, y); },
+    spawn(ch, x, y) { const e = act && act.spawn(ch, x, y); return e ? { k: e.k, hp: e.hp, hmax: e.hmax } : null; },
+    setAmmo(n) { if (act) act.setAmmo(n); },
+    enemyStats() { return act ? act.enemies.map((e) => ({ k: e.k, hp: e.hp, hmax: e.hmax })) : []; },
+    gridAt(c, r) { return act ? act.tile(c, r) : ' '; },
+    stageCount() { return levels.length; },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

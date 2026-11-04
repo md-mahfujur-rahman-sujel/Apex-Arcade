@@ -102,6 +102,10 @@ function init(G) {
     for (const member of party) while (member.lvl < savedLevel) { member.lvl++; member.mhp += 8; member.mmp += 3; member.atk += 2; member.def += 1; member.mag += 2; }
     for (const member of party) { member.hp = member.mhp; member.mp = member.mmp; }
   }
+  if (activeMode === 'warden-rematch') {
+    for (const member of party) while (member.lvl < 4) { member.lvl++; member.mhp += 8; member.mmp += 3; member.atk += 2; member.def += 1; member.mag += 2; }
+    for (const member of party) { member.hp = member.mhp; member.mp = member.mmp; }
+  }
   inv = activeMode === 'warden-rematch' ? { potion: 5, ether: 3 } : { potion: 3, ether: 1 }; gold = activeMode === 'warden-rematch' ? 100 : 30;
   flags = { boss: false }; dlg = null; menu = null; bat = null; status = false; steps = 0; mode = 'field';
   hero = activeMode === 'warden-rematch' ? { x: 28, y: 6, tx: 28, ty: 6, dir: 3, moving: false, mt: 0 } : { x: 8, y: 9, tx: 8, ty: 9, dir: 2, moving: false, mt: 0 };
@@ -155,10 +159,11 @@ function useEther() { const m = party.filter((q) => q.mp < q.mmp).sort((a, b) =>
 function stepEffects(G) {
   const ch = map[hero.y][hero.x]; steps++;
   if (ch === 'O') {
+    const prior = Save.load('clockwork-dawn') || {}, stats = prior.stats || {}, priorBest = Number(stats.bestScore) || 0;
     A.sfx('win'); awardScore(G, 1000 + gold * 5);
-    const elapsed = Date.now() - runStarted, prior = Save.load('clockwork-dawn') || {}, stats = prior.stats || {}, best = Math.max(Number(stats.bestScore) || 0, G.score);
+    const elapsed = Date.now() - runStarted, best = Math.max(priorBest, G.score);
     award('first-run', 'First Run'); if (G.score >= 1000) award('steady-hand', 'Steady Hand'); if (elapsed <= 600000) award('quick-clear', 'Quick Clear');
-    if (G.score > (Number(stats.bestScore) || 0)) award('personal-best', 'Personal Best');
+    if (G.score > priorBest) award('personal-best', 'Personal Best');
     if (activeMode === 'daily-dawn') award('daily-player', 'Daily Player');
     if (!mistakes) { award('no-mistakes', 'No Mistakes'); award('perfect-round', 'Perfect Round'); } if (steps >= 80) award('long-run', 'Long Run');
     if (party[0].lvl >= 5) award('season-ace', 'Season Ace');
@@ -532,6 +537,70 @@ clockworkDawnGame.ui = UI.mountGame(clockworkDawnGame, {
 const clockworkOriginalShake = clockworkDawnGame.shake.bind(clockworkDawnGame);
 clockworkDawnGame.shake = (amount) => clockworkOriginalShake(amount * shakeScale);
 clockworkDawnGame.inputLocked = true;
+
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  window.ClockworkDawnTest = {
+    state() {
+      return {
+        mode: activeMode, screen: mode, difficulty, state: clockworkDawnGame.state,
+        score: clockworkDawnGame.score, title: clockworkDawnGame.title, sub: clockworkDawnGame.sub,
+        dailySeed, rngState, gold, steps, boss: flags ? !!flags.boss : false,
+        portal: !!(map && map[2] && map[2][31] === 'O'),
+        hero: hero ? { x: hero.x, y: hero.y, dir: hero.dir } : null,
+        party: party ? party.map((m) => ({ n: m.n, hp: m.hp, mhp: m.mhp, mp: m.mp, mmp: m.mmp, lvl: m.lvl, xp: m.xp, atk: m.atk, def: m.def, mag: m.mag })) : [],
+        inventory: inv ? { potion: inv.potion, ether: inv.ether } : null,
+        battle: bat ? {
+          phase: bat.phase, actor: bat.actor, boss: !!bat.boss, turn: bat.turn,
+          sel: bat.sel, sel2: bat.sel2, tgt: bat.tgt, log: bat.log.slice(),
+          rewards: bat.rewards ? bat.rewards.slice() : null,
+          foes: bat.foes.map((f) => ({ n: f.n, k: f.k, hp: f.hp, mhp: f.mhp, dead: !!f.dead })),
+        } : null,
+      };
+    },
+    world() { return map ? map.map((row) => row.join('')) : null; },
+    sequence(n) {
+      let s = rngState >>> 0; const out = [];
+      for (let i = 0; i < n; i++) { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; out.push(Number(((s >>> 0) / 4294967296).toFixed(6))); }
+      return out;
+    },
+    setMode(id) { return clockworkDawnGame.ui.setMode(id); },
+    restart(autostart) { clockworkDawnGame.restart(autostart !== false); },
+    setDifficulty(level) { difficulty = level; if (window.Arcade) Arcade.difficulty = level; },
+    award(points) { awardScore(clockworkDawnGame, points); },
+    cosmetic: applyCosmetic,
+    colors() { return { scene: scenePalette, hero: party && party[0] ? party[0].col : '#fbbf24', effect: effectColor }; },
+    stats() { return window.Save && Save.load ? Save.load('clockwork-dawn') : {}; },
+    setGold(n) { gold = Math.max(0, Number(n) || 0); },
+    give(kind, count) { if (inv && kind in inv) inv[kind] = Math.max(0, Number(count) || 0); },
+    healAll() { if (party) for (const m of party) { m.hp = m.mhp; m.mp = m.mmp; } },
+    setPartyHp(values) { (values || []).forEach((v, i) => { if (party[i]) party[i].hp = Math.max(0, Math.min(party[i].mhp, Number(v) || 0)); }); },
+    setLevel(level) {
+      if (!party) return;
+      for (const m of party) {
+        while (m.lvl < level) { m.lvl++; m.mhp += 8; m.mmp += 3; m.atk += 2; m.def += 1; m.mag += 2; }
+        m.hp = m.mhp; m.mp = m.mmp;
+      }
+    },
+    startBattle(kinds, boss) { startBattle(clockworkDawnGame, kinds && kinds.length ? kinds : ['moss'], !!boss); },
+    winBattle() {
+      if (!bat) return false;
+      for (const f of bat.foes) { f.hp = 0; f.dead = true; }
+      victory(clockworkDawnGame);
+      return true;
+    },
+    loseBattle() {
+      if (party) for (const m of party) m.hp = 0;
+      mistakes = true; bat = null; mode = 'field';
+      clockworkDawnGame.over('The Party Fell', 'Warden defeated you · Score ' + clockworkDawnGame.score);
+    },
+    closeBattle() { mode = 'field'; bat = null; dlg = null; },
+    completeRun() {
+      map[BOSS.y - 3][31] = 'O';
+      hero.x = 31; hero.y = 2; hero.tx = 31; hero.ty = 2; hero.moving = false;
+      stepEffects(clockworkDawnGame);
+    },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

@@ -17,21 +17,106 @@
 <script src="../../kits/score-bridge.js"></script>
 <script src="../../kits/ui-kit.js"></script>
 <script>
-/* Iron Circuit — a three-opponent tournament fighter (original characters and move names). */
+/* Iron Circuit — a six-rival tournament fighter with rotating circuits, seeded
+   daily duels, best-of rounds, Rift Rush meter, records and cosmetics. */
 (function () {
+  'use strict';
   const A = Arcade, TAU = A.TAU, W = 800, H = 450, FLOOR = 388;
+  const GAME_ID = 'iron-circuit';
+  const MODE_LABEL = { campaign: 'CAMPAIGN', blitz: 'BLITZ RUN', daily: 'DAILY DUEL', endless: 'ENDLESS CIRCUIT', overdrive: 'OVERDRIVE' };
+  const MODES = {
+    campaign: { lives: 3, bestOf: 2, timer: 60, mult: 1, rivals: 3 },
+    blitz: { lives: 2, bestOf: 1, timer: 40, mult: 1.1, rivals: 6 },
+    daily: { lives: 2, bestOf: 1, timer: 50, mult: 1.25, rivals: 6 },
+    endless: { lives: 3, bestOf: 1, timer: 50, mult: 1.1, rivals: 12 },
+    overdrive: { lives: 1, bestOf: 1, timer: 45, mult: 1.5, rivals: 6 },
+  };
+  const FORCED_SEED = (() => { try { return Number(new URLSearchParams(location.search).get('seed')) || 0; } catch (e) { return 0; } })();
   const MOVES = {
     punch: { su: 4, ac: 4, rc: 9, dmg: 7, reach: 80, y1: -124, y2: -84, stun: 15, kb: 3, meter: 7, id: 0 },
     kick: { su: 8, ac: 5, rc: 14, dmg: 12, reach: 102, y1: -98, y2: -34, stun: 19, kb: 6, meter: 10, id: 1 },
     spec: { su: 13, ac: 14, rc: 19, dmg: 24, reach: 112, y1: -126, y2: -28, stun: 32, kb: 11, meter: 0, lunge: 7, id: 2 },
   };
-  const PLAYER = { name: 'Kestrel', title: 'Circuit Rookie', look: 'kestrel', skin: '#f0c9a0', cloth: '#0ea5e9', trim: '#fde047', spd: 4.2, dmgMul: 1 };
-  const OPPS = [
-    { name: 'Brakk', title: 'Dockyard Bruiser', look: 'brakk', skin: '#d9a273', cloth: '#b4452f', trim: '#f4c04b', spd: 2.9, dmgMul: 0.95, aggr: 0.45, blk: 0.22, react: 24, bg: 0 },
+  const PLAYER = { name: 'Kestrel', title: 'Circuit Rookie', look: 'kestrel', skin: '#f0c9a0', cloth: '#0ea5e9', trim: '#fde047', spd: 4.2, dmgMul: 1, bulk: 1 };
+  const ROSTER = [
+    { name: 'Brakk', title: 'Dockyard Bruiser', look: 'brakk', skin: '#d9a273', cloth: '#b4452f', trim: '#f4c04b', spd: 2.9, dmgMul: 0.95, aggr: 0.45, blk: 0.22, react: 24, bg: 0, bulk: 1.2 },
     { name: 'Sable', title: 'Rooftop Phantom', look: 'sable', skin: '#e7c3a0', cloth: '#6d3bd1', trim: '#22d3ee', spd: 3.7, dmgMul: 1.05, aggr: 0.62, blk: 0.42, react: 15, bg: 1 },
     { name: 'Warden Orlo', title: 'Ember Champion', look: 'orlo', skin: '#8a5a3b', cloth: '#27303f', trim: '#fb923c', spd: 4.1, dmgMul: 1.2, aggr: 0.8, blk: 0.58, react: 9, bg: 2 },
+    { name: 'Vex', title: 'Signal Duelist', look: 'vex', skin: '#f3c6a5', cloth: '#0f766e', trim: '#5eead4', spd: 4.6, dmgMul: 0.9, aggr: 0.68, blk: 0.34, react: 12, bg: 1 },
+    { name: 'Mira', title: 'Gale Dancer', look: 'mira', skin: '#f0c9a0', cloth: '#be185d', trim: '#fda4af', spd: 4.4, dmgMul: 1.0, aggr: 0.58, blk: 0.46, react: 13, bg: 0 },
+    { name: 'Ash', title: 'Furnace Warden', look: 'ash', skin: '#a97c5a', cloth: '#1f2937', trim: '#f97316', spd: 3.2, dmgMul: 1.35, aggr: 0.86, blk: 0.5, react: 11, bg: 2, bulk: 1.15 },
   ];
+  const ENDLESS_SUFFIX = ['II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
+
   let G, M, F = [], bgs = [];
+  let activeMode = 'campaign', difficulty = 'normal', rngState = 0, runSeed = 0, lastInitMode = null;
+  let shakeScale = 1, skinId = 'kestrel', paletteId = 'sunset', trailColor = '', themeTint = null;
+  let accent = '#f59e0b', accent2 = '#fde047', meterColor = '#38bdf8';
+
+  function random() { if (!rngState) return Math.random(); rngState = (Math.imul(rngState, 1664525) + 1013904223) >>> 0; return rngState / 4294967296; }
+  function dailySeed() {
+    const d = new Date(), key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate() + ':' + GAME_ID; let hash = 2166136261;
+    for (let i = 0; i < key.length; i++) { hash ^= key.charCodeAt(i); hash = Math.imul(hash, 16777619); }
+    return (hash >>> 0) || 1;
+  }
+  function modeCfg() { return MODES[activeMode] || MODES.campaign; }
+  function statsOf() { const save = window.Save && Save.load ? Save.load(GAME_ID) : {}; return save.stats || {}; }
+  function savePatch(patch, extra) { if (window.Save && Save.update) Save.update(GAME_ID, Object.assign({ stats: patch }, extra || {})); }
+  function award(points) { if (G) G.addScore(Math.round(points * modeCfg().mult)); }
+  function unlock(id) {
+    const save = window.Save && Save.load ? Save.load(GAME_ID) : {};
+    if ((Array.isArray(save.achievements) ? save.achievements : []).includes(id)) return;
+    if (window.Save && Save.update) Save.update(GAME_ID, { achievements: [id] });
+    if (window.Apex && Apex.unlockAchievement) Apex.unlockAchievement(id, GAME_ID);
+    if (window.UI && UI.toast) UI.toast(id.replace(/-/g, ' '), { color: '#fbbf24' });
+  }
+  function refreshPalette() {
+    if (String(paletteId).includes('aurora')) { accent = '#22d3ee'; accent2 = '#a78bfa'; meterColor = '#6ee7b7'; }
+    else if (String(paletteId).includes('neon')) { accent = '#f0abfc'; accent2 = '#22d3ee'; meterColor = '#fde047'; }
+    else { accent = '#f59e0b'; accent2 = '#fde047'; meterColor = '#38bdf8'; }
+  }
+  function playerDef() {
+    const p = Object.assign({}, PLAYER);
+    const key = String(skinId);
+    if (key.includes('ember')) { p.cloth = '#b4452f'; p.trim = '#fde047'; }
+    else if (key.includes('cobalt')) { p.cloth = '#0369a1'; p.trim = '#a5f3fc'; }
+    else if (key.includes('violet')) { p.cloth = '#6d3bd1'; p.trim = '#22d3ee'; }
+    return p;
+  }
+  function fxColor(f) { return f.isP && trailColor ? trailColor : f.trim; }
+  function applyDifficulty(def) {
+    const c = Object.assign({}, def);
+    if (difficulty === 'easy') { c.aggr *= 0.72; c.blk *= 0.7; c.react *= 1.35; c.dmgMul *= 0.82; }
+    else if (difficulty === 'hard') { c.aggr = Math.min(0.98, c.aggr * 1.18); c.blk = Math.min(0.85, c.blk * 1.15); c.react *= 0.8; c.dmgMul *= 1.18; }
+    return c;
+  }
+  function scaleRival(base, tier) {
+    if (!tier) return Object.assign({}, base);
+    const c = Object.assign({}, base);
+    c.name = base.name + ' ' + ENDLESS_SUFFIX[Math.min(ENDLESS_SUFFIX.length - 1, tier - 1)];
+    c.title = 'Circuit Elite';
+    c.cloth = A.shade(base.cloth, -Math.min(0.3, 0.12 * tier));
+    c.spd = Math.min(5.6, base.spd + 0.18 * tier);
+    c.dmgMul = base.dmgMul + 0.07 * tier;
+    c.aggr = Math.min(0.98, base.aggr + 0.04 * tier);
+    c.blk = Math.min(0.85, base.blk + 0.03 * tier);
+    c.react = Math.max(6, base.react - tier);
+    return c;
+  }
+  function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); const t = arr[i]; arr[i] = arr[j]; arr[j] = t; }
+    return arr;
+  }
+  function buildOrder() {
+    let order;
+    if (activeMode === 'campaign') order = ROSTER.slice(0, 3);
+    else if (activeMode === 'endless') {
+      order = [];
+      for (let i = 0; i < MODES.endless.rivals; i++) order.push(scaleRival(ROSTER[i % ROSTER.length], Math.floor(i / ROSTER.length)));
+    } else if (activeMode === 'daily') { rngState = runSeed; order = shuffle(ROSTER.slice()); }
+    else order = ROSTER.slice();
+    return order.map(applyDifficulty);
+  }
 
   /* ---------------- backgrounds (pre-rendered once) ---------------- */
   function floorBase(c, col, line) {
@@ -93,13 +178,14 @@
     return Object.assign({}, o, { x, y: FLOOR, vx: 0, vy: 0, face, hp: 100, ghost: 100, meter: 0, st: 'idle', t: 0, mv: null, mvKey: '', hitDone: false, cancelOK: false, stun: 0, down: false, blocking: false, combo: 0, comboT: 0, buf: {}, isP, walkT: 0, flash: 0, bflash: 0, aid: 0, ai: { t: 20, mode: 'wait', fired: false, seen: 0 } });
   }
   function startRound() {
-    F = [mk(PLAYER, 270, 1, true), mk(OPPS[M.opp], 530, -1, false)];
-    M.phase = 'intro'; M.pt = 0; M.timer = 60; M.ft = 0; M.winner = null;
+    const cfg = modeCfg(), rival = M.order[M.mi] || ROSTER[0];
+    F = [mk(playerDef(), 270, 1, true), mk(rival, 530, -1, false)];
+    M.phase = 'intro'; M.pt = 0; M.timer = cfg.timer; M.ft = 0; M.winner = null; M.why = ''; M.roundHit = false;
   }
   function startAtk(f, key) {
     const mv = MOVES[key];
     f.st = 'atk'; f.mv = mv; f.mvKey = key; f.t = 0; f.hitDone = false; f.cancelOK = false; f.buf = {}; f.aid++;
-    if (key === 'spec') { A.sfx('charge'); G.ring(f.x, f.y - 70, f.trim, 50, 18); } else A.sfx(key === 'kick' ? 'dash' : 'slash');
+    if (key === 'spec') { A.sfx('charge'); G.ring(f.x, f.y - 70, fxColor(f), 50, 18); } else A.sfx(key === 'kick' ? 'dash' : 'slash');
   }
   function tryHit(f, o) {
     const mv = f.mv;
@@ -114,6 +200,7 @@
       const chip = Math.max(1, Math.round(mv.dmg * (f.mvKey === 'spec' ? 0.3 : 0.1) * f.dmgMul));
       o.hp = Math.max(1, o.hp - chip); o.stun = 9; o.st = 'hurt'; o.mv = null; o.down = false; o.bflash = 8;
       o.vx = f.face * mv.kb * 0.7; if (atWall) f.vx = -f.face * mv.kb * 0.8;
+      if (o.isP) { M.roundHit = true; M.parries++; if (M.parries >= 5) unlock('parry-master'); }
       G.burst(cx, cy, 6, { color: ['#e5e7eb', '#fde047'], speed: 3, life: 14, shape: 'l' });
       A.sfx('parry'); G.freeze(3); G.shake(2);
       return;
@@ -125,10 +212,17 @@
     o.vx = f.face * mv.kb; if (o.down) { o.vy = -9; } if (atWall) f.vx = -f.face * mv.kb * 0.8;
     f.meter = Math.min(100, f.meter + mv.meter); o.meter = Math.min(100, o.meter + mv.meter * 0.6);
     f.combo++; f.comboT = 70; f.cancelOK = true;
-    G.burst(cx, cy, f.mvKey === 'spec' ? 22 : 12, { color: [f.trim, '#fff', '#fb7185'], speed: f.mvKey === 'spec' ? 6 : 4, life: 22, glow: true, shape: 'l' });
+    if (o.isP) M.roundHit = true;
+    G.burst(cx, cy, f.mvKey === 'spec' ? 22 : 12, { color: [fxColor(f), '#fff', '#fb7185'], speed: f.mvKey === 'spec' ? 6 : 4, life: 22, glow: true, shape: 'l' });
     G.ring(cx, cy, '#fff', f.mvKey === 'spec' ? 60 : 32, 14);
     A.sfx(f.mvKey === 'spec' ? 'explode' : 'hit'); G.freeze(f.mvKey === 'spec' ? 9 : 5); G.shake(mv.dmg / 3);
-    if (f.isP) { G.addScore(dmg * 10 + f.combo * 5); if (f.combo >= 2) G.popup(o.x, o.y - 150, f.combo + ' HIT COMBO', '#fde047', 18); }
+    if (f.isP) {
+      G.addScore(dmg * 10 + f.combo * 5);
+      M.maxCombo = Math.max(M.maxCombo, f.combo);
+      if (f.combo >= 5) unlock('combo-5');
+      if (f.mvKey === 'spec') { M.rifts++; unlock('rift-rush'); }
+      if (f.combo >= 2) G.popup(o.x, o.y - 150, f.combo + ' HIT COMBO', '#fde047', 18);
+    }
     if (o.hp <= 0) { o.hp = 0; o.st = 'ko'; o.stun = 99999; o.vx = f.face * 7; o.vy = -10; endRound(f, 'K.O.'); }
   }
   function stepF(f, o, inp) {
@@ -213,21 +307,89 @@
     if (M.phase !== 'fight') return;
     M.phase = 'ko'; M.pt = 0; M.winner = w; M.why = why;
     if (w) { if (w.isP) M.pw++; else M.ow++; }
-    if (w && w.isP) { const b = 300 + Math.round(w.hp) * 6 + M.timer * 8; G.addScore(b); G.popup(W / 2, 250, '+' + b, '#fbbf24', 22); }
+    if (w && w.isP) {
+      const b = 300 + Math.round(w.hp) * 6 + M.timer * 8;
+      award(b);
+      G.popup(W / 2, 250, '+' + Math.round(b * modeCfg().mult), '#fbbf24', 22);
+      unlock('first-blood');
+      if (!M.roundHit) unlock('perfect-round');
+      if (w.hp <= 15) unlock('comeback');
+      if (G.score >= 20000) unlock('score-20000');
+    }
     G.freeze(12); G.shake(10); A.sfx('ko');
   }
-  function advance() {
-    const w = M.winner;
-    if (w && ((w.isP && M.pw >= 2) || (!w.isP && M.ow >= 2))) {
-      if (w.isP) {
-        M.opp++;
-        if (M.opp >= OPPS.length) { G.state === 'playing' && G.win('Grand Champion!', 'All three rivals defeated'); return; }
-        M.pw = 0; M.ow = 0; M.round = 1; startRound(); M.intro2 = true;
-      } else { G.over('Defeated', 'Beaten by ' + F[1].name + ' · ' + OPPS[M.opp].title); }
-      return;
+  function recordRun(win) {
+    const s = statsOf(), d = new Date();
+    const day = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const patch = {
+      runs: (Number(s.runs) || 0) + 1,
+      bestScore: Math.max(Number(s.bestScore) || 0, G.score),
+      totalRivals: (Number(s.totalRivals) || 0) + M.beaten,
+      bestRivals: Math.max(Number(s.bestRivals) || 0, M.beaten),
+    };
+    if (activeMode === 'campaign' && win) patch.campaignClears = (Number(s.campaignClears) || 0) + 1;
+    if (activeMode === 'endless') patch.endlessBest = Math.max(Number(s.endlessBest) || 0, M.beaten);
+    const extra = {};
+    if (activeMode === 'daily') {
+      patch.dailyBest = Math.max(Number(s.dailyBest) || 0, G.score);
+      extra.daily = { day: day, best: Math.max(G.score, Number((Save.load(GAME_ID).daily || {}).best) || 0) };
     }
-    if (w) M.round++;
+    savePatch(patch, extra);
+  }
+  function finishRun(win, reason) {
+    if (M.recorded) return;
+    M.recorded = true;
+    recordRun(win);
+    if (win) {
+      if (activeMode === 'campaign') G.win('Circuit Champion!', 'All ' + M.total + ' rivals defeated \u00b7 score ' + G.score);
+      else if (activeMode === 'blitz') G.win('Blitz Cleared!', M.total + ' rivals in one run \u00b7 score ' + G.score);
+      else if (activeMode === 'daily') G.win('Daily Duel Won!', 'Seed ' + runSeed + ' \u00b7 score ' + G.score);
+      else if (activeMode === 'overdrive') G.win('Overdrive Cleared!', 'One life, ' + M.total + ' rivals \u00b7 score ' + G.score);
+      else G.win('Circuit Complete!', 'Score ' + G.score);
+    } else {
+      G.over(reason || 'Knocked Out', 'Beaten ' + M.beaten + ' rival' + (M.beaten === 1 ? '' : 's') + ' \u00b7 ' + MODE_LABEL[activeMode]);
+    }
+  }
+  function defeatRival() {
+    const s = statsOf();
+    M.beaten++; M.mi++;
+    award(1200);
+    savePatch({
+      rivalsBeaten: (Number(s.rivalsBeaten) || 0) + 1,
+      bestRivals: Math.max(Number(s.bestRivals) || 0, M.beaten),
+      bestScore: Math.max(Number(s.bestScore) || 0, G.score),
+    });
+    if (window.Apex && Apex.report) Apex.report({ gameId: GAME_ID, type: 'level_complete', level: M.beaten, score: G.score, mode: activeMode });
+    if (M.beaten >= 6) unlock('endless-six');
+    if (activeMode === 'campaign' && M.beaten >= M.total) unlock('circuit-clear');
+    if (activeMode === 'blitz' && M.beaten >= M.total) unlock('blitz-clear');
+    if (activeMode === 'daily' && M.beaten >= M.total) unlock('daily-duel');
+    if (activeMode === 'overdrive' && M.beaten >= M.total) unlock('overdrive-clear');
+    if (G.score >= 20000) unlock('score-20000');
+    G.popup(W / 2, 236, 'RIVAL DEFEATED +' + Math.round(1200 * modeCfg().mult), '#fde047', 22);
+    G.ring(F[0].x, F[0].y - 80, '#fde047', 120, 30);
+    A.sfx('win');
+    if (M.beaten >= M.total) { finishRun(true); return; }
+    M.pw = 0; M.ow = 0; M.round = 1;
     startRound();
+    G.popup(W / 2, 280, 'NEXT: ' + (M.order[M.mi] ? M.order[M.mi].name.toUpperCase() : '?'), '#fbbf24', 16);
+  }
+  function loseLife() {
+    M.lives--;
+    if (M.lives <= 0) { finishRun(false, 'Fell to ' + (M.order[M.mi] ? M.order[M.mi].name : 'the circuit')); return; }
+    M.pw = 0; M.ow = 0; M.round = 1;
+    startRound();
+    G.popup(W / 2, 250, M.lives + (M.lives === 1 ? ' LIFE LEFT' : ' LIVES LEFT'), '#fb7185', 20);
+  }
+  function advance() {
+    if (M.phase !== 'result') return;
+    const w = M.winner, cfg = modeCfg();
+    if (!w) { startRound(); return; }
+    if (w.isP) {
+      if (M.pw >= cfg.bestOf) defeatRival(); else { M.round++; startRound(); }
+    } else {
+      if (M.ow >= cfg.bestOf) loseLife(); else { M.round++; startRound(); }
+    }
   }
 
   /* ---------------- update ---------------- */
@@ -245,16 +407,19 @@
       stepF(p, e, pi); if (M.phase === 'fight') stepF(e, p, ei);
       if (M.phase === 'fight' && ++M.ft >= 60) { M.ft = 0; M.timer--; if (M.timer <= 0) { endRound(p.hp === e.hp ? null : p.hp > e.hp ? p : e, 'TIME'); } else if (M.timer <= 5) A.sfx('tick'); }
     } else {
-      if (M.phase === 'ko') { if (G.t % 3 === 0) { p.buf = {}; e.buf = {}; stepF(p, e, none); stepF(e, p, none); } if (M.pt > 95) { M.phase = 'result'; M.pt = 0; if (M.winner && M.winner.isP) A.sfx('win'); } }
-      else { stepF(p, e, none); stepF(e, p, none); if (M.pt > 110) advance(); }
-    }
-    if (M.phase !== 'intro' || true) {
-      const dx = e.x - p.x, air = p.y < FLOOR - 50 || e.y < FLOOR - 50;
-      if (Math.abs(dx) < 42 && !air && p.st !== 'ko' && e.st !== 'ko') {
-        const push = (42 - Math.abs(dx)) / 2, s = Math.sign(dx) || 1;
-        p.x -= s * push; e.x += s * push;
-        if (p.x < 36) { e.x += 36 - p.x; p.x = 36; } if (e.x > W - 36) { p.x -= e.x - (W - 36); e.x = W - 36; }
+      if (M.phase === 'ko') {
+        if (G.t % 3 === 0) { p.buf = {}; e.buf = {}; stepF(p, e, none); stepF(e, p, none); }
+        if (M.pt > 95) { M.phase = 'result'; M.pt = 0; if (M.winner && M.winner.isP) A.sfx('win'); }
+      } else {
+        stepF(p, e, none); stepF(e, p, none);
+        if (M.pt > 110) advance();
       }
+    }
+    const dx = e.x - p.x, air = p.y < FLOOR - 50 || e.y < FLOOR - 50;
+    if (Math.abs(dx) < 42 && !air && p.st !== 'ko' && e.st !== 'ko') {
+      const push = (42 - Math.abs(dx)) / 2, s = Math.sign(dx) || 1;
+      p.x -= s * push; e.x += s * push;
+      if (p.x < 36) { e.x += 36 - p.x; p.x = 36; } if (e.x > W - 36) { p.x -= e.x - (W - 36); e.x = W - 36; }
     }
   }
 
@@ -269,7 +434,7 @@
     let e = 0;
     if (k) { const t = f.t; e = t <= k.su ? t / k.su : t <= k.su + k.ac ? 1 : 1 - (t - k.su - k.ac) / k.rc; }
     const flash = f.flash > 0 && f.flash % 4 < 2, cloth = flash ? '#fff' : f.cloth, dark = flash ? '#fff' : A.shade(f.cloth, -0.4), skin = flash ? '#fff' : f.skin;
-    const bulk = f.look === 'brakk' ? 1.2 : 1;
+    const bulk = f.bulk || 1;
     const hip = [0, -62], sh = [2, -106];
     const ph = Math.sin(f.walkT) * 11;
     let lf = [14 + ph, 0], bf = [-14 - ph, 0], air = !grounded && !f.down;
@@ -283,14 +448,17 @@
     // torso
     seg(c, [hip, sh], 27 * bulk, cloth); seg(c, [[-8, -68], [10, -68]], 6, f.trim);
     c.fillStyle = f.trim; c.beginPath(); c.arc(sh[0] - 8, sh[1] + 4, 9 * bulk, 0, TAU); c.fill(); c.beginPath(); c.arc(sh[0] + 9, sh[1] + 4, 9 * bulk, 0, TAU); c.fill();
-    if (f.look === 'orlo') { c.fillStyle = f.trim; for (const x of [-10, 10]) { c.beginPath(); c.moveTo(sh[0] + x - 6, sh[1] - 2); c.lineTo(sh[0] + x, sh[1] - 22); c.lineTo(sh[0] + x + 6, sh[1] - 2); c.fill(); } }
+    if (f.look === 'orlo' || f.look === 'ash') { c.fillStyle = f.trim; for (const x of [-10, 10]) { c.beginPath(); c.moveTo(sh[0] + x - 6, sh[1] - 2); c.lineTo(sh[0] + x, sh[1] - 22); c.lineTo(sh[0] + x + 6, sh[1] - 2); c.fill(); } }
     // head
     const hd = [5, -127];
     seg(c, [sh, [4, -116]], 10, skin);
     c.fillStyle = skin; c.beginPath(); c.arc(hd[0], hd[1], 14, 0, TAU); c.fill();
     if (f.look === 'kestrel') { c.fillStyle = f.trim; for (let i = 0; i < 3; i++) { c.beginPath(); c.moveTo(hd[0] - 12 + i * 4, hd[1] - 8); c.lineTo(hd[0] - 22 + i * 5, hd[1] - 22 - i * 3); c.lineTo(hd[0] - 6 + i * 4, hd[1] - 12); c.fill(); } c.fillStyle = '#0891b2'; c.fillRect(hd[0] - 2, hd[1] - 6, 16, 7); c.fillStyle = '#a5f3fc'; c.fillRect(hd[0] + 6, hd[1] - 4, 7, 3); }
-    else if (f.look === 'brakk') { c.fillStyle = skin; c.fillStyle = '#4a2a1a'; c.beginPath(); c.arc(hd[0] + 6, hd[1] + 9, 8, 0, Math.PI); c.fill(); c.fillStyle = '#fff'; c.fillRect(hd[0] + 3, hd[1] - 5, 9, 4); c.fillStyle = '#111'; c.fillRect(hd[0] + 9, hd[1] - 4, 3, 3); c.strokeStyle = '#8b3a2a'; c.lineWidth = 2; c.beginPath(); c.moveTo(hd[0] - 4, hd[1] - 12); c.lineTo(hd[0] + 2, hd[1] + 2); c.stroke(); }
+    else if (f.look === 'brakk') { c.fillStyle = '#4a2a1a'; c.beginPath(); c.arc(hd[0] + 6, hd[1] + 9, 8, 0, Math.PI); c.fill(); c.fillStyle = '#fff'; c.fillRect(hd[0] + 3, hd[1] - 5, 9, 4); c.fillStyle = '#111'; c.fillRect(hd[0] + 9, hd[1] - 4, 3, 3); c.strokeStyle = '#8b3a2a'; c.lineWidth = 2; c.beginPath(); c.moveTo(hd[0] - 4, hd[1] - 12); c.lineTo(hd[0] + 2, hd[1] + 2); c.stroke(); }
     else if (f.look === 'sable') { c.fillStyle = cloth; c.beginPath(); c.arc(hd[0] - 1, hd[1] - 2, 16, Math.PI * 0.85, Math.PI * 2.1); c.lineTo(hd[0] + 6, hd[1] - 4); c.fill(); c.fillStyle = dark; c.fillRect(hd[0] - 2, hd[1] + 2, 18, 11); c.fillStyle = f.trim; c.fillRect(hd[0] + 4, hd[1] - 5, 9, 3); }
+    else if (f.look === 'vex') { c.fillStyle = dark; c.beginPath(); c.arc(hd[0], hd[1] - 4, 15, Math.PI * 1.02, Math.PI * 1.98); c.fill(); c.fillStyle = f.trim; c.fillRect(hd[0] - 8, hd[1] - 7, 22, 6); c.fillStyle = '#e0f2fe'; c.fillRect(hd[0] + 5, hd[1] - 6, 7, 4); c.strokeStyle = f.trim; c.lineWidth = 2; c.beginPath(); c.moveTo(hd[0] - 10, hd[1] - 14); c.lineTo(hd[0] - 18, hd[1] - 26); c.stroke(); c.fillStyle = f.trim; c.beginPath(); c.arc(hd[0] - 19, hd[1] - 27, 3, 0, TAU); c.fill(); }
+    else if (f.look === 'mira') { c.fillStyle = cloth; c.beginPath(); c.arc(hd[0], hd[1] - 6, 15, Math.PI, 0); c.fill(); c.fillStyle = f.trim; c.beginPath(); c.arc(hd[0] - 4, hd[1] - 8, 3, 0, TAU); c.fill(); c.beginPath(); c.moveTo(hd[0] - 13, hd[1] - 4); c.quadraticCurveTo(hd[0] - 34, hd[1] + 2, hd[0] - 24, hd[1] + 26); c.quadraticCurveTo(hd[0] - 20, hd[1] + 8, hd[0] - 8, hd[1] + 2); c.fill(); c.fillStyle = '#fff'; c.fillRect(hd[0] + 3, hd[1] - 4, 9, 4); c.fillStyle = '#831843'; c.fillRect(hd[0] + 8, hd[1] - 3, 3, 3); }
+    else if (f.look === 'ash') { c.fillStyle = dark; c.beginPath(); c.arc(hd[0], hd[1] - 5, 16, Math.PI * 0.9, Math.PI * 2.1); c.lineTo(hd[0] + 8, hd[1] + 11); c.lineTo(hd[0] - 9, hd[1] + 11); c.fill(); c.fillStyle = f.trim; c.fillRect(hd[0] + 1, hd[1] - 6, 7, 4); c.fillRect(hd[0] + 10, hd[1] - 6, 4, 4); c.fillStyle = 'rgba(249,115,22,.65)'; c.beginPath(); c.arc(hd[0] - 2, hd[1] - 20, 4, 0, TAU); c.fill(); }
     else { c.fillStyle = f.trim; for (let i = 0; i < 4; i++) { c.beginPath(); c.moveTo(hd[0] - 10 + i * 6, hd[1] - 11); c.lineTo(hd[0] - 8 + i * 6 + 3, hd[1] - 26 - (i % 2) * 8); c.lineTo(hd[0] - 3 + i * 6, hd[1] - 11); c.fill(); } c.fillStyle = '#fff'; c.fillRect(hd[0] + 3, hd[1] - 4, 9, 4); c.fillStyle = '#7c2d12'; c.fillRect(hd[0] + 8, hd[1] - 3, 3, 3); }
     // arms
     let hf = [26, -100], hb = [12, -96], elf = [14, -88], elb = [2, -86];
@@ -303,7 +471,7 @@
     seg(c, [[sh[0] + 6, sh[1] + 2], elf, hf], 11 * bulk, skin); c.fillStyle = f.trim; c.beginPath(); c.arc(hf[0], hf[1], 8 * bulk, 0, TAU); c.fill();
     // attack trail
     if (k && f.t > k.su && f.t <= k.su + k.ac + 3) {
-      c.save(); c.globalCompositeOperation = 'lighter'; c.strokeStyle = A.alpha(f.trim, 0.7); c.lineWidth = f.mvKey === 'spec' ? 14 : 6; c.lineCap = 'round';
+      c.save(); c.globalCompositeOperation = 'lighter'; c.strokeStyle = A.alpha(fxColor(f), 0.7); c.lineWidth = f.mvKey === 'spec' ? 14 : 6; c.lineCap = 'round';
       c.beginPath(); if (f.mvKey === 'kick') c.arc(0, -64, k.reach * 0.7, -0.9, 0.5); else c.arc(0, -96, k.reach * 0.75, -0.35, 0.3); c.stroke(); c.restore();
     }
     if (f.bflash > 0) { c.strokeStyle = A.alpha('#93c5fd', f.bflash / 8); c.lineWidth = 4; c.beginPath(); c.arc(24, -88, 44, -1.2, 1.2); c.stroke(); }
@@ -322,49 +490,175 @@
     A.glowText(c, txt, 0, 0, 64, col, 'center', 24); if (sub) A.text(c, sub, 0, 34, 20, '#fff', 'center', '700'); c.restore();
   }
   function draw(g, c) {
-    G = g; const p = F[0], e = F[1];
-    c.drawImage(bgs[OPPS[M.opp].bg], 0, 0, W, H);
-    const bi = OPPS[M.opp].bg;
+    G = g; const p = F[0], e = F[1], cfg = modeCfg();
+    const bi = (e && e.bg) || 0;
+    c.drawImage(bgs[bi], 0, 0, W, H);
     if (bi === 1) { c.strokeStyle = 'rgba(180,200,255,.35)'; c.lineWidth = 1; c.beginPath(); for (let i = 0; i < 50; i++) { const x = (i * 97 + G.clock * 4) % W, y = (i * 53 + G.clock * 14) % H; c.moveTo(x, y); c.lineTo(x - 3, y + 12); } c.stroke(); }
     if (bi === 2) { c.fillStyle = '#fdba74'; for (let i = 0; i < 30; i++) { const x = (i * 83) % W + Math.sin(G.clock * 0.03 + i) * 12, y = H - ((G.clock * (0.6 + (i % 5) * 0.3) + i * 37) % H); c.globalAlpha = 0.7; c.fillRect(x, y, 2, 2); } c.globalAlpha = 1; }
     if (bi === 0) { c.fillStyle = 'rgba(255,255,255,.55)'; for (let i = 0; i < 4; i++) { const x = (G.clock * (0.5 + i * 0.2) + i * 220) % (W + 40) - 20, y = 70 + i * 22 + Math.sin(G.clock * 0.05 + i) * 5; c.fillRect(x, y, 8, 2); c.fillRect(x + 8, y - 2, 6, 2); } }
+    if (themeTint) { c.fillStyle = themeTint; c.fillRect(0, 0, W, H); }
     const order = p.y < e.y || p.st === 'atk' ? [e, p] : [p, e];
     order.forEach((f) => drawFighter(c, f));
     G.drawFX(c);
     // HUD
     bar(c, 20, 22, 340, 20, p, true); bar(c, 440, 22, 340, 20, e, false);
     A.text(c, p.name.toUpperCase(), 20, 62, 15, '#fff', 'left', '800'); A.text(c, e.name.toUpperCase(), 780, 62, 15, '#fff', 'right', '800');
-    A.text(c, e.title, 780, 78, 11, '#cbd5e1', 'right', '600');
-    for (let i = 0; i < 2; i++) { c.fillStyle = i < M.pw ? '#fbbf24' : 'rgba(255,255,255,.2)'; c.beginPath(); c.arc(372 - i * 16, 58, 5, 0, TAU); c.fill(); c.fillStyle = i < M.ow ? '#fb7185' : 'rgba(255,255,255,.2)'; c.beginPath(); c.arc(428 + i * 16, 58, 5, 0, TAU); c.fill(); }
+    A.text(c, p.title, 20, 78, 11, '#94a3b8', 'left', '600'); A.text(c, e.title, 780, 78, 11, '#cbd5e1', 'right', '600');
+    for (let i = 0; i < cfg.bestOf; i++) { c.fillStyle = i < M.pw ? accent2 : 'rgba(255,255,255,.2)'; c.beginPath(); c.arc(372 - i * 16, 58, 5, 0, TAU); c.fill(); c.fillStyle = i < M.ow ? '#fb7185' : 'rgba(255,255,255,.2)'; c.beginPath(); c.arc(428 + i * 16, 58, 5, 0, TAU); c.fill(); }
     c.fillStyle = 'rgba(0,0,0,.6)'; A.roundRect(c, 368, 18, 64, 30, 6); c.fill();
     A.text(c, String(Math.max(0, M.timer)), W / 2, 42, 26, M.timer <= 10 ? '#fb7185' : '#fff', 'center', '800', A.MONO);
     const mw = 150;
     c.fillStyle = 'rgba(0,0,0,.6)'; c.fillRect(20, 68, mw, 8); c.fillRect(780 - mw, 68, mw, 8);
     const ready = G.clock % 20 < 10;
-    c.fillStyle = p.meter >= 50 ? (ready ? '#fde047' : '#f59e0b') : '#38bdf8'; c.fillRect(20, 68, mw * p.meter / 100, 8);
+    c.fillStyle = p.meter >= 50 ? (ready ? accent2 : accent) : meterColor; c.fillRect(20, 68, mw * p.meter / 100, 8);
     c.fillStyle = e.meter >= 50 ? '#fb923c' : '#a78bfa'; c.fillRect(780 - mw * e.meter / 100, 68, mw * e.meter / 100, 8);
     c.fillStyle = 'rgba(255,255,255,.7)'; c.fillRect(20 + mw / 2, 66, 2, 12);
-    if (p.meter >= 50) A.text(c, 'RIFT RUSH READY [H]', 20, 92, 11, '#fde047', 'left', '800');
+    A.text(c, MODE_LABEL[activeMode] + '  ' + '\u25cf'.repeat(Math.max(0, M.lives)), 20, 104, 11, '#cbd5e1', 'left', '700');
+    if (p.meter >= 50) A.text(c, 'RIFT RUSH READY [H]', 20, 118, 11, accent2, 'left', '800');
     A.text(c, 'SCORE ' + G.score + '   BEST ' + G.hi, W / 2, 74, 12, '#fbbf24', 'center', '800', A.MONO);
-    A.text(c, 'MATCH ' + (M.opp + 1) + '/3 · ROUND ' + M.round, W / 2, 90, 11, '#cbd5e1', 'center', '700');
-    if (p.combo >= 2 && p.comboT > 0) A.text(c, p.combo + ' HITS', 90, 140, 24, '#fde047', 'left', '900');
+    const totalLabel = activeMode === 'endless' ? '\u221e' : String(M.total);
+    A.text(c, 'MATCH ' + Math.min(M.mi + 1, M.total) + '/' + totalLabel + ' \u00b7 ROUND ' + M.round, W / 2, 90, 11, '#cbd5e1', 'center', '700');
+    if (p.combo >= 2 && p.comboT > 0) A.text(c, p.combo + ' HITS', 90, 144, 24, accent2, 'left', '900');
     // banners
     if (M.phase === 'intro') {
-      if (M.pt < 70) banner(c, 'ROUND ' + M.round, M.round === 1 ? 'vs ' + e.name + ' — ' + e.title : (M.pw === 1 && M.ow === 1 ? 'FINAL ROUND' : ''), '#fbbf24', M.pt / 70);
+      if (M.pt < 70) banner(c, 'ROUND ' + M.round, M.round === 1 ? 'vs ' + e.name + ' \u2014 ' + e.title : (M.pw === cfg.bestOf - 1 && M.ow === cfg.bestOf - 1 ? 'FINAL ROUND' : ''), accent2, M.pt / 70);
       else banner(c, 'FIGHT!', '', '#fb7185', (M.pt - 70) / 60);
     } else if (M.phase === 'ko') banner(c, M.why === 'TIME' ? 'TIME!' : 'K.O.!', '', '#fb7185', Math.min(1, M.pt / 20));
     else if (M.phase === 'result') banner(c, M.winner ? (M.winner.isP ? 'YOU WIN' : 'YOU LOSE') : 'DRAW', M.winner ? M.winner.name + ' takes the round' : 'Round replayed', M.winner && M.winner.isP ? '#34d399' : '#fb7185', Math.min(1, M.pt / 20));
     A.vignette(c, W, H, 0.4);
   }
 
-  Arcade.game({
-    id: 'iron-circuit', title: 'Iron Circuit', subtitle: 'Three-rival tournament · best of three rounds', color: '#f59e0b', w: W, h: H, hud: false,
-    help: 'A/D or ←/→ move · W/↑/Space jump · S/↓ or hold back to block · F punch · G kick · H Rift Rush (costs half the meter). Chain punch → kick → Rush for combos.',
-    touchL: [['◀', 'ArrowLeft'], ['▶', 'ArrowRight']],
-    touchR: [['P', 'KeyF'], ['K', 'KeyG'], ['R', 'KeyH'], ['▲', 'KeyW'], ['B', 'KeyS']],
-    init(g) { G = g; if (!bgs.length) makeBGs(); M = { opp: 0, round: 1, pw: 0, ow: 0, phase: 'intro', pt: 0, timer: 60, ft: 0 }; startRound(); },
-    update, draw,
+  /* ---------------- lifecycle ---------------- */
+  function newRun() {
+    const cfg = modeCfg();
+    M = {
+      mi: 0, round: 1, pw: 0, ow: 0, phase: 'intro', pt: 0, timer: cfg.timer, ft: 0,
+      winner: null, why: '', order: buildOrder(), beaten: 0, total: cfg.rivals, lives: cfg.lives,
+      parries: 0, maxCombo: 0, rifts: 0, roundHit: false, recorded: false,
+    };
+    startRound();
+  }
+  function init(g) {
+    G = g;
+    if (!bgs.length) makeBGs();
+    runSeed = activeMode === 'daily' ? dailySeed() : (FORCED_SEED || (((Date.now() & 0x7fffffff) ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0) || 1);
+    rngState = runSeed;
+    newRun();
+    lastInitMode = activeMode;
+  }
+
+  const game = Arcade.game({
+    id: GAME_ID, title: 'Iron Circuit', subtitle: 'Six rivals \u00b7 rotating circuits \u00b7 best-of rounds', color: '#f59e0b', w: W, h: H, hud: false,
+    controls: [['A D / \u2190 \u2192', 'Move'], ['W / \u2191 / Space', 'Jump'], ['S / \u2193 / hold back', 'Block'], ['F', 'Punch'], ['G', 'Kick'], ['H', 'Rift Rush (50 meter)']],
+    help: 'A/D or \u2190/\u2192 move \u00b7 W/\u2191/Space jump \u00b7 S/\u2193 or hold back to block \u00b7 F punch \u00b7 G kick \u00b7 H Rift Rush (costs half the meter). Chain punch \u2192 kick \u2192 Rush for combos and survive the circuit.',
+    touchL: [['\u25c0', 'ArrowLeft'], ['\u25b6', 'ArrowRight']],
+    touchR: [['P', 'KeyF'], ['K', 'KeyG'], ['R', 'KeyH'], ['\u25b2', 'KeyW'], ['B', 'KeyS']],
+    init, update, draw,
   });
+  const originalShake = game.shake.bind(game);
+  game.shake = (amount) => originalShake(amount * shakeScale);
+
+  function applyCosmetic(slot, id) {
+    const key = String(id || '').split(':').pop();
+    if (slot === 'skin') {
+      skinId = key;
+      const p = playerDef();
+      if (F[0] && F[0].isP) { F[0].cloth = p.cloth; F[0].trim = p.trim; }
+    }
+    else if (slot === 'palette') { paletteId = key; }
+    else if (slot === 'trail') { trailColor = key.includes('violet') ? '#c084fc' : key.includes('cyan') ? '#67e8f9' : key.includes('gold') ? '#fde047' : ''; }
+    else if (slot === 'theme') { themeTint = key.includes('dunes') ? 'rgba(251,191,36,.08)' : key.includes('neon') ? 'rgba(34,211,238,.10)' : key.includes('midnight') ? 'rgba(76,29,149,.16)' : null; }
+    refreshPalette();
+  }
+
+  game.ui = UI.mountGame(game, {
+    id: GAME_ID, title: 'Iron Circuit', subtitle: 'Outfight six rivals across best-of rounds and circuit modes.', accent: '#f59e0b',
+    modes: [
+      { id: 'campaign', name: 'Campaign', blurb: 'Three rivals, three lives, best of three rounds.', seasonTargets: [3600, 7600, 13000] },
+      { id: 'blitz', name: 'Blitz Run', blurb: 'Six rivals, one round each, only two lives.', seasonTargets: [4200, 8600, 15000] },
+      { id: 'daily', name: 'Daily Duel', blurb: 'A seeded six-rival order, same for everyone today.', seeded: true, seasonTargets: [4800, 9600, 16000] },
+      { id: 'endless', name: 'Endless Circuit', blurb: 'Twelve escalating rivals with no round breaks.', seasonTargets: [4200, 9000, 16000] },
+      { id: 'overdrive', name: 'Overdrive', blurb: 'One life, six rivals, and a 1.5\u00d7 score bonus.', lockedHint: 'Defeat 6 rivals to unlock', requires: { stat: 'rivalsBeaten', gte: 6 }, seasonTargets: [6000, 12000, 19000] },
+    ],
+    settings: [
+      { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
+      { key: 'shake', label: 'Screen shake', type: 'slider', min: 0, max: 1, step: 0.1, default: 1 },
+      { key: 'particles', label: 'Particles', type: 'select', options: ['lite', 'standard', 'ultra'], default: 'standard' },
+    ],
+    achievements: [
+      { id: 'first-blood', name: 'First Blood', desc: 'Win your first round.', rarity: 'common' },
+      { id: 'parry-master', name: 'Iron Guard', desc: 'Parry five attacks in one run.', rarity: 'rare' },
+      { id: 'combo-5', name: 'Chain Fighter', desc: 'Land a five-hit combo.', rarity: 'rare' },
+      { id: 'perfect-round', name: 'Untouched', desc: 'Win a round without taking damage.', rarity: 'rare' },
+      { id: 'comeback', name: 'Last Stand', desc: 'Win a round with 15 HP or less.', rarity: 'epic' },
+      { id: 'rift-rush', name: 'Rift Rush', desc: 'Land a Rift Rush finisher.', rarity: 'common' },
+      { id: 'circuit-clear', name: 'Circuit Champion', desc: 'Clear the three-rival campaign.', rarity: 'epic' },
+      { id: 'blitz-clear', name: 'Blitz Breaker', desc: 'Clear a Blitz Run.', rarity: 'epic' },
+      { id: 'daily-duel', name: 'Daily Duelist', desc: 'Win the Daily Duel.', rarity: 'rare' },
+      { id: 'endless-six', name: 'Six Deep', desc: 'Defeat six rivals in Endless Circuit.', rarity: 'epic' },
+      { id: 'overdrive-clear', name: 'Overdrive', desc: 'Clear Overdrive on a single life.', rarity: 'legendary' },
+      { id: 'score-20000', name: 'Circuit Legend', desc: 'Score 20,000 in one run.', rarity: 'legendary' },
+    ],
+    tutorial: { type: 'interactive', steps: [
+      { text: 'Move with A/D or the arrow keys and block by holding back or S.', hold: 'KeyD' },
+      { text: 'Press F to punch and G to kick. Chain them together.', hold: 'KeyF' },
+      { text: 'Fill the meter, then press H for a Rift Rush finisher.', hold: 'KeyH' },
+    ] },
+    chapter: 'IRON CIRCUIT \u00b7 6 RIVALS', levels: [{}, {}, {}],
+    hooks: {
+      applyMode: (mode) => {
+        activeMode = MODES[mode] ? mode : 'campaign';
+        if (game && lastInitMode !== activeMode) game.restart(false);
+      },
+      applySetting: (key, value) => {
+        if (key === 'difficulty') difficulty = value;
+        if (key === 'shake') shakeScale = Number(value);
+        if (key === 'particles' && window.Perf && Perf.setTier) Perf.setTier(value);
+      },
+      applyCosmetic,
+      getResult: () => ({ score: game.score, win: game.state === 'won', mode: activeMode, rival: M.beaten + 1, lives: M.lives }),
+    },
+  });
+
+  if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+    window.IronCircuitTest = {
+      state() {
+        const p = F[0], e = F[1];
+        return {
+          mode: activeMode, difficulty, phase: M.phase, state: game.state,
+          rival: e ? e.name : '', rivalIndex: M.mi, rivalTotal: M.total, round: M.round,
+          pw: M.pw, ow: M.ow, lives: M.lives, beaten: M.beaten,
+          score: game.score, hi: game.hi, timer: M.timer,
+          hp: p ? p.hp : 0, oppHp: e ? e.hp : 0, meter: p ? p.meter : 0,
+          combo: p ? p.combo : 0, parries: M.parries, rifts: M.rifts, maxCombo: M.maxCombo,
+          seed: runSeed, title: game.title, sub: game.sub,
+        };
+      },
+      rosterNames() { return M.order.map((r) => r.name); },
+      sequence(n) {
+        let s = runSeed >>> 0; const out = [];
+        for (let i = 0; i < n; i++) { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; out.push(Number((s / 4294967296).toFixed(6))); }
+        return out;
+      },
+      setMode(mode) { return game.ui.setMode(mode); },
+      setDifficulty(level) { difficulty = level; Arcade.difficulty = level; Arcade.speedMult = level === 'easy' ? 0.8 : level === 'hard' ? 1.35 : 1; },
+      restart(autostart) { game.restart(autostart === true); },
+      award(points) { award(points); },
+      cosmetic: applyCosmetic,
+      colors() { return { cloth: playerDef().cloth, trim: playerDef().trim, skin: playerDef().skin, accent: accent, accent2: accent2, meter: meterColor, trail: trailColor, theme: themeTint }; },
+      stats() { return window.Save && Save.load ? Save.load(GAME_ID) : {}; },
+      setHp(n) { if (F[0]) { F[0].hp = n == null ? 100 : n; F[0].ghost = F[0].hp; } },
+      setMeter(n) { if (F[0]) F[0].meter = n == null ? 50 : n; },
+      setLives(n) { M.lives = n == null ? 3 : n; },
+      setTimer(n) { M.timer = n == null ? 30 : n; },
+      setParries(n) { M.parries = n == null ? 5 : n; if (M.parries >= 5) unlock('parry-master'); },
+      setCombo(n) { if (F[0]) { F[0].combo = n == null ? 5 : n; F[0].comboT = 999; M.maxCombo = Math.max(M.maxCombo, F[0].combo); if (F[0].combo >= 5) unlock('combo-5'); } },
+      winRound() { if (!F[0] || !F[1]) return; M.phase = 'fight'; F[1].hp = 0; F[1].st = 'ko'; endRound(F[0], 'K.O.'); },
+      loseRound() { if (!F[0] || !F[1]) return; M.phase = 'fight'; F[0].hp = 0; F[0].st = 'ko'; endRound(F[1], 'K.O.'); },
+      finishRival() { if (M.phase !== 'result') M.phase = 'result'; defeatRival(); },
+      advanceNow() { M.phase = 'result'; M.pt = 999; advance(); },
+    };
+  }
 })();
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>

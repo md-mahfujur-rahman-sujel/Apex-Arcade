@@ -16,11 +16,11 @@ Technical inventory of all 50 canonical HTML games in `public/assets/games/`. Th
 | 08 | Fox Courier | `08-mario/index.html` | 42.4 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, platform-kit.js, score-bridge.js, ui-kit.js | Responsive Canvas | Yes | Platform Kit (Arcade) |
 | 09 | Cloudhop Pip | `09-mario-world/index.html` | 42.7 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, platform-kit.js, score-bridge.js, ui-kit.js | Responsive Canvas | Yes | Platform Kit (Arcade) |
 | 10 | Rollo Rush | `10-sonic/index.html` | 48.2 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, platform-kit.js, score-bridge.js, ui-kit.js | Responsive Canvas | Yes | Platform Kit (Arcade) |
-| 11 | Iron Circuit | `11-street-fighter/index.html` | 24.7 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js | Responsive Canvas | Yes | Arcade Core |
-| 12 | Clockwork Dawn | `12-chrono-adventure/index.html` | 30.5 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js, fx-kit.js | Responsive Canvas | Yes | Arcade Core |
-| 13 | Lanternbound | `13-castlevania/index.html` | 11.0 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, act-kit.js, score-bridge.js, ui-kit.js | Canvas 24×32 (Arcade) | Yes | Action Kit (Arcade) |
-| 14 | Deepcore Drifter | `14-metroid/index.html` | 9.3 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, act-kit.js, score-bridge.js, ui-kit.js | Canvas 28×18 (Arcade) | Yes | Action Kit (Arcade) |
-| 15 | Hollowbell | `15-hollow-knight/index.html` | 8.7 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, act-kit.js, score-bridge.js, ui-kit.js | Canvas 28×22 (Arcade) | Yes | Action Kit (Arcade) |
+| 11 | Iron Circuit | `11-street-fighter/index.html` | 44.1 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js | Responsive Canvas | Yes | Arcade Core |
+| 12 | Clockwork Dawn | `12-chrono-adventure/index.html` | 55.4 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js, fx-kit.js | Responsive Canvas | Yes | Arcade Core |
+| 13 | Lanternbound | `13-castlevania/index.html` | 30.8 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, act-kit.js, score-bridge.js, ui-kit.js, fx-kit.js, music-kit.js | Canvas 800×480 (Arcade) | Yes | Action Kit (Arcade) |
+| 14 | Deepcore Drifter | `14-metroid/index.html` | 31.0 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, act-kit.js, score-bridge.js, ui-kit.js, music-kit.js | Canvas 800×480 (Arcade) | Yes | Action Kit (Arcade) |
+| 15 | Hollowbell | `15-hollow-knight/index.html` | 30.8 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, act-kit.js, score-bridge.js, ui-kit.js, music-kit.js | Canvas 800×480 (Arcade) | Yes | Action Kit (Arcade) |
 | 16 | Skyfall Ridge | `16-celeste/index.html` | 21.7 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js | Canvas 20×28 (Arcade) | Yes | Arcade Core |
 | 17 | Stormcap Showdown | `17-cuphead/index.html` | 15.6 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js | Canvas 24×44 (Arcade) | Yes | Arcade Core |
 | 18 | Ashen Descent | `18-dead-cells/index.html` | 12.2 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, act-kit.js, score-bridge.js, ui-kit.js | Canvas 24×32 (Arcade) | Yes | Action Kit (Arcade) |
@@ -116,7 +116,7 @@ Each line states the gameplay effect selected by Easy, Normal and Hard.
 - 09 Cloudhop Pip — Easy 0.8× simulation; Normal 1.0×; Hard 1.35× simulation and 1.25× score.
 - 10 Rollo Rush — Easy 0.8× simulation; Normal 1.0×; Hard 1.35× simulation and 1.25× score.
 - 11 Iron Circuit — Easy 0.8× simulation; Normal 1.0×; Hard 1.35× simulation and 1.25× score.
-- 12 Clockwork Dawn — Easy 0.8× simulation; Normal 1.0×; Hard 1.35× simulation and 1.25× score.
+- 12 Clockwork Dawn — Easy enemy ×0.8 / player ×1.05; Normal 1.0×; Hard enemy ×1.2 / player ×1.1 and 1.25× score.
 - 13 Lanternbound — Easy 0.8× simulation; Normal 1.0×; Hard 1.35× simulation and 1.25× score.
 - 14 Deepcore Drifter — Easy 0.8× simulation; Normal 1.0×; Hard 1.35× simulation and 1.25× score.
 - 15 Hollowbell — Easy 0.8× simulation; Normal 1.0×; Hard 1.35× simulation and 1.25× score.
