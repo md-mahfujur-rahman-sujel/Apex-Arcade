@@ -2,66 +2,122 @@
 
 ## Pitch
 
-Click adjacent dots to draw lines. Completing the 4th side of a square claims the box and awards another move immediately. Keep the source game’s recognizable rhythm and make each run readable, quick to restart, and rewarding to master.
+Draw one line at a time on a grid of dots, close boxes to claim them and keep the turn. Classic lets you pick 3×3, 4×4 or 5×5; Sprint is a fixed 3×3 race to five boxes, Double Trouble scores every box double, Blitz adds a 90-second clock and Grandmaster runs the deepest search. The flow stays readable: every legal line is clickable, every claimed box is labelled, and the score rail always shows who moves next.
 
 ## Art direction
 
-Preserve the current artwork, silhouettes, animation, and sound on the canonical page. Use the game’s existing #A78BFA accent as a guide for new menu and reward states. Keep gameplay objects distinct from the background; never rely on colour alone for hazards or legal moves. Lite and reduced-motion settings must reduce effects without removing gameplay feedback.
+A dark slate grid of thin grey lines and bright dots, with cyan lines and boxes for the first player and amber for the second. Claimed boxes fill at 30% opacity with a large player letter, so ownership reads even without colour. The newest line glows faintly. A hint line pulses in the accent colour. The menu scene uses the shared graph motif: a simple three-line grid under an accent glow. Lite and reduced motion keep the grid, line colours and box fills while dropping glow, hover lift and drifting particles.
 
 ## Modes and match structure
 
-1. **Classic:** preserve the canonical rules and scoring.
-2. **Daily challenge:** a deterministic seeded puzzle or short target run with a saved local best.
+| Mode | Grid | Clock | Score multiplier | Win bonus |
+| --- | --- | --- | --- | --- |
+| Classic | 3×3, 4×4 or 5×5 | none | 1× | 800 |
+| Blitz | chosen grid | 1:30 per side | 1.1× | 700 |
+| Sprint | fixed 3×3, first to 5 boxes | none | 1.2× | 700 |
+| Double Trouble | chosen grid, boxes score double | none | 1.3× | 900 |
+| Grandmaster | chosen grid vs the deepest search | none | 1.5× | 1,200 |
 
-A mode change must reset only the state named by that mode. Pause and resume preserve the complete in-progress state. Daily seeds use the local date and produce the same starting state for every retry that day.
+1. **Classic:** the full grid; the player with more boxes when the board fills wins.
+2. **Blitz:** ninety seconds each. The clock pauses with the menu; a flag loses the game with no bonus.
+3. **Sprint:** the grid locks to 3×3 and the first player to five boxes wins immediately.
+4. **Double Trouble:** every claimed box scores 50 points instead of 25.
+5. **Grandmaster:** locked until one Classic win (`classicWins ≥ 1`); the computer always uses the deepest search.
 
-## Settings and difficulty
+A mode change starts a fresh game. Changing the grid size or seat also resets the board. Pause/resume preserves lines, boxes, turn and clock.
 
-| Setting | Behavior |
+## Core rules
+
+- Players alternate drawing one unused line between two neighbouring dots.
+- Completing the fourth side of a box claims it; the player must move again.
+- Drawing the third side of a box usually gifts it to the rival, so safe lines come first and the smallest sacrifice comes last.
+- The game ends when every box is claimed, or early in Sprint when the box target is reached.
+- Undo removes the last line and any boxes it completed, restoring the score and turn.
+
+## Scoring
+
+| Event | Points |
 | --- | --- |
-| Easy | 0.8× simulation speed or a wider timing/mistake allowance; 1.0× score. |
-| Normal | Preserve the source page’s baseline rules at 1.0× speed and score. |
-| Hard | 1.35× simulation speed or a stricter opponent/puzzle target; 1.25× score. |
-| Performance | Respect Lite, Standard, and Ultra budgets; preserve essential playfield feedback. |
-| Reduced motion | Remove decorative movement, shake, and nonessential flashes; preserve input and game-state motion. |
-| Audio and palette | Inherit global settings, allow per-game overrides, and keep objects legible in colour-blind palettes. |
+| Draw a line | 5 |
+| Claim a box | 25 × mode box multiplier |
+
+The final score is `(points earned + win bonus) × mode multiplier`, rounded. A timeout win awards no bonus. The win bonus is not paid on a draw. Only the human seat's points are scored in single-player games.
+
+## Records and persistence
+
+Saved under `dots-boxes` through `Save` / `GameUI.record`:
+
+- `bestClassicScore`, `bestBlitzScore`, `bestSprintScore`, `bestDoubleScore`, `bestGrandmasterScore`
+- `bestScore`, `bestWinMargin`, `wins`, `classicWins`, `blitzWins`, `sprintWins`, `doubleWins`, `grandmasterWins`
+- `boxesClaimed`, `linesDrawn`
+- `fewestLines` on a win
+- `plays`, `secondsPlayed`, `lastResult`, `lastMode`
+
+`bestWinMargin` stores the largest box margin in any finished game, including draws recorded as zero.
 
 ## Cosmetics
 
-Plan 3 cosmetics across palette, board/craft/object skin, effects, and scene/theme slots as applicable to this game. Keep all interactive objects distinguishable and do not change game physics. Purchases use the shared Sparks registry, charge once, and persist ownership and equip state after reload.
+Sixteen registered cosmetics using the `db:` prefix:
+
+| Slot | Items |
+| --- | --- |
+| Skin (lines) | Cyan Lines, Ruby Lines, Jade Lines, Violet Lines, Mono Lines |
+| Palette (grid) | Night Grid, Slate Grid, Forest Grid, Plum Grid |
+| Effect (hint glow) | Cyan Glow, Amber Glow, Rose Glow, Lime Glow |
+| Theme (scene) | Night Board, Dusk Board, Sea Board |
+
+Line skins recolour both players together; grid skins repaint the field, rim, grid lines and dots; accents drive hints, focus and the active-turn border. Theme items only replace the page background.
 
 ## Achievements
 
 | Achievement | Trigger | Rarity |
 | --- | --- | --- |
-| First Run | complete one session | Common |
-| Steady Hand | reach the first score milestone | Common |
-| Quick Clear | finish within the target time | Common |
-| Personal Best | set a new personal best | Rare |
-| Daily Player | complete a seeded daily run | Rare |
+| First Line | Draw a line. | Common |
+| Boxed In | Claim a box. | Common |
+| Two At Once | Claim two boxes in one turn. | Rare |
+| Long Chain | Claim four boxes in one turn. | Epic |
+| Grid Regular | Win a Classic game. | Common |
+| Beat The Clock | Win a Blitz game. | Rare |
+| Quick Squares | Win a Sprint game. | Rare |
+| Double Agent | Win a Double Trouble game. | Epic |
+| Grandmaster | Win a Grandmaster game. | Legendary |
+| Clean Sheet | Win without conceding a box. | Epic |
+| High Roller | Finish with 1,000+ points. | Rare |
+| Personal Best | Set a new best score. | Rare |
 
-Unlock each once under the host game id and send one achievement event and one toast. Score targets must respect the selected mode’s documented multiplier.
+`Two At Once` and `Long Chain` are awarded from a single multi-box claim; `Clean Sheet` requires the human side to finish with the rival on zero boxes and no timeout.
 
-## Tutorial and controls
+## Menu and controls
 
-Use a short illustrated tutorial. Teach the primary objective, legal input, one recovery or strategy tip, and the end condition. Controls shown in the menu and during play: Click line between two dots. Choose 3x3, 4x4, or 5x5 board size.
+The page mounts the shared board menu (Play, Modes, Customize, Options, About, Stats, Exit).
 
-Support keyboard and touch. Board games must offer clear selected/active state and tap targets; action games must keep virtual controls away from hazards and the theatre launch controls. Shared menus must support gamepad focus and activation.
+| Input | Action |
+| --- | --- |
+| Click / tap a line | Draw it between two dots |
+| T | Show a suggested line |
+| U | Undo |
+| N | New game |
+| H / M | Shared help / mute |
+
+The side rail carries status, the two score cards, seat / level / board selectors, New game / Undo / Hint, and the box counter. The grid itself has no overlay controls.
 
 ## Current baseline and scope
 
-Canonical page: `32-dots-boxes/index.html`. Current family: Board Kit (No). Catalog description: “Click adjacent dots to draw lines. Completing the 4th side of a square claims the box and awards another move immediately.” Controls: Click line between two dots. Choose 3x3, 4x4, or 5x5 board size. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+Canonical page: `public/assets/games/32-dots-boxes/index.html` (24.0 KB). Shared kits: perf-kit, save-kit, meta-config, meta-kit, board-kit, score-bridge, ui-kit, music-kit, menu-kit, menu-bootstrap. Layout: board-kit DOM/SVG grid that rebuilds for 3×3, 4×4 or 5×5; 16 cosmetics across four slots. The computer prefers boxes it can take, then safe lines, and in Hard/Grandmaster evaluates sacrifice chains by simulation.
+
+`window.DotsBoxesTest` exposes: `state`, `modes`, `setMode`, `getMode`, `restart`, `setSeat`, `setLevel`, `setDifficulty`, `level`, `setSize`, `setBoard`, `setTurn`, `play`, `finish`, `undo`, `setScore`, `setClock`, `tick`, `menuPaused`, `start`, `colors`, `cosmetic`, `cosmeticList`, `achievements`, `stats`, `modalOpen`, `closeModal`.
+
+Regression: `scripts/test-game-32.mjs` (`npm run test:game-32`). It covers the opening grid and edge count, Classic, Sprint, Blitz (timeout), Double Trouble and Grandmaster finishes, line scoring and undo, the 16 cosmetics, cumulative records and a chrome-free playing view.
 
 ## Menu Identity Card
 
-- **Archetype:** paper.
-- **Mood:** Draw the last side and claim the square.
-- **Palette:** `#080d15` background, `color-mix(in srgb, #60a5fa 8%, rgba(15,22,35,.94))` panel, `#60a5fa` accent, `color-mix(in srgb, #60a5fa 76%, white)` button, `#10151e` button text, `#f6f7fb` body text.
-- **Type:** System UI title and body fonts.
-- **Frame and buttons:** Per-title `graph-frame` frame and `graph-banner` button identity, using the shared paper treatment.
-- **Scene recipe:** Original procedural graph mark with an accent-lit background, restrained depth bands, and a static Lite/reduced-motion frame.
-- **Music and UI sounds:** Per-title procedural motif; shared tick, select, and back cues.
-- **Menu items:** Play, Options, About, Exit. No proposed modes or cosmetics are shown as available.
-- **Settings:** Shared audio, display, controls, accessibility, and difficulty options.
-- **Controls:** Click or tap a line between two adjacent dots.
-- **Lite fallback:** Static graph composition with the title accent and scene silhouette.
+- **Archetype:** Paper.
+- **Mood:** A pencil puzzle on a desk; quiet, precise and quick to restart.
+- **Palette:** bg `color-mix(in srgb, #60a5fa 12%, #080d15)`; panel `color-mix(in srgb, #60a5fa 8%, rgba(15,22,35,.94))`; accent `#60a5fa`; button `color-mix(in srgb, #60a5fa 76%, white)`; button text `#10151e`; text `#f6f7fb`.
+- **Type:** `system-ui` for title and body; the score rail uses tabular numerals.
+- **Frame and buttons:** `graph-frame` frame and `graph-banner` buttons with the shared paper treatment.
+- **Scene recipe:** Dark desk backdrop; an accent-lit three-line graph motif; restrained paper bands; static under reduced motion.
+- **Music and UI sounds:** Per-title procedural motif; dry pencil tick on hover, soft line draw, paper brush on Back.
+- **Menu items:** Play, Modes, Customize, Options, About, Stats, Exit.
+- **Settings:** Shared audio, display, controls, accessibility and difficulty options; seat, level and grid size live in-game.
+- **Lite fallback:** Static graph composition with the accent silhouette and no glow or particles.

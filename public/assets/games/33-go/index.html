@@ -8,7 +8,7 @@
 <style>
   .go { display: grid; grid-template-columns: auto minmax(240px, 1fr); gap: 22px; align-items: start; }
   @media (max-width: 860px) { .go { grid-template-columns: 1fr; } }
-  #bd { --s: max(290px, min(100vw - 40px, 640px)); width: var(--s); aspect-ratio: 1; border-radius: 14px; box-shadow: 0 20px 50px -20px #000, 0 0 0 6px #5a3b16; overflow: hidden; user-select: none; }
+  #bd { --go-accent: #06b6d4; --go-frame: #5a3b16; --s: max(290px, min(100vw - 40px, 640px)); width: var(--s); aspect-ratio: 1; border-radius: 14px; box-shadow: 0 20px 50px -20px #000, 0 0 0 6px var(--go-frame); overflow: hidden; user-select: none; }
   #bd svg { width: 100%; height: 100%; display: block; touch-action: manipulation; }
   .hit { fill: transparent; }
   svg.can.p1 .hit:hover { fill: rgba(20,20,20,.5); cursor: pointer; }
@@ -21,11 +21,13 @@
   .score { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .score div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 13px; color: var(--muted); }
   .score b { display: block; font-size: 28px; color: var(--text); }
-  .score .on { border-color: var(--cyan); }
+  .score .on { border-color: var(--go-accent); }
   .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; border: 1px solid rgba(255,255,255,.35); }
   .dot.b { background: #111; } .dot.w { background: #eee; }
   .capt { color: var(--muted); line-height: 1.8; }
   .note { margin-top: 6px; color: var(--amber); font-weight: 600; font-size: 13px; }
+  .clock { font: 700 15px ui-monospace, Consolas, monospace; color: #fde047; margin-bottom: 6px; }
+  .clock.low { color: #fb7185; }
 </style>
 <script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
 </head>
@@ -41,7 +43,7 @@
 <script>
 const ui = Board.shell({
   id: 'go', cpu: true, title: 'Go 9×9', subtitle: 'Place stones, surround territory and capture your rival',
-  rules: 'Black plays first. Take turns placing a stone on an intersection. A stone or connected group with no empty neighbouring points (liberties) is captured and removed. You may not play a stone that would have no liberties unless it captures, and you may not repeat an earlier board position (ko). Pass when you have nothing useful to play; when both players pass in a row, dead stones are marked (the computer makes a first guess — click a group to toggle it) and you press Confirm score. Scoring is by area: your stones plus the empty points only you surround. White receives 7.5 points of komi.',
+  rules: 'Black plays first. Take turns placing a stone on an intersection. A stone or connected group with no empty neighbouring points (liberties) is captured and removed. You may not play a stone that would have no liberties unless it captures, and you may not repeat an earlier board position (ko). Pass when you have nothing useful to play; when both players pass in a row, dead stones are marked (the computer makes a first guess — click a group to toggle it) and you press Confirm score. Scoring is by area: your stones plus the empty points only you surround. White receives komi. Quick plays on 7×7, Grand on 13×13, Blitz adds a 90-second clock and Master is the deepest search.',
   controls: [['Click a point', 'Place a stone'], ['P', 'Pass'], ['T', 'Show a hint'], ['U', 'Undo'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
 });
 ui.main.innerHTML = `
@@ -51,17 +53,107 @@ ui.main.innerHTML = `
     <div class="bk-status" id="st"></div>
     <div class="score" id="sc"></div>
     <div class="bk-row">
-      <label>Play <select class="bk-select" id="mode"><option value="1">Black (first) vs computer</option><option value="2">White vs computer</option><option value="two">Two players</option></select></label>
+      <label>Play <select class="bk-select" id="seat"><option value="1">Black (first) vs computer</option><option value="2">White vs computer</option><option value="two">Two players</option></select></label>
       <label>Level <select class="bk-select" id="lvl"><option value="0">Easy</option><option value="1" selected>Medium</option><option value="2">Hard</option></select></label>
     </div>
     <div class="bk-row"><button class="bk-btn bk-primary" id="new">New game</button><button class="bk-btn" id="pass">Pass</button><button class="bk-btn" id="undo">Undo</button><button class="bk-btn" id="hint">Hint</button><button class="bk-btn bk-primary" id="done" hidden>Confirm score</button></div>
     <div class="capt" id="cp"></div>
+    <div id="md" style="color:var(--muted);font-size:13px;line-height:1.6"></div>
   </div>
 </div>`;
 const $ = (s) => ui.main.querySelector(s);
-const S = 9, NN = 81, KOMI = 7.5, CELL = 60, PAD = 40, W = PAD * 2 + (S - 1) * CELL;
 const NAME = { 1: 'Black', 2: 'White' };
-const NB = []; for (let i = 0; i < NN; i++) { const r = (i / S) | 0, c = i % S, a = []; if (r > 0) a.push(i - S); if (r < S - 1) a.push(i + S); if (c > 0) a.push(i - 1); if (c < S - 1) a.push(i + 1); NB.push(a); }
+let S = 9, NN = 81, NB = [], CELL = 60, PAD = 40, W = 620, KOMI = 7.5;
+let b, turn, passes, caps, last, phase, dead, positions, hist, seat, busy, hint, note, gen = 0;
+let gm = 'classic', PS = { 1: { score: 0 }, 2: { score: 0 } }, moveStats = { placed: 0, captured: 0, best: 0 };
+let clocks = { 1: 0, 2: 0 }, clockLast = 0, clockTimer = null, menuPaused = true, overText = '';
+
+/* ---------------- modes, records, cosmetics ---------------- */
+const MODE_NAMES = { classic: 'Classic', blitz: 'Blitz', quick: 'Quick', grand: 'Grand', master: 'Master' };
+const MODE_KEY = { classic: 'Classic', blitz: 'Blitz', quick: 'Quick', grand: 'Grand', master: 'Master' };
+const CFG = {
+  classic: { size: 9, komi: 7.5, clock: 0, mult: 1, bonus: 1500 },
+  blitz: { size: 9, komi: 7.5, clock: 90000, mult: 1.1, bonus: 1200 },
+  quick: { size: 7, komi: 6.5, clock: 0, mult: 1.2, bonus: 1000 },
+  grand: { size: 13, komi: 7.5, clock: 0, mult: 1.3, bonus: 1800 },
+  master: { size: 9, komi: 7.5, clock: 0, mult: 1.5, bonus: 2000 },
+};
+const MODES = [
+  { id: 'classic', name: 'Classic', blurb: 'The standard 9×9 game with 7.5 komi. Area scoring after two passes.' },
+  { id: 'blitz', name: 'Blitz', blurb: '90 seconds per side. Run out of time and you lose. 1.1× score.' },
+  { id: 'quick', name: 'Quick', blurb: 'A dense 7×7 board with 6.5 komi. 1.2× score.' },
+  { id: 'grand', name: 'Grand', blurb: 'A 13×13 board with 7.5 komi and far more room to build. 1.3× score.' },
+  { id: 'master', name: 'Master', blurb: '9×9 against the deepest search at 1.5× score.', requires: { stat: 'classicWins', gte: 1 }, lockedHint: 'Win a Classic game to unlock' },
+];
+const ACHIEVEMENTS = [
+  { id: 'first-stone', name: 'First Stone', desc: 'Place a stone.', rarity: 'common' },
+  { id: 'first-capture', name: 'Prisoner', desc: 'Capture a stone.', rarity: 'common' },
+  { id: 'big-capture', name: 'Big Sweep', desc: 'Capture five or more stones at once.', rarity: 'rare' },
+  { id: 'territory-50', name: 'Land Grab', desc: 'Finish with 50 or more area.', rarity: 'rare' },
+  { id: 'classic-clear', name: 'Standard Bearer', desc: 'Win a Classic game.', rarity: 'common' },
+  { id: 'blitz-clear', name: 'Clock Hand', desc: 'Win a Blitz game.', rarity: 'rare' },
+  { id: 'quick-clear', name: 'Small Board', desc: 'Win a Quick game.', rarity: 'rare' },
+  { id: 'grand-clear', name: 'Grand Architect', desc: 'Win a Grand game.', rarity: 'epic' },
+  { id: 'master-clear', name: 'Master', desc: 'Win a Master game.', rarity: 'legendary' },
+  { id: 'shutout', name: 'Clean Sweep', desc: 'Win without conceding a single point of area.', rarity: 'epic' },
+  { id: 'high-score', name: 'High Roller', desc: 'Finish a game with 2,000+ points.', rarity: 'rare' },
+  { id: 'personal-best', name: 'Personal Best', desc: 'Set a new best score.', rarity: 'rare' },
+];
+const STONE_SETS = {
+  'go:stones-classic': { 1: { light: '#6b7280', dark: '#0a0a0c' }, 2: { light: '#ffffff', dark: '#c3c9d4' } },
+  'go:stones-ruby': { 1: { light: '#9f1239', dark: '#450a0a' }, 2: { light: '#fde68a', dark: '#f59e0b' } },
+  'go:stones-jade': { 1: { light: '#065f46', dark: '#022c22' }, 2: { light: '#d1fae5', dark: '#6ee7b7' } },
+  'go:stones-violet': { 1: { light: '#6d28d9', dark: '#2e1065' }, 2: { light: '#e9d5ff', dark: '#a78bfa' } },
+  'go:stones-mono': { 1: { light: '#52525b', dark: '#09090b' }, 2: { light: '#fafafa', dark: '#d4d4d8' } },
+};
+const BOARD_SETS = {
+  'go:board-kaya': { bg1: '#e0b266', bg2: '#c8913f', line: '#3b2a14', frame: '#5a3b16' },
+  'go:board-slate': { bg1: '#94a3b8', bg2: '#475569', line: '#1e293b', frame: '#1e293b' },
+  'go:board-forest': { bg1: '#86efac', bg2: '#166534', line: '#052e16', frame: '#052e16' },
+  'go:board-rose': { bg1: '#fda4af', bg2: '#9f1239', line: '#4c0519', frame: '#4c0519' },
+};
+const ACCENTS = { 'go:accent-cyan': '#06b6d4', 'go:accent-amber': '#fbbf24', 'go:accent-rose': '#fb7185', 'go:accent-lime': '#a3e635' };
+const THEMES = {
+  'go:theme-night': '',
+  'go:theme-ink': 'radial-gradient(1000px 500px at 12% -8%, #1e293b, transparent 60%), radial-gradient(800px 500px at 100% 0, #0f172a, transparent 55%), #05070f',
+  'go:theme-dusk': 'radial-gradient(1000px 500px at 10% -10%, #4c1d3d, transparent 60%), radial-gradient(800px 500px at 100% 0, #7c2d12, transparent 55%), #0b0705',
+};
+const PALETTE = {
+  stones: Object.assign({}, STONE_SETS['go:stones-classic']),
+  board: Object.assign({}, BOARD_SETS['go:board-kaya']),
+  accent: ACCENTS['go:accent-cyan'],
+};
+function paintPalette() {
+  const el = $('#bd'); if (!el) return;
+  el.style.setProperty('--go-accent', PALETTE.accent);
+  el.style.setProperty('--go-frame', PALETTE.board.frame);
+}
+function applyCosmetic(slot, id) {
+  if (slot === 'skin' && STONE_SETS[id]) PALETTE.stones = Object.assign({}, STONE_SETS[id]);
+  else if (slot === 'palette' && BOARD_SETS[id]) PALETTE.board = Object.assign({}, BOARD_SETS[id]);
+  else if (slot === 'effect' && ACCENTS[id]) PALETTE.accent = ACCENTS[id];
+  else if (slot === 'theme' && THEMES[id] !== undefined) document.body.style.background = THEMES[id];
+  paintPalette(); if (b) render();
+}
+
+/* ---- geometry ---- */
+function buildBoard(size) {
+  S = size; NN = S * S; NB = [];
+  CELL = S <= 7 ? 66 : S <= 9 ? 60 : 42;
+  PAD = S <= 7 ? 44 : S <= 9 ? 40 : 30;
+  W = PAD * 2 + (S - 1) * CELL;
+  for (let i = 0; i < NN; i++) {
+    const r = (i / S) | 0, c = i % S, a = [];
+    if (r > 0) a.push(i - S); if (r < S - 1) a.push(i + S); if (c > 0) a.push(i - 1); if (c < S - 1) a.push(i + 1);
+    NB.push(a);
+  }
+}
+function starPoints() {
+  if (S === 7) return [[2, 2], [2, 4], [4, 2], [4, 4], [3, 3]];
+  if (S === 9) return [[2, 2], [2, 6], [6, 2], [6, 6], [4, 4]];
+  if (S === 13) return [[3, 3], [3, 9], [9, 3], [9, 9], [6, 6], [3, 6], [6, 3], [6, 9], [9, 6]];
+  return [[2, 2], [2, S - 3], [S - 3, 2], [S - 3, S - 3], [(S - 1) / 2 | 0, (S - 1) / 2 | 0]];
+}
 
 /* ---- rules ---- */
 function grp(b, i) {
@@ -108,59 +200,86 @@ function playout(b0, p0, startPasses) {
 }
 
 /* ---- state ---- */
-let b, turn, passes, caps, last, phase, dead, positions, hist, mode, busy, hint, note, gen = 0;
-const human = () => mode === 'two' || turn === mode;
-const snap = () => hist.push({ b: b.slice(), turn, passes, caps: { ...caps }, last, phase, dead: new Set(dead), pl: positions.length });
+const human = () => seat === 'two' || turn === seat;
+const humanSeat = () => (seat === 'two' ? 1 : seat);
+const clonePS = (src) => ({ 1: Object.assign({}, src[1]), 2: Object.assign({}, src[2]) });
+const fmt = (ms) => { const t = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
+const snap = () => hist.push({ b: b.slice(), turn, passes, caps: { ...caps }, last, phase, dead: new Set(dead), pl: positions.length, PS: clonePS(PS), ms: { ...moveStats } });
 function newGame() {
-  gen++; mode = $('#mode').value === 'two' ? 'two' : +$('#mode').value;
-  b = Array(NN).fill(0); turn = 1; passes = 0; caps = { 1: 0, 2: 0 }; last = -1; phase = 'play'; dead = new Set(); positions = [b.join('')]; hist = []; busy = false; hint = -1; note = '';
-  render(); cpu();
+  gen++; if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  buildBoard(CFG[gm].size); seat = $('#seat').value === 'two' ? 'two' : +$('#seat').value;
+  b = Array(NN).fill(0); turn = 1; passes = 0; caps = { 1: 0, 2: 0 }; last = -1; phase = 'play'; dead = new Set(); positions = [b.join('')]; hist = []; busy = false; hint = -1; note = ''; overText = '';
+  KOMI = CFG[gm].komi; PS = { 1: { score: 0 }, 2: { score: 0 } }; moveStats = { placed: 0, captured: 0, best: 0 };
+  clocks = { 1: CFG[gm].clock, 2: CFG[gm].clock }; clockLast = Date.now();
+  paintPalette(); render();
+  if (CFG[gm].clock) clockTimer = setInterval(tickClock, 250);
+  cpu();
 }
 function finalBoard() { const f = b.slice(); dead.forEach((i) => (f[i] = 0)); return f; }
+function tickClock(step) {
+  if (phase !== 'play') return;
+  if (step == null) {
+    const now = Date.now(), dt = now - clockLast; clockLast = now;
+    if (menuPaused || Board.paused()) return;
+    clocks[turn] = Math.max(0, clocks[turn] - dt);
+  } else clocks[turn] = Math.max(0, clocks[turn] - step);
+  if (clocks[turn] <= 0) { conclude(3 - turn, 'on time'); return; }
+  render();
+}
 
 /* ---- drawing ---- */
 function render() {
   const can = phase === 'play' && !busy && human();
+  const sr = Math.round(CELL * 0.43), hr = Math.round(CELL * 0.47), pal = PALETTE.stones;
   let s = `<svg class="${can ? 'can ' : ''}p${turn}" viewBox="0 0 ${W} ${W}" role="img" aria-label="Go board"><defs>
-    <radialGradient id="gB" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#6b7280"/><stop offset="1" stop-color="#0a0a0c"/></radialGradient>
-    <radialGradient id="gW" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#c3c9d4"/></radialGradient>
-    <linearGradient id="wd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e0b266"/><stop offset="1" stop-color="#c8913f"/></linearGradient></defs>
+    <radialGradient id="gB" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="${pal[1].light}"/><stop offset="1" stop-color="${pal[1].dark}"/></radialGradient>
+    <radialGradient id="gW" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="${pal[2].light}"/><stop offset="1" stop-color="${pal[2].dark}"/></radialGradient>
+    <linearGradient id="wd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${PALETTE.board.bg1}"/><stop offset="1" stop-color="${PALETTE.board.bg2}"/></linearGradient></defs>
     <rect width="${W}" height="${W}" fill="url(#wd)"/>`;
-  for (let k = 0; k < S; k++) { const v = PAD + k * CELL; s += `<line x1="${PAD}" y1="${v}" x2="${PAD + (S - 1) * CELL}" y2="${v}" stroke="#3b2a14" stroke-width="1.6"/><line x1="${v}" y1="${PAD}" x2="${v}" y2="${PAD + (S - 1) * CELL}" stroke="#3b2a14" stroke-width="1.6"/>`; }
-  for (const [r, c] of [[2, 2], [2, 6], [6, 2], [6, 6], [4, 4]]) s += `<circle cx="${PAD + c * CELL}" cy="${PAD + r * CELL}" r="5" fill="#3b2a14"/>`;
+  for (let k = 0; k < S; k++) { const v = PAD + k * CELL; s += `<line x1="${PAD}" y1="${v}" x2="${PAD + (S - 1) * CELL}" y2="${v}" stroke="${PALETTE.board.line}" stroke-width="1.6"/><line x1="${v}" y1="${PAD}" x2="${v}" y2="${PAD + (S - 1) * CELL}" stroke="${PALETTE.board.line}" stroke-width="1.6"/>`; }
+  for (const [r, c] of starPoints()) s += `<circle cx="${PAD + c * CELL}" cy="${PAD + r * CELL}" r="5" fill="${PALETTE.board.line}"/>`;
   const fb = phase === 'play' ? b : finalBoard(), ar = phase === 'play' ? null : areaOf(fb);
   for (let i = 0; i < NN; i++) {
     const x = PAD + (i % S) * CELL, y = PAD + ((i / S) | 0) * CELL;
     if (b[i]) {
       const isDead = dead.has(i);
-      s += `<circle class="${isDead ? 'dead' : (i === last ? 'gp' : '')}" cx="${x}" cy="${y}" r="26" fill="url(#g${b[i] === 1 ? 'B' : 'W'})" stroke="rgba(0,0,0,.45)" stroke-width="1"/>`;
-      if (isDead) s += `<path d="M${x - 9} ${y - 9}L${x + 9} ${y + 9}M${x + 9} ${y - 9}L${x - 9} ${y + 9}" stroke="#ef4444" stroke-width="4" stroke-linecap="round"/>`;
-    } else if (ar && ar.own[i]) s += `<rect class="tm" x="${x - 8}" y="${y - 8}" width="16" height="16" rx="3" fill="${ar.own[i] === 1 ? '#111' : '#fff'}"/>`;
-    if (i === last && phase === 'play') s += `<circle cx="${x}" cy="${y}" r="10" fill="none" stroke="${b[i] === 1 ? '#fff' : '#111'}" stroke-width="3"/>`;
-    if (i === hint) s += `<circle cx="${x}" cy="${y}" r="14" fill="none" stroke="#06b6d4" stroke-width="4"><animate attributeName="opacity" values="1;.2;1" dur="1s" repeatCount="indefinite"/></circle>`;
+      s += `<circle class="${isDead ? 'dead' : (i === last ? 'gp' : '')}" cx="${x}" cy="${y}" r="${sr}" fill="url(#g${b[i] === 1 ? 'B' : 'W'})" stroke="rgba(0,0,0,.45)" stroke-width="1"/>`;
+      if (isDead) s += `<path d="M${x - sr * 0.35} ${y - sr * 0.35}L${x + sr * 0.35} ${y + sr * 0.35}M${x + sr * 0.35} ${y - sr * 0.35}L${x - sr * 0.35} ${y + sr * 0.35}" stroke="#ef4444" stroke-width="4" stroke-linecap="round"/>`;
+    } else if (ar && ar.own[i]) s += `<rect class="tm" x="${x - CELL * 0.13}" y="${y - CELL * 0.13}" width="${CELL * 0.26}" height="${CELL * 0.26}" rx="3" fill="${ar.own[i] === 1 ? '#111' : '#fff'}"/>`;
+    if (i === last && phase === 'play') s += `<circle cx="${x}" cy="${y}" r="${Math.round(CELL * 0.17)}" fill="none" stroke="${b[i] === 1 ? '#fff' : '#111'}" stroke-width="3"/>`;
+    if (i === hint) s += `<circle cx="${x}" cy="${y}" r="${Math.round(CELL * 0.23)}" fill="none" stroke="${PALETTE.accent}" stroke-width="4"><animate attributeName="opacity" values="1;.2;1" dur="1s" repeatCount="indefinite"/></circle>`;
   }
-  for (let i = 0; i < NN; i++) s += `<circle class="hit" data-i="${i}" cx="${PAD + (i % S) * CELL}" cy="${PAD + ((i / S) | 0) * CELL}" r="28"/>`;
+  for (let i = 0; i < NN; i++) s += `<circle class="hit" data-i="${i}" cx="${PAD + (i % S) * CELL}" cy="${PAD + ((i / S) | 0) * CELL}" r="${hr}"/>`;
   $('#bd').innerHTML = s + '</svg>';
 
   const inScore = phase === 'score';
-  $('#done').hidden = !inScore; $('#pass').hidden = inScore; $('#hint').hidden = inScore;
+  $('#done').hidden = !inScore; $('#pass').hidden = inScore || phase === 'over'; $('#hint').hidden = inScore || phase === 'over';
   let st;
-  if (phase === 'over') st = $('#st').dataset.final || 'Game over';
-  else if (inScore) { const a = areaOf(fb), tb = a.bl, tw = a.wh + KOMI; st = `Scoring — click groups to mark them dead, then Confirm.<div class="note">Black ${tb} · White ${tw} (incl. ${KOMI} komi) → ${tb > tw ? 'Black' : 'White'} leads by ${Math.abs(tb - tw)}</div>`; }
-  else st = (busy ? 'Computer is thinking…' : `<span class="dot ${turn === 1 ? 'b' : 'w'}"></span>${NAME[turn]} to move${mode !== 'two' && human() ? ' — your turn' : ''}`) + (note ? `<div class="note">${note}</div>` : '');
+  if (phase === 'over') st = overText || 'Game over';
+  else if (inScore) { const a = areaOf(fb), tb = a.bl, tw = a.wh + KOMI; st = `Scoring — click groups to mark them dead, then Confirm.<div class="note">Black ${tb} · White ${tw.toFixed(1)} (incl. ${KOMI} komi) → ${tb > tw ? 'Black' : 'White'} leads by ${Math.abs(tb - tw).toFixed(1)}</div>`; }
+  else st = (busy ? 'Computer is thinking…' : `<span class="dot ${turn === 1 ? 'b' : 'w'}"></span>${NAME[turn]} to move${seat !== 'two' && human() ? ' — your turn' : ''}`) + (note ? `<div class="note">${note}</div>` : '');
   $('#st').innerHTML = st;
-  const a = areaOf(fb);
-  $('#sc').innerHTML = `<div class="${turn === 1 && phase === 'play' ? 'on' : ''}"><span class="dot b"></span>Black${mode === 1 ? ' (you)' : ''}<b>${a.bl}</b></div><div class="${turn === 2 && phase === 'play' ? 'on' : ''}"><span class="dot w"></span>White${mode === 2 ? ' (you)' : ''}<b>${a.wh}</b></div>`;
-  $('#cp').innerHTML = `Area now (stones + sure territory) · komi ${KOMI} for White<br>Prisoners — Black: <b>${caps[1]}</b> · White: <b>${caps[2]}</b><br>Moves played: <b>${hist.length}</b>`;
+  const a = areaOf(phase === 'play' ? b : fb);
+  $('#sc').innerHTML = `<div class="${turn === 1 && phase === 'play' ? 'on' : ''}"><span class="dot b"></span>Black${seat === 1 ? ' (you)' : ''}<b>${a.bl}</b></div><div class="${turn === 2 && phase === 'play' ? 'on' : ''}"><span class="dot w"></span>White${seat === 2 ? ' (you)' : ''}<b>${a.wh}</b></div>`;
+  const clock = CFG[gm].clock ? `<div class="clock${clocks[1] < 20000 || clocks[2] < 20000 ? ' low' : ''}">Black ${fmt(clocks[1])} · White ${fmt(clocks[2])}</div>` : '';
+  $('#cp').innerHTML = clock + `Area now (stones + sure territory) · komi ${KOMI} for White<br>Prisoners — Black: <b>${caps[1]}</b> · White: <b>${caps[2]}</b><br>Moves played: <b>${hist.length}</b> · Points: <b>${PS[humanSeat()].score}</b>`;
+  $('#md').textContent = MODE_NAMES[gm] + ' · ' + S + '×' + S + ' · komi ' + KOMI + (CFG[gm].clock ? ' · 90 seconds each' : '') + (gm === 'master' ? ' · deepest search' : '');
 }
 
 /* ---- moves ---- */
 function place(i) {
+  if (phase !== 'play') return;
   const r = tryMove(b, i, turn);
   if (!r) { note = 'Illegal — that stone would have no liberties.'; Board.sfx('error'); render(); return; }
   const key = r.b.join('');
   if (positions.includes(key)) { note = 'Ko — that would repeat an earlier position.'; Board.sfx('error'); render(); return; }
-  snap(); b = r.b; caps[turn] += r.cap.length; positions.push(key); last = i; passes = 0; note = ''; hint = -1; turn = 3 - turn;
+  const p = turn;
+  snap(); b = r.b; caps[p] += r.cap.length; positions.push(key); last = i; passes = 0; hint = -1;
+  PS[p].score += 2 + 12 * r.cap.length;
+  if (human()) { moveStats.placed += 1; moveStats.captured += r.cap.length; moveStats.best = Math.max(moveStats.best, r.cap.length); GameUI.unlock('first-stone'); }
+  if (r.cap.length) { if (human()) { GameUI.unlock('first-capture'); if (r.cap.length >= 5) GameUI.unlock('big-capture'); } note = `${NAME[p]} captures ${r.cap.length} stone${r.cap.length > 1 ? 's' : ''}.`; }
+  else note = '';
+  turn = 3 - turn;
   Board.sfx(r.cap.length ? 'capture' : 'move'); render(); cpu();
 }
 function doPass() {
@@ -183,16 +302,33 @@ function startScoring() {
 function toggleDead(i) {
   if (!b[i]) return; const g = grp(b, i), on = !dead.has(i);
   g.stones.forEach((s) => (on ? dead.add(s) : dead.delete(s)));
-  /* a marked group's neighbours of the same colour that are connected through it are included by grp() */
   Board.sfx('click'); render();
 }
-function finish() {
-  const a = areaOf(finalBoard()), tb = a.bl, tw = a.wh + KOMI, w = tb > tw ? 1 : 2, diff = Math.abs(tb - tw);
-  phase = 'over'; const msg = `${NAME[w]} wins by ${diff} points (Black ${a.bl}, White ${a.wh} + ${KOMI} komi)`;
-  $('#st').dataset.final = msg; render(); $('#st').innerHTML = msg;
-  Board.sfx(mode === 'two' || w === mode ? 'win' : 'lose');
-  const title = mode === 'two' ? NAME[w] + ' wins!' : w === mode ? 'You won!' : 'Computer wins';
-  Board.after(500, () => Board.modal(title, msg, [['New game', newGame], ['Close']]));
+function conclude(forced, reason) {
+  if (phase === 'over') return;
+  gen++; if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  const a = areaOf(finalBoard()), tb = a.bl, tw = a.wh + KOMI;
+  const w = forced == null ? (tb > tw ? 1 : 2) : forced;
+  const humanWon = !!w && w === humanSeat(), h = humanSeat(), cfg = CFG[gm];
+  const diff = Math.abs(tb - tw);
+  phase = 'over'; busy = false; hint = -1; note = '';
+  overText = reason === 'on time' ? `${NAME[w]} wins on time` : `${NAME[w]} wins by ${Number(diff.toFixed(1))} points (Black ${tb}, White ${a.wh} + ${KOMI} komi)`;
+  const finalScore = Math.round((PS[h].score + (humanWon && reason !== 'on time' ? cfg.bonus : 0)) * cfg.mult);
+  const records = {}; records['best' + MODE_KEY[gm] + 'Score'] = finalScore; records.bestArea = (h === 1 ? a.bl : a.wh); records.bestCapture = moveStats.best;
+  const counters = { stonesPlaced: moveStats.placed, stonesCaptured: moveStats.captured };
+  if (humanWon) { counters.wins = 1; counters[gm + 'Wins'] = 1; }
+  const achievements = [];
+  if (humanWon) achievements.push(gm + '-clear');
+  if (humanWon && reason !== 'on time' && (h === 1 ? a.wh : a.bl) === 0) achievements.push('shutout');
+  if ((h === 1 ? a.bl : a.wh) >= 50) achievements.push('territory-50');
+  if (finalScore >= 2000) achievements.push('high-score');
+  const prevBest = Number(GameUI.stats().bestScore) || 0;
+  GameUI.record({ score: finalScore, result: (w ? NAME[w] + ' won ' : 'Draw ') + MODE_NAMES[gm] + (reason === 'on time' ? ' on time' : ''), records, counters, mins: humanWon ? { fewestMoves: moveStats.placed } : {}, achievements });
+  if (finalScore > prevBest) GameUI.unlock('personal-best');
+  render();
+  Board.sfx(seat === 'two' || humanWon ? 'win' : 'lose');
+  const title = seat === 'two' ? NAME[w] + ' wins!' : humanWon ? 'You won!' : 'Computer wins';
+  Board.modal(title, overText + ' · ' + finalScore + ' pts · ' + MODE_NAMES[gm], [['New game', newGame], ['Close']]);
 }
 
 /* ---- computer ---- */
@@ -210,7 +346,7 @@ function heur(bd, p, noise) {
       if (bd[y] === p && g.libs.size === 1 && libs > 1) s += 22 + g.stones.length * 3;
       else if (bd[y] === o && g.libs.size === 2) s += 8 + g.stones.length * 2;
     }
-    const line = Math.min(i % S, (i / S) | 0, S - 1 - (i % S), S - 1 - ((i / S) | 0)); s += [-8, -1, 5, 6, 4][line];
+    const line = Math.min(i % S, (i / S) | 0, S - 1 - (i % S), S - 1 - ((i / S) | 0)); s += [-8, -1, 5, 6, 4][Math.min(line, 4)];
     let near = 0; for (let k = 0; k < NN; k++) if (bd[k] && Math.abs((k % S) - (i % S)) + Math.abs(((k / S) | 0) - ((i / S) | 0)) <= 2) { near = 3; break; }
     s += near + Math.random() * noise; res.push({ i, s });
   }
@@ -218,7 +354,7 @@ function heur(bd, p, noise) {
 }
 function cpu() {
   if (phase !== 'play' || human()) return; busy = true; render();
-  const g = gen, L = +$('#lvl').value, p = turn, ownLead = () => { const a = areaOf(b); return p === 1 ? a.bl - (a.wh + KOMI) : a.wh + KOMI - a.bl; };
+  const g = gen, L = gm === 'master' ? 2 : +$('#lvl').value, p = turn, ownLead = () => { const a = areaOf(b); return p === 1 ? a.bl - (a.wh + KOMI) : a.wh + KOMI - a.bl; };
   Board.after(Board.pace(1000) + Board.rand(450), () => {
     if (g !== gen || Board.paused()) return;
     if (passes === 1 && ownLead() > 0) { busy = false; doPass(); return; }
@@ -248,8 +384,11 @@ function think(top, p, g) {
 function undo() {
   if (busy || !hist.length) return;
   let h;
-  do { h = hist.pop(); b = h.b; turn = h.turn; passes = h.passes; caps = h.caps; last = h.last; phase = h.phase; dead = h.dead; positions.length = h.pl; } while (hist.length && mode !== 'two' && !human());
-  hint = -1; note = ''; gen++; busy = false; render(); cpu();
+  do {
+    h = hist.pop(); b = h.b; turn = h.turn; passes = h.passes; caps = h.caps; last = h.last; phase = h.phase; dead = h.dead;
+    positions.length = h.pl; PS = h.PS; moveStats = h.ms;
+  } while (hist.length && seat !== 'two' && !human());
+  overText = ''; hint = -1; note = ''; gen++; busy = false; render(); cpu();
 }
 function showHint() { if (phase !== 'play' || busy || !human()) return; const c = heur(b, turn, 0); if (!c.length) return; hint = c[0].i; render(); }
 
@@ -258,13 +397,89 @@ $('#bd').addEventListener('click', (e) => {
   if (phase === 'score') { toggleDead(i); return; }
   if (phase !== 'play' || !human()) return; place(i);
 });
-$('#new').onclick = newGame; $('#pass').onclick = doPass; $('#undo').onclick = undo; $('#hint').onclick = showHint; $('#mode').onchange = newGame; $('#done').onclick = finish;
+$('#new').onclick = newGame; $('#pass').onclick = doPass; $('#undo').onclick = undo; $('#hint').onclick = showHint; $('#seat').onchange = newGame; $('#done').onclick = () => conclude(null, 'score');
 document.addEventListener('keydown', (e) => {
   if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.toLowerCase();
   if (k === 'n') newGame(); else if (k === 'u') undo(); else if (k === 't') showHint(); else if (k === 'p') doPass();
 });
-newGame();
+
+/* ---------------- shared menu contract ---------------- */
+const GameUI = Board.ui({
+  id: 'go', title: 'Go 9×9', subtitle: 'Five boards, one rule set.', accent: '#06b6d4',
+  modes: MODES, achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Click an empty intersection to place a stone. Black moves first.' },
+    { text: 'Surround a group completely to capture it. Your own stone must keep a liberty.' },
+    { text: 'Pass when there is nothing left; two passes open scoring.' },
+    { text: 'Tap groups to mark dead stones, then Confirm. Most area wins.' },
+  ] },
+  hooks: {
+    applyMode: (next) => { gm = MODES.some((m) => m.id === next) ? next : 'classic'; if (b) newGame(); },
+    applyCosmetic,
+    onStart: () => { menuPaused = false; clockLast = Date.now(); },
+  },
+});
+window.ApexGameMenuActions = {
+  play: function () { menuPaused = false; clockLast = Date.now(); },
+  pause: function (value) { menuPaused = !!value; clockLast = Date.now(); },
+  resume: function () { menuPaused = false; clockLast = Date.now(); },
+  restart: function () { menuPaused = false; newGame(); }
+};
+
+buildBoard(9); paintPalette(); newGame();
+
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  const state = () => {
+    const d = phase === 'play' ? b : finalBoard(), a = areaOf(d);
+    return {
+      mode: gm, seat, turn, phase, over: phase === 'over', overText, busy, menuPaused, last, hint, size: S, komi: KOMI,
+      caps: { 1: caps[1], 2: caps[2] }, score: { 1: PS[1].score, 2: PS[2].score }, area: { bl: a.bl, wh: a.wh },
+      stones: b.slice(), black: b.filter((v) => v === 1).length, white: b.filter((v) => v === 2).length,
+      dead: Array.from(dead), passes, placed: moveStats.placed, captured: moveStats.captured,
+      clocks: Object.assign({}, clocks), free: b.map((v, i) => (v ? -1 : i)).filter((i) => i >= 0),
+    };
+  };
+  window.GoTest = {
+    state,
+    modes: () => MODES.map((m) => m.id),
+    setMode: (id) => GameUI.setMode(id),
+    getMode: () => GameUI.getMode(),
+    restart: () => { newGame(); return true; },
+    setSeat: (value) => { const s = $('#seat'); if (!Array.from(s.options).some((o) => o.value === value)) return false; s.value = value; newGame(); return true; },
+    setLevel: (n) => { const s = $('#lvl'); s.value = String(Math.max(0, Math.min(2, Number(n) || 0))); return +s.value; },
+    setDifficulty: (d) => Board.setDifficulty(d),
+    level: () => Board.level(),
+    setBoard: (o) => {
+      const src = o || {};
+      if (src.size) buildBoard(Math.max(5, Math.min(19, Number(src.size) || 9)));
+      b = Array(NN).fill(0);
+      if (Array.isArray(src.board)) src.board.slice(0, NN).forEach((v, k) => { b[k] = Number(v) === 1 || Number(v) === 2 ? Number(v) : 0; });
+      if (src.stones) Object.keys(src.stones).forEach((k) => { const i = Number(k); if (i >= 0 && i < NN) b[i] = Number(src.stones[k]) === 1 || Number(src.stones[k]) === 2 ? Number(src.stones[k]) : 0; });
+      turn = Number(src.turn) === 2 ? 2 : 1; passes = 0; caps = { 1: 0, 2: 0 }; last = -1; phase = 'play'; dead = new Set(); overText = ''; note = ''; hint = -1; busy = false; hist = []; positions = [b.join('')]; gen += 1; render();
+      return state();
+    },
+    setTurn: (p) => { gen += 1; turn = Number(p) === 2 ? 2 : 1; busy = false; render(); return turn; },
+    setPhase: (p) => { phase = ['play', 'score', 'over'].includes(p) ? p : phase; render(); return phase; },
+    play: (i) => { place(Number(i)); return state(); },
+    pass: () => { doPass(); return state(); },
+    finish: (p) => { conclude(Number(p) === 2 ? 2 : 1, 'test'); return state(); },
+    undo: () => { undo(); return state(); },
+    toggleDead: (i) => { toggleDead(Number(i)); return state(); },
+    setScore: (p, n) => { PS[Number(p) === 2 ? 2 : 1].score = Math.max(0, Number(n) || 0); render(); return PS[Number(p) === 2 ? 2 : 1].score; },
+    setClock: (p, ms) => { clocks[Number(p) === 2 ? 2 : 1] = Math.max(0, Number(ms) || 0); render(); return clocks[Number(p) === 2 ? 2 : 1]; },
+    tick: (ms) => { tickClock(Number(ms) || 0); return state(); },
+    menuPaused: (value) => { menuPaused = !!value; clockLast = Date.now(); return menuPaused; },
+    start: () => { menuPaused = false; clockLast = Date.now(); },
+    colors: () => ({ stones: { 1: Object.assign({}, PALETTE.stones[1]), 2: Object.assign({}, PALETTE.stones[2]) }, board: Object.assign({}, PALETTE.board), accent: PALETTE.accent, theme: document.body.style.background || 'auto' }),
+    cosmetic: (slot, id) => { applyCosmetic(slot, id); return window.GoTest.colors(); },
+    cosmeticList: () => (window.Meta && Meta.getCosmetics ? Meta.getCosmetics('go') : []).map((item) => ({ id: item.id, slot: item.slot })),
+    achievements: () => (Save.load('go').achievements || []).slice(),
+    stats: () => Save.load('go').stats || {},
+    modalOpen: () => { const d = document.getElementById('bk-dlg'); return !!(d && d.open); },
+    closeModal: () => { const d = document.getElementById('bk-dlg'); if (d && d.open) d.close(); },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

@@ -1,31 +1,34 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Memory Match</title>
 <style>
   .mm { display: grid; grid-template-columns: auto minmax(240px, 1fr); gap: 22px; align-items: start; }
   @media (max-width: 860px) { .mm { grid-template-columns: 1fr; } }
-  #bd { width: var(--s); display: grid; gap: 10px; user-select: none; touch-action: manipulation; }
+  #bd { width: var(--s); display: grid; gap: 10px; user-select: none; touch-action: manipulation; padding: 10px; border-radius: 16px; box-sizing: border-box; background: var(--mm-table); box-shadow: 0 20px 50px -24px #000; }
   .mc { aspect-ratio: 1; perspective: 700px; cursor: pointer; border-radius: 14px; }
   .mc .in { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform .35s; }
   .mc.up .in { transform: rotateY(180deg); }
   .mc .f, .mc .b { position: absolute; inset: 0; border-radius: 14px; display: flex; align-items: center; justify-content: center; backface-visibility: hidden; -webkit-backface-visibility: hidden; border: 1px solid var(--line); }
-  .mc .f { background: linear-gradient(135deg, #1e2a52, #2a1646); color: rgba(255,255,255,.35); font-weight: 800; box-shadow: inset 0 0 0 4px rgba(255,255,255,.04); }
+  .mc .f { background: var(--mm-back); color: rgba(255,255,255,.35); font-weight: 800; box-shadow: inset 0 0 0 4px rgba(255,255,255,.04); }
   .mc:hover .f { border-color: rgba(255,255,255,.35); }
   .mc .b { background: var(--panel); transform: rotateY(180deg); }
   .mc.ok .b { background: rgba(16,185,129,.2); border-color: var(--emerald); }
   .mc.ok .in { animation: hop .4s ease-out; }
   @keyframes hop { 50% { transform: rotateY(180deg) scale(1.08); } }
-  .mc.foc { outline: 3px solid var(--cyan); outline-offset: 2px; }
+  .mc.foc { outline: 3px solid var(--mm-accent, var(--cyan)); outline-offset: 2px; }
   .side { display: grid; gap: 12px; }
   .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .stats div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 13px; color: var(--muted); }
   .stats b { display: block; font-size: 24px; color: var(--text); }
-  .stats .on { border-color: var(--cyan); }
+  .stats .on { border-color: var(--mm-accent, var(--cyan)); }
   .capt { color: var(--muted); line-height: 1.7; font-size: 13px; }
+  .note { margin-top: 6px; color: var(--amber); font-weight: 600; font-size: 13px; }
+  #md { color: var(--muted); font-size: 13px; line-height: 1.6; }
+  .clock { font: 700 15px ui-monospace, Consolas, monospace; color: #fde047; }
+  .clock.low { color: #fb7185; }
 </style>
 <script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
 </head>
@@ -40,9 +43,9 @@
 <script src="../../kits/ui-kit.js"></script>
 <script>
 const ui = Board.shell({
-  id: 'memory-match', title: 'Memory Match', subtitle: 'Flip cards, find the pairs and beat your best time',
-  rules: 'All the cards start face down. Flip two cards per turn: if the pictures match, the pair stays face up; if not, they flip back, so remember where they were. Find every pair to finish. In solo mode the clock starts on your first flip and your best time for each size is saved. In two-player mode a match scores a point and earns another turn; a miss passes the turn. Most pairs wins.',
-  controls: [['Click / tap', 'Flip a card'], ['← ↑ → ↓', 'Move the highlight'], ['Space / Enter', 'Flip the highlighted card'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
+  id: 'memory-match', title: 'Memory Match', subtitle: 'Flip cards, find the pairs and train your recall',
+  rules: 'All the cards start face down. Flip two cards per move: if the pictures match, the pair stays face up and scores points; if not, they flip back and you lose a little. Find every pair to finish. Consecutive matches build a streak worth extra points. Classic is a 16-card board against the clock, Quick Spot is 12 cards, Expert is 36, Duel is a two-player 24-card board, and Master gives you three minutes to clear 24 cards. Use Hint (T) to peek at a pair for a moment at the cost of 40 points.',
+  controls: [['Click / tap', 'Flip a card'], ['← ↑ → ↓', 'Move the highlight'], ['Space / Enter', 'Flip the highlighted card'], ['T', 'Peek at a pair (costs points)'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
 });
 ui.main.innerHTML = `
 <div class="mm">
@@ -50,97 +53,333 @@ ui.main.innerHTML = `
   <div class="side">
     <div class="bk-status" id="st"></div>
     <div class="stats" id="stats"></div>
-    <div class="bk-row">
-      <label>Mode <select class="bk-select" id="mode"><option value="solo">Solo — beat the clock</option><option value="two">Two players</option></select></label>
-      <label>Size <select class="bk-select" id="size"><option value="12">Easy · 12 cards</option><option value="16" selected>Medium · 16 cards</option><option value="24">Hard · 24 cards</option><option value="36">Expert · 36 cards</option></select></label>
-    </div>
-    <div class="bk-row"><button class="bk-btn bk-primary" id="new">New game</button></div>
+    <div class="bk-row"><button class="bk-btn bk-primary" id="new">New game</button><button class="bk-btn" id="hint">Hint</button></div>
     <div class="capt" id="cp"></div>
+    <div id="md"></div>
   </div>
 </div>`;
 const $ = (s) => ui.main.querySelector(s);
 const SIZES = { 12: { cols: 4, pairs: 6 }, 16: { cols: 4, pairs: 8 }, 24: { cols: 6, pairs: 12 }, 36: { cols: 6, pairs: 18 } };
 const EM = ['🦊', '🐙', '🌵', '🍄', '🚀', '🎈', '🦋', '🍉', '⚡', '🎲', '🐳', '🌙', '🍕', '🎸', '🔔', '🍀', '🦉', '🧩'];
-const fmt = (ms) => { const s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
-const bd = $('#bd');
-let deck, S, up, matched, lock, moves, found, t0, elapsed, timer, player, scores, mode, foc, done, msg, gen = 0, sizeKey;
+const fmt = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 
-function bestOf() { const v = Board.ls.get('apex:mm:' + sizeKey); if (!v) return null; const [t, m] = v.split('|').map(Number); return isNaN(t) ? null : { t, m }; }
-function newGame() {
-  Board.cancel(timer); gen++;
-  mode = $('#mode').value; sizeKey = $('#size').value; S = SIZES[sizeKey];
-  const faces = Board.shuffle(EM.slice()).slice(0, S.pairs);
-  deck = Board.shuffle([...faces, ...faces]);
-  up = []; matched = new Set(); lock = false; moves = 0; found = 0; t0 = 0; elapsed = 0; player = 0; scores = [0, 0]; foc = 0; done = false; msg = '';
+/* ---------------- modes, records, cosmetics ---------------- */
+const MODE_NAMES = { classic: 'Classic', quick: 'Quick Spot', expert: 'Expert', duel: 'Duel', master: 'Master' };
+const MODE_KEY = { classic: 'Classic', quick: 'Quick', expert: 'Expert', duel: 'Duel', master: 'Master' };
+const CFG = {
+  classic: { size: 16, cols: 4, two: false, clock: 0, mult: 1, bonus: 1000 },
+  quick: { size: 12, cols: 4, two: false, clock: 0, mult: 1.15, bonus: 800 },
+  expert: { size: 36, cols: 6, two: false, clock: 0, mult: 1.35, bonus: 1500 },
+  duel: { size: 24, cols: 6, two: true, clock: 0, mult: 1.2, bonus: 0 },
+  master: { size: 24, cols: 6, two: false, clock: 180000, mult: 1.5, bonus: 1200 },
+};
+const MODES = [
+  { id: 'classic', name: 'Classic', blurb: 'A 16-card board against the clock. The standard game.' },
+  { id: 'quick', name: 'Quick Spot', blurb: 'Twelve cards for a fast round. 1.15× score.' },
+  { id: 'expert', name: 'Expert', blurb: 'Thirty-six cards and eighteen pairs. 1.35× score.' },
+  { id: 'duel', name: 'Duel', blurb: 'Two players share a 24-card board. A match keeps the turn. 1.2× score.' },
+  { id: 'master', name: 'Master', blurb: 'Clear 24 cards in three minutes at 1.5× score.', requires: { stat: 'classicWins', gte: 1 }, lockedHint: 'Complete a Classic board to unlock' },
+];
+const ACHIEVEMENTS = [
+  { id: 'first-flip', name: 'First Flip', desc: 'Turn over a card.', rarity: 'common' },
+  { id: 'first-pair', name: 'First Pair', desc: 'Match a pair.', rarity: 'common' },
+  { id: 'perfect', name: 'Perfect Recall', desc: 'Finish a solo game with no mismatches.', rarity: 'epic' },
+  { id: 'speedy', name: 'Quick Eye', desc: 'Finish a solo game in under a minute.', rarity: 'rare' },
+  { id: 'classic-clear', name: 'Grid Regular', desc: 'Complete a Classic board.', rarity: 'common' },
+  { id: 'quick-clear', name: 'Snap Decision', desc: 'Complete a Quick Spot board.', rarity: 'common' },
+  { id: 'expert-clear', name: 'Big Board', desc: 'Complete an Expert board.', rarity: 'rare' },
+  { id: 'duel-clear', name: 'Duel Winner', desc: 'Win a two-player Duel.', rarity: 'rare' },
+  { id: 'master-clear', name: 'Memory Master', desc: 'Win a Master board.', rarity: 'legendary' },
+  { id: 'high-score', name: 'High Roller', desc: 'Finish a game with 3,000+ points.', rarity: 'rare' },
+  { id: 'personal-best', name: 'Personal Best', desc: 'Set a new best score.', rarity: 'rare' },
+];
+const BACKS = {
+  'mm:backs-midnight': 'linear-gradient(135deg, #1e2a52, #2a1646)',
+  'mm:backs-ruby': 'linear-gradient(135deg, #4c0519, #7f1d1d)',
+  'mm:backs-jade': 'linear-gradient(135deg, #052e16, #065f46)',
+  'mm:backs-violet': 'linear-gradient(135deg, #3b0764, #6d28d9)',
+  'mm:backs-ice': 'linear-gradient(135deg, #0e7490, #164e63)',
+};
+const TABLES = {
+  'mm:table-night': '#0c1226',
+  'mm:table-slate': '#111827',
+  'mm:table-forest': '#07130c',
+  'mm:table-plum': '#1a0b1f',
+};
+const ACCENTS = { 'mm:accent-cyan': '#06b6d4', 'mm:accent-amber': '#f59e0b', 'mm:accent-rose': '#fb7185', 'mm:accent-lime': '#a3e635' };
+const THEMES = {
+  'mm:theme-night': '',
+  'mm:theme-dusk': 'radial-gradient(1000px 500px at 10% -10%, #4c1d3d, transparent 60%), radial-gradient(800px 500px at 100% 0, #7c2d12, transparent 55%), #0b0705',
+  'mm:theme-sea': 'radial-gradient(1000px 500px at 12% -8%, #164e63, transparent 60%), radial-gradient(800px 500px at 100% 0, #14532d, transparent 55%), #041514',
+};
+const PALETTE = { back: BACKS['mm:backs-midnight'], table: TABLES['mm:table-night'], accent: ACCENTS['mm:accent-cyan'] };
+function paintPalette() {
+  const el = $('#bd'); if (!el) return;
+  el.style.setProperty('--mm-back', PALETTE.back);
+  el.style.setProperty('--mm-table', PALETTE.table);
+  el.style.setProperty('--mm-accent', PALETTE.accent);
+}
+function applyCosmetic(slot, id) {
+  if (slot === 'skin' && BACKS[id]) PALETTE.back = BACKS[id];
+  else if (slot === 'palette' && TABLES[id]) PALETTE.table = TABLES[id];
+  else if (slot === 'effect' && ACCENTS[id]) PALETTE.accent = ACCENTS[id];
+  else if (slot === 'theme' && THEMES[id] !== undefined) document.body.style.background = THEMES[id];
+  paintPalette(); if (deck) paint();
+}
+
+/* ---------------- state ---------------- */
+const bd = $('#bd');
+let deck = null, S = SIZES[16], up = [], matched = new Set(), peek = new Set(), lock = false, moves = 0, flips = 0, found = 0;
+let mismatches = 0, streak = 0, bestStreak = 0, t0 = 0, foc = 0, done = false, msg = '', gen = 0;
+let gm = 'classic', PS = { score: 0 }, player = 0, scores = [0, 0], over = false, overText = '', note = '';
+let clockLeft = 0, clockLast = 0, clockTimer = null, menuPaused = true;
+
+const elapsedMs = () => (t0 ? Math.max(0, Board.now() - t0) : 0);
+const elapsedSec = () => Math.floor(elapsedMs() / 1000);
+const cfgOf = () => CFG[gm];
+const bestKey = () => 'best' + MODE_KEY[gm] + 'Time';
+const winKey = () => gm + 'Wins';
+
+function layout() {
+  const c = cfgOf();
+  S = SIZES[String(c.size)] || { cols: c.cols, pairs: c.size / 2 };
   bd.style.setProperty('--s', `max(280px, min(100vw - 40px, ${S.cols === 4 ? 480 : 640}px))`);
   bd.style.gridTemplateColumns = `repeat(${S.cols}, 1fr)`;
   bd.style.fontSize = `calc(var(--s) / ${S.cols * 2.4})`;
-  bd.innerHTML = deck.map((e, i) => `<div class="mc" data-i="${i}"><div class="in"><div class="f">?</div><div class="b">${e}</div></div></div>`).join('');
-  paint();
 }
+function buildBoard() {
+  bd.innerHTML = deck.map((e, i) => `<div class="mc" data-i="${i}"><div class="in"><div class="f">?</div><div class="b">${e}</div></div></div>`).join('');
+}
+function newGame() {
+  if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  gen += 1;
+  const c = cfgOf();
+  layout();
+  const faces = Board.shuffle(EM.slice()).slice(0, S.pairs);
+  deck = Board.shuffle([...faces, ...faces]);
+  up = []; matched = new Set(); peek = new Set(); lock = false; moves = 0; flips = 0; found = 0; mismatches = 0;
+  streak = 0; bestStreak = 0; t0 = 0; foc = 0; done = false; msg = ''; player = 0; scores = [0, 0];
+  PS = { score: 0 }; over = false; overText = ''; note = '';
+  clockLeft = c.clock; clockLast = Date.now();
+  buildBoard(); paintPalette(); paint();
+}
+
 function paint() {
   [...bd.children].forEach((d, i) => {
-    d.classList.toggle('up', up.includes(i) || matched.has(i));
+    d.classList.toggle('up', up.includes(i) || matched.has(i) || peek.has(i));
     d.classList.toggle('ok', matched.has(i));
     d.classList.toggle('foc', i === foc && !done);
   });
   paintStats();
 }
 function paintStats() {
-  const best = bestOf();
-  if (mode === 'solo') {
-    $('#stats').innerHTML = `<div>Time<b>${fmt(elapsed)}</b></div><div>Moves<b>${moves}</b></div><div>Pairs<b>${found} / ${S.pairs}</b></div><div>Best<b>${best ? fmt(best.t) : '—'}</b></div>`;
-    $('#st').innerHTML = done ? msg : t0 ? 'Find every pair' : 'Flip a card to start the clock';
-  } else {
+  const c = cfgOf(), best = GameUI.stats()[bestKey()];
+  const time = fmt(elapsedMs());
+  if (c.two) {
     $('#stats').innerHTML = `<div class="${player === 0 && !done ? 'on' : ''}">Player 1<b>${scores[0]}</b></div><div class="${player === 1 && !done ? 'on' : ''}">Player 2<b>${scores[1]}</b></div><div>Pairs<b>${found} / ${S.pairs}</b></div><div>Moves<b>${moves}</b></div>`;
-    $('#st').innerHTML = done ? msg : `Player ${player + 1}'s turn`;
+  } else {
+    $('#stats').innerHTML = `<div>Time<b>${time}</b></div><div>Moves<b>${moves}</b></div><div>Pairs<b>${found} / ${S.pairs}</b></div><div>Streak<b>${streak}${bestStreak ? ' · best ' + bestStreak : ''}</b></div>`;
   }
-  $('#cp').innerHTML = best && mode === 'solo' ? `Your best for ${S.pairs * 2} cards: <b>${fmt(best.t)}</b> in <b>${best.m}</b> moves.` : '';
+  $('#st').innerHTML = (over ? overText : done ? msg : c.two ? `Player ${player + 1}'s turn` : t0 ? 'Find every pair' : 'Flip a card to start the clock') + (note && !over ? `<div class="note">${note}</div>` : '');
+  const clock = c.clock ? `<span class="clock${clockLeft < 20000 ? ' low' : ''}">${fmt(clockLeft)} left</span> · ` : '';
+  $('#md').innerHTML = clock + MODE_NAMES[gm] + ' · ' + (S.pairs * 2) + ' cards · ' + (c.two ? 'two players' : 'solo') + (c.mult > 1 ? ' · ' + c.mult + '× score' : '');
+  $('#cp').innerHTML = !c.two && best ? `Your best ${MODE_NAMES[gm]} time: <b>${fmt(best)}</b>.` : '';
 }
-function flip(i) {
-  if (lock || done || up.includes(i) || matched.has(i)) return;
-  if (mode === 'solo' && !t0) { t0 = Board.now(); timer = Board.every(250, () => { elapsed = Board.now() - t0; paintStats(); }); }
-  up.push(i); Board.sfx('click'); paint();
-  if (up.length === 2) {
-    moves++; const [a, b] = up, g = gen; lock = true;
-    if (deck[a] === deck[b]) {
-      Board.after(420, () => {
-        if (g !== gen) return;
-        matched.add(a); matched.add(b); up = []; found++; if (mode === 'two') scores[player]++;
-        lock = false; Board.sfx('check'); paint(); if (found === S.pairs) finish();
-      });
-    } else {
-      Board.after(950, () => { if (g !== gen) return; up = []; lock = false; if (mode === 'two') player = 1 - player; paint(); });
+
+function tick(step) {
+  if (over) return;
+  const c = cfgOf();
+  if (step == null) {
+    if (c.clock) {
+      const now = Date.now(), dt = now - clockLast; clockLast = now;
+      if (menuPaused || Board.paused()) { paintStats(); return; }
+      clockLeft = Math.max(0, clockLeft - dt);
     }
+  } else if (c.clock) clockLeft = Math.max(0, clockLeft - step);
+  if (c.clock && clockLeft <= 0) { conclude(false, 'on time'); return; }
+  paintStats();
+}
+
+function startGameClock() {
+  if (t0) return;
+  t0 = Board.now(); clockLast = Date.now();
+  if (cfgOf().clock && !clockTimer) clockTimer = setInterval(tick, 250);
+}
+
+function flip(i) {
+  if (lock || done || over || up.includes(i) || matched.has(i)) return;
+  startGameClock();
+  up.push(i); flips += 1; Board.sfx('click'); GameUI.unlock('first-flip'); paint();
+  if (up.length < 2) return;
+  moves += 1;
+  const [a, b] = up, g = gen;
+  lock = true;
+  if (deck[a] === deck[b]) {
+    Board.after(420, () => {
+      if (g !== gen) return;
+      matched.add(a); matched.add(b); up = []; found += 1; streak += 1;
+      bestStreak = Math.max(bestStreak, streak);
+      PS.score += 25 + Math.min(streak - 1, 4) * 10;
+      if (cfgOf().two) scores[player] += 1;
+      lock = false; Board.sfx('check'); GameUI.unlock('first-pair'); paint();
+      if (found === S.pairs) conclude(cfgOf().two ? scores[0] > scores[1] : true, 'complete');
+    });
+  } else {
+    Board.after(950, () => {
+      if (g !== gen) return;
+      up = []; lock = false; mismatches += 1; streak = 0; PS.score = Math.max(0, PS.score - 5);
+      if (cfgOf().two) player = 1 - player;
+      Board.sfx('error'); paint();
+    });
   }
   paintStats();
 }
-function finish() {
-  Board.cancel(timer); done = true; let title, body;
-  if (mode === 'solo') {
-    elapsed = Board.now() - t0; const best = bestOf(); const rec = !best || elapsed < best.t;
-    if (rec) Board.ls.set('apex:mm:' + sizeKey, elapsed + '|' + moves);
-    title = rec ? 'New best time!' : 'All pairs found!'; body = `Time ${fmt(elapsed)} in ${moves} moves.` + (rec ? '' : ` Your best is ${fmt(best.t)}.`);
-    msg = title + ' ' + fmt(elapsed);
-  } else {
-    const [a, b] = scores; title = a === b ? 'Draw' : (a > b ? 'Player 1' : 'Player 2') + ' wins!'; body = `Player 1: ${a} pairs · Player 2: ${b} pairs`; msg = title + ' ' + a + '–' + b;
-  }
-  Board.sfx('win'); paint();
-  Board.after(600, () => Board.modal(title, body, [['New game', newGame], ['Close']]));
+
+function showHint() {
+  if (lock || done || over || up.length) return;
+  const left = deck.map((e, i) => i).filter((i) => !matched.has(i));
+  if (left.length < 2) return;
+  const seen = new Map(); let pair = null;
+  for (const i of left) { if (seen.has(deck[i])) { pair = [seen.get(deck[i]), i]; break; } seen.set(deck[i], i); }
+  if (!pair) return;
+  PS.score = Math.max(0, PS.score - 40); note = 'Hint cost 40 points.';
+  peek = new Set(pair); paint();
+  const g = gen;
+  Board.after(1200, () => { if (g !== gen) return; peek = new Set(); paint(); });
 }
+
+function conclude(winFlag, reason) {
+  if (over) return;
+  if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  over = true; done = true; lock = false; up = []; peek = new Set(); note = '';
+  const c = cfgOf(), secs = elapsedSec();
+  if (c.two) {
+    const [a, b] = scores;
+    overText = winFlag ? `Player 1 wins ${a}–${b}` : a === b ? `Draw ${a}–${b}` : `Player 2 wins ${b}–${a}`;
+  } else {
+    overText = winFlag ? `All ${S.pairs} pairs found in ${moves} moves` : `Time up — ${found} of ${S.pairs} pairs found`;
+  }
+  const timeBonus = winFlag && reason !== 'on time' && !c.two && !c.clock ? Math.max(0, 600 - secs * 2) : 0;
+  const finalScore = Math.round((PS.score + (winFlag && reason !== 'on time' ? c.bonus + timeBonus : 0)) * c.mult);
+  const records = {}; records['best' + MODE_KEY[gm] + 'Score'] = finalScore;
+  records.bestStreak = bestStreak;
+  const mins = {}; if (winFlag && !c.two) mins[bestKey()] = secs;
+  const counters = { pairsFound: found, flips, mismatches };
+  if (winFlag) { counters.wins = 1; counters[winKey()] = 1; }
+  const achievements = [];
+  if (winFlag && reason !== 'on time') {
+    achievements.push(gm + '-clear');
+    if (!c.two && mismatches === 0) achievements.push('perfect');
+    if (!c.two && secs < 60) achievements.push('speedy');
+  }
+  if (finalScore >= 3000) achievements.push('high-score');
+  const prevBest = Number(GameUI.stats().bestScore) || 0;
+  GameUI.record({ score: finalScore, result: (winFlag ? 'Won ' : reason === 'on time' ? 'Lost ' : 'Finished ') + MODE_NAMES[gm], records, mins, counters, achievements });
+  if (finalScore > prevBest) GameUI.unlock('personal-best');
+  msg = overText + ' · ' + finalScore + ' pts';
+  paint();
+  Board.sfx(winFlag ? 'win' : 'lose');
+  const title = winFlag ? 'You won!' : c.two ? 'Duel over' : 'Time up';
+  Board.modal(title, overText + ' · ' + finalScore + ' pts · ' + MODE_NAMES[gm], [['New game', newGame], ['Close']]);
+}
+
+$('#new').onclick = newGame; $('#hint').onclick = showHint;
 bd.addEventListener('click', (e) => { const d = e.target.closest('.mc'); if (d) { foc = +d.dataset.i; flip(foc); } });
-$('#new').onclick = newGame; $('#mode').onchange = newGame; $('#size').onchange = newGame;
 document.addEventListener('keydown', (e) => {
   if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
-  const k = e.key, n = deck.length;
+  const k = e.key, n = deck ? deck.length : 0;
   if (k === 'n' || k === 'N') newGame();
+  else if (k === 't' || k === 'T') showHint();
   else if (k === 'ArrowLeft') { foc = (foc + n - 1) % n; paint(); e.preventDefault(); }
   else if (k === 'ArrowRight') { foc = (foc + 1) % n; paint(); e.preventDefault(); }
   else if (k === 'ArrowUp') { foc = foc - S.cols >= 0 ? foc - S.cols : foc + n - S.cols; paint(); e.preventDefault(); }
   else if (k === 'ArrowDown') { foc = foc + S.cols < n ? foc + S.cols : foc % S.cols; paint(); e.preventDefault(); }
   else if (k === ' ' || k === 'Enter') { flip(foc); e.preventDefault(); }
 });
-newGame();
+
+/* ---------------- shared menu contract ---------------- */
+const GameUI = Board.ui({
+  id: 'memory-match', title: 'Memory Match', subtitle: 'Five ways to sharpen your recall.', accent: '#22d3ee',
+  modes: MODES, achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Flip two cards per move and remember what you saw.' },
+    { text: 'A match scores points and builds a streak; a miss resets it.' },
+    { text: 'Duel shares the board with a second player — a match keeps the turn.' },
+    { text: 'Master gives you three minutes to clear 24 cards.' },
+  ] },
+  hooks: {
+    applyMode: (next) => { gm = MODES.some((m) => m.id === next) ? next : 'classic'; if (deck) newGame(); },
+    applyCosmetic,
+    onStart: () => { menuPaused = false; clockLast = Date.now(); },
+  },
+});
+window.ApexGameMenuActions = {
+  play: function () { menuPaused = false; clockLast = Date.now(); },
+  pause: function (value) { menuPaused = !!value; clockLast = Date.now(); },
+  resume: function () { menuPaused = false; clockLast = Date.now(); },
+  restart: function () { menuPaused = false; newGame(); }
+};
+
+paintPalette(); newGame();
+
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  const state = () => ({
+    mode: gm, size: S.pairs * 2, pairs: S.pairs, cols: S.cols, two: cfgOf().two,
+    found, moves, flips, mismatches, score: PS.score, streak, bestStreak,
+    won: over && !cfgOf().two ? overText.startsWith('All') : over && cfgOf().two ? scores[0] > scores[1] : false,
+    over, overText, done, busy: lock, menuPaused, elapsed: elapsedSec(), clocks: { left: clockLeft },
+    up: up.slice(), matched: [...matched].sort((a, b) => a - b), remaining: S.pairs - found, note,
+  });
+  const rebuild = () => {
+    bd.style.setProperty('--s', `max(280px, min(100vw - 40px, ${S.cols === 4 ? 480 : 640}px))`);
+    bd.style.gridTemplateColumns = `repeat(${S.cols}, 1fr)`;
+    bd.style.fontSize = `calc(var(--s) / ${S.cols * 2.4})`;
+    buildBoard(); paintPalette(); paint();
+  };
+  window.MemoryTest = {
+    state,
+    modes: () => MODES.map((m) => m.id),
+    setMode: (id) => GameUI.setMode(id),
+    getMode: () => GameUI.getMode(),
+    restart: () => { newGame(); return state(); },
+    setGame: (o) => {
+      const src = o || {};
+      const size = Number(src.size) || cfgOf().size;
+      S = SIZES[String(size)] || { cols: cfgOf().cols, pairs: size / 2 };
+      gen += 1;
+      const faces = EM.slice(0, S.pairs);
+      deck = Array.isArray(src.deck) ? src.deck.slice() : Board.shuffle([...faces, ...faces]);
+      const m = Array.isArray(src.matched) ? src.matched.map(Number) : [];
+      matched = new Set(m); up = []; peek = new Set(); lock = false; done = false; over = false; overText = ''; note = '';
+      moves = Number(src.moves) || 0; flips = src.flips != null ? Number(src.flips) : moves * 2;
+      mismatches = Number(src.mismatches) || 0; streak = Number(src.streak) || 0; bestStreak = Math.max(streak, Number(src.bestStreak) || 0);
+      found = src.found != null ? Number(src.found) : Math.floor(matched.size / 2);
+      scores = [Number(src.p1) || 0, Number(src.p2) || 0]; player = 0;
+      PS = { score: Number(src.score) || 0 };
+      t0 = Board.now(); clockLeft = cfgOf().clock; clockLast = Date.now();
+      if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+      if (cfgOf().clock) clockTimer = setInterval(tick, 250);
+      rebuild(); return state();
+    },
+    flip: (i) => { flip(Number(i)); return state(); },
+    pairOf: (i) => { for (let k = 0; k < deck.length; k += 1) if (k !== i && deck[k] === deck[i]) return k; return -1; },
+    cards: () => deck.slice(),
+    finish: (win) => { conclude(!!win, 'test'); return state(); },
+    setScore: (n) => { PS.score = Math.max(0, Number(n) || 0); paint(); return PS.score; },
+    setClock: (ms) => { clockLeft = Math.max(0, Number(ms) || 0); paint(); return clockLeft; },
+    tick: (ms) => { tick(Number(ms) || 0); return state(); },
+    hint: () => { showHint(); return state(); },
+    menuPaused: (value) => { menuPaused = !!value; clockLast = Date.now(); return menuPaused; },
+    start: () => { menuPaused = false; clockLast = Date.now(); },
+    colors: () => ({ back: PALETTE.back, table: PALETTE.table, accent: PALETTE.accent, theme: document.body.style.background || 'auto' }),
+    cosmetic: (slot, id) => { applyCosmetic(slot, id); return window.MemoryTest.colors(); },
+    cosmeticList: () => (window.Meta && Meta.getCosmetics ? Meta.getCosmetics('memory-match') : []).map((item) => ({ id: item.id, slot: item.slot })),
+    achievements: () => (Save.load('memory-match').achievements || []).slice(),
+    stats: () => Save.load('memory-match').stats || {},
+    modalOpen: () => { const d = document.getElementById('bk-dlg'); return !!(d && d.open); },
+    closeModal: () => { const d = document.getElementById('bk-dlg'); if (d && d.open) d.close(); },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

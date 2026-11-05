@@ -36,11 +36,11 @@ Technical inventory of all 50 canonical HTML games in `public/assets/games/`. Th
 | 28 | Mancala | `28-mancala/index.html` | 23.8 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM | Yes | Board Kit |
 | 29 | Reversi | `29-reversi/index.html` | 26.9 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / Grid | Yes | Board Kit |
 | 30 | Tic-Tac-Toe | `30-tic-tac-toe/index.html` | 50.4 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, board-art.js, music-kit.js | Board DOM / Grid | Yes | Board Kit |
-| 31 | Backgammon | `31-backgammon/index.html` | 19.6 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
-| 32 | Dots & Boxes | `32-dots-boxes/index.html` | 10.2 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
-| 33 | Go 9×9 | `33-go/index.html` | 16.3 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
-| 34 | Solitaire | `34-solitaire/index.html` | 12.6 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
-| 35 | Memory Match | `35-memory-match/index.html` | 8.4 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
+| 31 | Backgammon | `31-backgammon/index.html` | 34.7 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Board DOM / SVG Grid | Yes | Board Kit |
+| 32 | Dots & Boxes | `32-dots-boxes/index.html` | 24.0 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Board DOM / SVG Grid | Yes | Board Kit |
+| 33 | Go 9×9 | `33-go/index.html` | 31.0 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Board DOM / SVG Grid | Yes | Board Kit |
+| 34 | Solitaire | `34-solitaire/index.html` | 25.8 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Board DOM / Card Table | No | Board Kit |
+| 35 | Memory Match | `35-memory-match/index.html` | 21.5 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Board DOM / Card Grid | Yes | Board Kit |
 | 36 | Maths Dash | `36-maths-dash/index.html` | 9.6 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
 | 37 | 8-Ball Pool | `37-pool/index.html` | 15.1 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js, fx-kit.js | Responsive Canvas | Yes | Arcade Core |
 | 38 | Bowling | `38-bowling/index.html` | 12.3 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js, fx-kit.js | Responsive Canvas | Yes | Arcade Core |
@@ -60,7 +60,7 @@ Technical inventory of all 50 canonical HTML games in `public/assets/games/`. Th
 ## Summary Statistics
 
 - **Total Games**: 50
-- **Current canonical HTML total**: 773935 bytes (~0.74 MiB; 15.1 KB average; remeasured after S1-6 on 2026-10-22)
+- **Current canonical HTML total**: 1431158 bytes (~1.37 MiB; 28.0 KB average; remeasured after games 31–35 on 2026-11-05)
 
 ### Script Kits Usage
 
@@ -138,8 +138,8 @@ Each line states the gameplay effect selected by Easy, Normal and Hard.
 - 31 Backgammon — Easy, Normal and Hard select the matching CPU preset.
 - 32 Dots & Boxes — Easy, Normal and Hard select the matching CPU preset.
 - 33 Go 9×9 — Easy, Normal and Hard select the matching CPU preset.
-- 34 Solitaire — Easy deals one card at a time; Normal and Hard deal three cards at a time.
-- 35 Memory Match — Easy selects 12 cards, Normal 16 and Hard 24, changing the number of pairs; Expert 36-card play remains an in-game option.
+- 34 Solitaire — The selected mode sets draw and undo rules; the shared difficulty setting has no gameplay effect.
+- 35 Memory Match — Each mode fixes the board size (12, 16, 24 or 36 cards); the shared difficulty setting has no gameplay effect.
 - 36 Maths Dash — Easy, Normal and Hard select the matching question preset.
 - 37 8-Ball Pool — Easy 0.8× simulation; Normal 1.0×; Hard 1.35× simulation and 1.25× score.
 - 38 Bowling — Easy 0.8× simulation; Normal 1.0×; Hard 1.35× simulation and 1.25× score.

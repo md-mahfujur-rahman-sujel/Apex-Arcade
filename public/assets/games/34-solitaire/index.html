@@ -7,7 +7,7 @@
 <title>Solitaire</title>
 <style>
   .sol { display: grid; gap: 16px; }
-  #bd { --W: min(100vw - 40px, 880px); --g: 8px; --cw: calc((var(--W) - 6 * var(--g)) / 7); width: var(--W); user-select: none; padding: 12px; margin: -12px; border-radius: 16px; background: radial-gradient(900px 500px at 50% 0, #14603f, #0b3d2a); box-sizing: content-box; }
+  #bd { --W: min(100vw - 40px, 880px); --g: 8px; --cw: calc((var(--W) - 6 * var(--g)) / 7); --sol-bg1: #14603f; --sol-bg2: #0b3d2a; --sol-back: repeating-linear-gradient(45deg, #1d4ed8 0 6px, #2563eb 6px 12px); --sol-accent: #06b6d4; width: var(--W); user-select: none; padding: 12px; margin: -12px; border-radius: 16px; background: radial-gradient(900px 500px at 50% 0, var(--sol-bg1), var(--sol-bg2)); box-sizing: content-box; }
   .row { display: grid; grid-template-columns: repeat(7, var(--cw)); gap: var(--g); margin-bottom: calc(var(--g) * 2); }
   .slot, .col { position: relative; min-height: calc(var(--cw) * 1.4); border-radius: 8px; }
   .slot { border: 2px dashed rgba(255,255,255,.22); background: rgba(0,0,0,.14); display: grid; place-items: center; color: rgba(255,255,255,.35); font-size: calc(var(--cw) * .5); }
@@ -17,14 +17,17 @@
   .cd b { position: absolute; left: 5%; top: 1%; font-size: calc(var(--cw) * .3); line-height: 1.1; }
   .cd i { position: absolute; right: 6%; top: 2%; font-style: normal; font-size: calc(var(--cw) * .26); }
   .cd span { position: absolute; left: 0; right: 0; bottom: 4%; text-align: center; font-size: calc(var(--cw) * .6); line-height: 1; }
-  .cd.dn { background: repeating-linear-gradient(45deg, #1d4ed8 0 6px, #2563eb 6px 12px); border: 2px solid #f8fafc; cursor: default; }
+  .cd.dn { background: var(--sol-back); border: 2px solid #f8fafc; cursor: default; }
   .cd.dn.st { cursor: pointer; }
-  .cd.sel { box-shadow: 0 0 0 3px #06b6d4, 0 6px 14px rgba(0,0,0,.6); }
+  .cd.sel { box-shadow: 0 0 0 3px var(--sol-accent), 0 6px 14px rgba(0,0,0,.6); }
   .cd.hint { box-shadow: 0 0 0 3px #f59e0b, 0 0 18px #f59e0b; animation: hp .6s ease-in-out infinite alternate; }
   @keyframes hp { to { filter: brightness(.85); } }
   .panel { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; max-width: 880px; }
   .panel .bk-status { flex: 1 1 280px; }
   .note { margin-top: 4px; color: var(--amber); font-weight: 600; font-size: 13px; }
+  #md { color: var(--muted); font-size: 13px; line-height: 1.6; max-width: 880px; }
+  .clock { font: 700 15px ui-monospace, Consolas, monospace; color: #fde047; }
+  .clock.low { color: #fb7185; }
 </style>
 <script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
 </head>
@@ -40,7 +43,7 @@
 <script>
 const ui = Board.shell({
   id: 'solitaire', title: 'Solitaire', subtitle: 'Klondike — build the four foundations from the shuffled tableau',
-  rules: 'Build each suit up from Ace to King on the four foundation piles at the top right. On the tableau, build down in alternating colours (a red 6 on a black 7). Only a King, or a stack starting with a King, may be placed in an empty column. Click the stock to turn over cards (one or three at a time) and play the top waste card. Face-down cards are turned over when uncovered. Click a card to select it (and the stack on top of it), then click where it should go. Double-click a card to send it to its foundation.',
+  rules: 'Build each suit up from Ace to King on the four foundation piles at the top right. On the tableau, build down in alternating colours (a red 6 on a black 7). Only a King, or a stack starting with a King, may be placed in an empty column. Click the stock to turn over cards and play the top waste card. Face-down cards are turned over when uncovered. Click a card to select it (and the stack on top of it), then click where it should go. Double-click a card to send it to its foundation. Classic draws one, Draw Three turns three, Single Pass forbids recycling the stock, Blitz adds a three-minute clock and Master forbids undo.',
   controls: [['Click stock', 'Turn over cards / recycle waste'], ['Click card, click target', 'Move a card or stack'], ['Double-click', 'Send card to foundation'], ['T', 'Show a hint'], ['U', 'Undo'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
 });
 ui.main.innerHTML = `
@@ -48,25 +51,127 @@ ui.main.innerHTML = `
   <div id="bd"></div>
   <div class="panel">
     <div class="bk-status" id="st"></div>
-    <label class="bk-row" style="color:var(--muted)">Draw <select class="bk-select" id="draw"><option value="1">1 card</option><option value="3">3 cards</option></select></label>
     <button class="bk-btn bk-primary" id="new">New game</button><button class="bk-btn" id="undo">Undo</button><button class="bk-btn" id="hint">Hint</button><button class="bk-btn" id="auto" hidden>Auto-complete</button>
   </div>
+  <div id="md"></div>
 </div>`;
 const $ = (s) => ui.main.querySelector(s);
 const SY = ['♠', '♥', '♦', '♣'], RK = ['', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 const red = (s) => s === 1 || s === 2;
-let stock, waste, found, tab, moves, wshow, hist, sel, hint, note, t0, secs, won, busy;
+let stock, waste, found, tab, moves, wshow, hist, sel, hint, note, t0, won, busy, over = false, overText = '';
+let gm = 'classic', PS = { score: 0 }, undos = 0, foundCount = 0, flipped = 0, movesPlayed = 0;
+let clockLeft = 0, clockLast = 0, clockTimer = null, menuPaused = true;
+
+/* ---------------- modes, records, cosmetics ---------------- */
+const MODE_NAMES = { classic: 'Classic', draw3: 'Draw Three', singlepass: 'Single Pass', blitz: 'Blitz', master: 'Master' };
+const MODE_KEY = { classic: 'Classic', draw3: 'Draw3', singlepass: 'Singlepass', blitz: 'Blitz', master: 'Master' };
+const CFG = {
+  classic: { draw: 1, recycle: true, undo: true, clock: 0, mult: 1, bonus: 2000 },
+  draw3: { draw: 3, recycle: true, undo: true, clock: 0, mult: 1.25, bonus: 2200 },
+  singlepass: { draw: 1, recycle: false, undo: true, clock: 0, mult: 1.3, bonus: 2200 },
+  blitz: { draw: 1, recycle: true, undo: true, clock: 180000, mult: 1.15, bonus: 1800 },
+  master: { draw: 1, recycle: true, undo: false, clock: 0, mult: 1.5, bonus: 2500 },
+};
+const MODES = [
+  { id: 'classic', name: 'Classic', blurb: 'Draw one card at a time with unlimited redeals. The standard game.' },
+  { id: 'draw3', name: 'Draw Three', blurb: 'Turn three cards at a time for a tighter, luckier puzzle. 1.25× score.' },
+  { id: 'singlepass', name: 'Single Pass', blurb: 'The stock can be turned once and never recycled. 1.3× score.' },
+  { id: 'blitz', name: 'Blitz', blurb: 'Three minutes to clear all four foundations. 1.15× score.' },
+  { id: 'master', name: 'Master', blurb: 'Draw one with no undo at 1.5× score.', requires: { stat: 'classicWins', gte: 1 }, lockedHint: 'Win a Classic game to unlock' },
+];
+const ACHIEVEMENTS = [
+  { id: 'first-move', name: 'First Move', desc: 'Make a move.', rarity: 'common' },
+  { id: 'first-foundation', name: 'Foundations', desc: 'Send a card to a foundation.', rarity: 'common' },
+  { id: 'full-set', name: 'Full Set', desc: 'Complete an Ace-to-King suit.', rarity: 'rare' },
+  { id: 'swift', name: 'Swift Finish', desc: 'Win in under three minutes.', rarity: 'rare' },
+  { id: 'classic-clear', name: 'Sunday Best', desc: 'Win a Classic game.', rarity: 'common' },
+  { id: 'draw3-clear', name: 'Three At A Time', desc: 'Win a Draw Three game.', rarity: 'rare' },
+  { id: 'singlepass-clear', name: 'One Pass', desc: 'Win a Single Pass game.', rarity: 'rare' },
+  { id: 'blitz-clear', name: 'Against The Clock', desc: 'Win a Blitz game.', rarity: 'epic' },
+  { id: 'master-clear', name: 'Master', desc: 'Win a Master game.', rarity: 'legendary' },
+  { id: 'flawless', name: 'No Regrets', desc: 'Win without undoing a single move.', rarity: 'epic' },
+  { id: 'high-score', name: 'High Roller', desc: 'Finish a game with 3,000+ points.', rarity: 'rare' },
+  { id: 'personal-best', name: 'Personal Best', desc: 'Set a new best score.', rarity: 'rare' },
+];
+const BACKS = {
+  'sol:cards-classic': 'repeating-linear-gradient(45deg, #1d4ed8 0 6px, #2563eb 6px 12px)',
+  'sol:cards-ruby': 'repeating-linear-gradient(45deg, #9f1239 0 6px, #be123c 6px 12px)',
+  'sol:cards-jade': 'repeating-linear-gradient(45deg, #065f46 0 6px, #047857 6px 12px)',
+  'sol:cards-violet': 'repeating-linear-gradient(45deg, #5b21b6 0 6px, #7c3aed 6px 12px)',
+  'sol:cards-mono': 'repeating-linear-gradient(45deg, #27272a 0 6px, #3f3f46 6px 12px)',
+};
+const FELTS = {
+  'sol:felt-green': { bg1: '#14603f', bg2: '#0b3d2a' },
+  'sol:felt-slate': { bg1: '#1e293b', bg2: '#0f172a' },
+  'sol:felt-plum': { bg1: '#4c1d3d', bg2: '#2e1065' },
+  'sol:felt-sunset': { bg1: '#7c2d12', bg2: '#3f1509' },
+};
+const ACCENTS = { 'sol:accent-cyan': '#06b6d4', 'sol:accent-amber': '#f59e0b', 'sol:accent-rose': '#fb7185', 'sol:accent-lime': '#a3e635' };
+const THEMES = {
+  'sol:theme-night': '',
+  'sol:theme-dusk': 'radial-gradient(1000px 500px at 10% -10%, #4c1d3d, transparent 60%), radial-gradient(800px 500px at 100% 0, #7c2d12, transparent 55%), #0b0705',
+  'sol:theme-sea': 'radial-gradient(1000px 500px at 12% -8%, #164e63, transparent 60%), radial-gradient(800px 500px at 100% 0, #14532d, transparent 55%), #041514',
+};
+const PALETTE = { back: BACKS['sol:cards-classic'], felt: Object.assign({}, FELTS['sol:felt-green']), accent: ACCENTS['sol:accent-cyan'] };
+function paintPalette() {
+  const el = $('#bd'); if (!el) return;
+  el.style.setProperty('--sol-bg1', PALETTE.felt.bg1);
+  el.style.setProperty('--sol-bg2', PALETTE.felt.bg2);
+  el.style.setProperty('--sol-back', PALETTE.back);
+  el.style.setProperty('--sol-accent', PALETTE.accent);
+}
+function applyCosmetic(slot, id) {
+  if (slot === 'skin' && BACKS[id]) PALETTE.back = BACKS[id];
+  else if (slot === 'palette' && FELTS[id]) PALETTE.felt = Object.assign({}, FELTS[id]);
+  else if (slot === 'effect' && ACCENTS[id]) PALETTE.accent = ACCENTS[id];
+  else if (slot === 'theme' && THEMES[id] !== undefined) document.body.style.background = THEMES[id];
+  paintPalette(); if (stock) render();
+}
+
+const fmt = (ms) => { const t = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
+const elapsed = () => (t0 ? Math.max(0, Math.floor((Board.now() - t0) / 1000)) : 0);
+const foundationCount = () => found.reduce((n, f) => n + f.length, 0);
 
 function newGame() {
-  const d = []; for (let s = 0; s < 4; s++) for (let r = 1; r <= 13; r++) d.push({ s, r, up: false });
+  if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  const cfg = CFG[gm], d = [];
+  for (let s = 0; s < 4; s++) for (let r = 1; r <= 13; r++) d.push({ s, r, up: false });
   Board.shuffle(d); tab = []; for (let c = 0; c < 7; c++) { tab.push(d.splice(0, c + 1)); tab[c][c].up = true; }
-  stock = d; waste = []; found = [[], [], [], []]; moves = 0; wshow = 0; hist = []; sel = null; hint = null; note = ''; t0 = 0; secs = 0; won = false; busy = false; render();
+  stock = d; waste = []; found = [[], [], [], []]; moves = 0; wshow = 0; hist = []; sel = null; hint = null; note = ''; t0 = 0; won = false; over = false; overText = ''; busy = false;
+  PS = { score: 0 }; undos = 0; foundCount = 0; flipped = 0; movesPlayed = 0;
+  clockLeft = cfg.clock; clockLast = Date.now();
+  paintPalette(); render();
+  if (cfg.clock) clockTimer = setInterval(tickClock, 250);
 }
-const save = () => { hist.push(JSON.stringify({ stock, waste, found, tab, moves, wshow })); if (hist.length > 300) hist.shift(); if (!t0) t0 = Board.now(); };
+function tickClock(step) {
+  if (over) return;
+  if (step == null) {
+    const now = Date.now(), dt = now - clockLast; clockLast = now;
+    if (menuPaused || Board.paused()) return;
+    clockLeft = Math.max(0, clockLeft - dt);
+  } else clockLeft = Math.max(0, clockLeft - step);
+  if (clockLeft <= 0) { conclude(false, 'on time'); return; }
+  render();
+}
+const save = () => {
+  hist.push(JSON.stringify({ stock, waste, found, tab, moves, wshow, score: PS.score, foundCount, flipped, movesPlayed }));
+  if (hist.length > 300) hist.shift();
+  if (!t0) t0 = Board.now();
+};
 function undo() {
-  if (busy || !hist.length) return; const h = JSON.parse(hist.pop()); ({ stock, waste, found, tab, moves, wshow } = h); sel = null; hint = null; note = ''; won = false; render();
+  if (busy || !hist.length) return;
+  if (!CFG[gm].undo) { note = 'Master games cannot be undone.'; render(); return; }
+  const h = JSON.parse(hist.pop());
+  ({ stock, waste, found, tab, moves, wshow } = h);
+  PS = { score: h.score || 0 }; foundCount = h.foundCount || 0; flipped = h.flipped || 0; movesPlayed = h.movesPlayed || 0;
+  undos += 1; sel = null; hint = null; note = ''; won = false; over = false; overText = ''; render();
 }
-function flip() { for (const col of tab) if (col.length && !col[col.length - 1].up) col[col.length - 1].up = true; }
+function flip() {
+  let n = 0;
+  for (const col of tab) if (col.length && !col[col.length - 1].up) { col[col.length - 1].up = true; n += 1; }
+  if (n) { flipped += n; PS.score += 5 * n; }
+  return n;
+}
 const stackFor = (s) => (s.z === 'waste' ? [waste[waste.length - 1]] : s.z[0] === 'f' ? [found[+s.z[1]][found[+s.z[1]].length - 1]] : tab[+s.z[1]].slice(s.i));
 const fits = (c, col) => (col.length ? col[col.length - 1].up && red(col[col.length - 1].s) !== red(c.s) && col[col.length - 1].r === c.r + 1 : c.r === 13);
 function remove(s) { if (s.z === 'waste') waste.pop(); else if (s.z[0] === 'f') found[+s.z[1]].pop(); else tab[+s.z[1]].splice(s.i); }
@@ -77,28 +182,36 @@ function canGo(s, z) {
   return false;
 }
 function go(s, z) {
-  if (!canGo(s, z)) return false; save(); const cs = stackFor(s); remove(s);
-  if (z[0] === 'f') found[+z[1]].push(...cs); else tab[+z[1]].push(...cs);
-  flip(); moves++; sel = null; hint = null; note = ''; Board.sfx(z[0] === 'f' ? 'ladder' : 'move'); render(); checkWin(); return true;
+  if (over || !canGo(s, z)) return false;
+  save(); const cs = stackFor(s); remove(s);
+  if (z[0] === 'f') { found[+z[1]].push(...cs); foundCount += cs.length; PS.score += 10 * cs.length; }
+  else { tab[+z[1]].push(...cs); PS.score += 2; }
+  movesPlayed += 1; flip(); moves += 1; sel = null; hint = null; note = '';
+  GameUI.unlock('first-move');
+  if (z[0] === 'f') { GameUI.unlock('first-foundation'); if (found[+z[1]].length === 13) GameUI.unlock('full-set'); }
+  Board.sfx(z[0] === 'f' ? 'ladder' : 'move'); render(); checkWin(); return true;
 }
 function drawStock() {
-  if (busy) return; save(); sel = null; hint = null; note = '';
-  if (stock.length) { const n = Math.min(+$('#draw').value, stock.length); for (let k = 0; k < n; k++) { const c = stock.pop(); c.up = true; waste.push(c); } wshow = n; Board.sfx('click'); }
-  else if (waste.length) { while (waste.length) { const c = waste.pop(); c.up = false; stock.push(c); } wshow = 0; Board.sfx('step'); }
-  else { hist.pop(); return; }
-  moves++; render();
+  if (busy || over) return;
+  const cfg = CFG[gm];
+  if (!stock.length && waste.length && !cfg.recycle) { note = 'Single pass — the stock cannot be recycled.'; sel = null; render(); return; }
+  if (!stock.length && !waste.length) return;
+  save(); sel = null; hint = null; note = '';
+  if (stock.length) { const n = Math.min(cfg.draw, stock.length); for (let k = 0; k < n; k++) { const c = stock.pop(); c.up = true; waste.push(c); } wshow = n; Board.sfx('click'); }
+  else { while (waste.length) { const c = waste.pop(); c.up = false; stock.push(c); } wshow = 0; Board.sfx('step'); }
+  moves += 1; movesPlayed += 1; render();
 }
 function checkWin() {
-  if (found.every((f) => f.length === 13) && !won) { won = true; Board.sfx('win'); const m = Math.floor((Board.now() - t0) / 1000); Board.after(500, () => Board.modal('You won!', `All four foundations complete in ${moves} moves and ${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}.`, [['New game', newGame], ['Close']])); }
+  if (!won && found.every((f) => f.length === 13)) { won = true; Board.sfx('win'); conclude(true, 'win'); }
 }
-function autoOk() { return !won && !stock.length && tab.every((c) => c.every((x) => x.up)) && (waste.length || tab.some((c) => c.length)); }
+function autoOk() { return !won && !over && !stock.length && tab.every((c) => c.every((x) => x.up)) && (waste.length || tab.some((c) => c.length)); }
 function autoComplete() {
   if (!autoOk() || busy) return; busy = true;
   (function step() {
     let did = false;
     const srcs = [{ z: 'waste' }, ...tab.map((c, i) => ({ z: 't' + i, i: c.length - 1 }))];
     for (const s of srcs) { if (s.z === 'waste' ? !waste.length : s.i < 0) continue; const c = stackFor(s)[0]; if (go(s, 'f' + c.s)) { did = true; break; } }
-    if (did && !won) Board.after(70, step); else busy = false;
+    if (did && !won && !over) Board.after(70, step); else busy = false;
   })();
 }
 function findHint() {
@@ -110,15 +223,41 @@ function findHint() {
     for (let k = 0; k < 7; k++) if (canGo(s, 't' + k)) { if (s.i === 0 && c.r === 13) continue; if (s.i > 0 && !col[s.i - 1].up || (s.i === 0 && col.length)) return { s, to: 'column ' + (k + 1) }; }
   }
   for (const s of srcs) for (let k = 0; k < 7; k++) if (canGo(s, 't' + k) && !(s.z[0] === 't' && s.i === 0 && stackFor(s)[0].r === 13)) return { s, to: 'column ' + (k + 1) };
-  if (stock.length || waste.length) return { s: null, to: 'stock' };
+  if (stock.length || (waste.length && CFG[gm].recycle)) return { s: null, to: 'stock' };
   return null;
 }
 function showHint() {
+  if (over || busy) return;
   const h = findHint(); sel = null;
   if (!h) { hint = null; note = 'No moves left — try Undo or start a new game.'; }
   else if (!h.s) { hint = null; note = 'Hint: turn over the stock.'; }
   else { hint = h.s; const c = stackFor(h.s)[0]; note = `Hint: move the ${RK[c.r]}${SY[c.s]} to ${h.to}.`; }
   render();
+}
+function conclude(winFlag, reason) {
+  if (over) return;
+  if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  const cfg = CFG[gm];
+  over = true; won = !!winFlag; busy = false; sel = null; hint = null; note = '';
+  const placed = foundationCount();
+  overText = winFlag ? `All four foundations complete in ${moves} moves and ${fmt(elapsed() * 1000)}` : `Time up — ${placed} of 52 cards placed`;
+  const finalScore = Math.round((PS.score + (winFlag && reason !== 'on time' ? cfg.bonus : 0)) * cfg.mult);
+  const records = {}; records['best' + MODE_KEY[gm] + 'Score'] = finalScore; records.bestFoundation = placed;
+  const counters = { foundationCards: foundCount, cardsFlipped: flipped, movesPlayed: movesPlayed };
+  if (winFlag) { counters.wins = 1; counters[gm + 'Wins'] = 1; }
+  const achievements = [];
+  if (winFlag && reason !== 'on time') {
+    achievements.push(gm + '-clear');
+    if (elapsed() < 180) achievements.push('swift');
+    if (undos === 0) achievements.push('flawless');
+  }
+  if (finalScore >= 3000) achievements.push('high-score');
+  const prevBest = Number(GameUI.stats().bestScore) || 0;
+  GameUI.record({ score: finalScore, result: (winFlag ? 'Won ' : 'Lost ') + MODE_NAMES[gm] + (reason === 'on time' ? ' on time' : ''), records, counters, mins: winFlag ? { fewestMoves: movesPlayed } : {}, achievements });
+  if (finalScore > prevBest) GameUI.unlock('personal-best');
+  render();
+  Board.sfx(winFlag ? 'win' : 'lose');
+  Board.modal(winFlag ? 'You won!' : 'Time up', overText + ' · ' + finalScore + ' pts · ' + MODE_NAMES[gm], [['New game', newGame], ['Close']]);
 }
 
 /* ---- drawing ---- */
@@ -129,7 +268,7 @@ function cd(c, z, i, o, x, extra) {
 function render() {
   const isSel = (z, i) => sel && sel.z === z && (z[0] === 't' ? i >= sel.i : true), isHint = (z, i) => hint && hint.z === z && (z[0] === 't' ? i === hint.i : true);
   let h = '<div class="row">';
-  h += `<div class="slot${stock.length || waste.length ? ' rec' : ''}" data-z="stock">${stock.length ? `<div class="cd dn st" style="--o:0" data-z="stock"></div>` : waste.length ? '↻' : ''}</div>`;
+  h += `<div class="slot${stock.length || waste.length ? ' rec' : ''}" data-z="stock">${stock.length ? `<div class="cd dn st" style="--o:0" data-z="stock"></div>` : waste.length ? (CFG[gm].recycle ? '↻' : '×') : ''}</div>`;
   h += `<div class="slot" data-z="waste">`;
   const show = waste.slice(-Math.max(1, Math.min(wshow, 3))), base = waste.length - show.length;
   show.forEach((c, k) => { const idx = base + k, top = idx === waste.length - 1; h += cd(c, 'waste', idx, 0, k * 0.25, (top && isSel('waste') ? ' sel' : '') + (top && isHint('waste') ? ' hint' : '')); });
@@ -141,12 +280,15 @@ function render() {
     h += `<div class="col" data-z="t${ci}" style="min-height:calc(var(--cw) * ${(1.4 + Math.max(0, off - (col.length ? (col[col.length - 1].up ? 0.32 : 0.14) : 0))).toFixed(2)})">${inner}${col.length ? '' : '<div class="slot" style="position:absolute;inset:0">K</div>'}</div>`;
   });
   $('#bd').innerHTML = h + '</div>';
-  const m = secs;
-  $('#st').innerHTML = (won ? 'You won! 🎉' : `Moves <b>${moves}</b> · Time <b>${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}</b> · Foundations <b>${found.reduce((n, f) => n + f.length, 0)}</b>/52`) + (note ? `<div class="note">${note}</div>` : '');
+  $('#st').innerHTML = (over ? overText : `Moves <b>${moves}</b> · Time <b id="tm">${fmt(elapsed() * 1000)}</b> · Foundations <b>${foundationCount()}</b>/52 · Points <b>${PS.score}</b>`) + (note ? `<div class="note">${note}</div>` : '');
   $('#auto').hidden = !autoOk();
+  const cfg = CFG[gm];
+  $('#undo').disabled = !cfg.undo;
+  const clock = cfg.clock ? `<span class="clock${clockLeft < 20000 ? ' low' : ''}">${fmt(clockLeft)} left</span> · ` : '';
+  $('#md').innerHTML = clock + MODE_NAMES[gm] + ' · draw ' + cfg.draw + (cfg.recycle ? ' · unlimited redeals' : ' · single pass') + (cfg.undo ? '' : ' · no undo') + (cfg.clock ? ' · 3-minute limit' : '');
 }
 $('#bd').addEventListener('click', (e) => {
-  if (busy || won) return; const el = e.target.closest('[data-z]'); if (!el) return; const z = el.dataset.z, i = el.dataset.i === undefined ? -1 : +el.dataset.i;
+  if (busy || over) return; const el = e.target.closest('[data-z]'); if (!el) return; const z = el.dataset.z, i = el.dataset.i === undefined ? -1 : +el.dataset.i;
   if (z === 'stock') { drawStock(); return; }
   if (sel) {
     if (sel.z === z && (z[0] !== 't' || sel.i === i)) { sel = null; render(); return; }
@@ -154,21 +296,97 @@ $('#bd').addEventListener('click', (e) => {
   }
   const c = z === 'waste' ? waste[waste.length - 1] : z[0] === 'f' ? found[+z[1]][found[+z[1]].length - 1] : tab[+z[1]][i];
   if (c && c.up && (z !== 'waste' || i === waste.length - 1 || i === -1)) { sel = { z, i: z[0] === 't' ? i : 0 }; hint = null; Board.sfx('click'); }
-  else { sel = null; if (sel === null && el.classList.contains('cd')) Board.sfx('error'); }
+  else { sel = null; if (el.classList.contains('cd')) Board.sfx('error'); }
   render();
 });
 $('#bd').addEventListener('dblclick', (e) => {
-  if (busy || won) return; const el = e.target.closest('.cd'); if (!el || el.classList.contains('dn')) return; const z = el.dataset.z, i = +el.dataset.i; if (z === 'stock' || z[0] === 'f') return;
+  if (busy || over) return; const el = e.target.closest('.cd'); if (!el || el.classList.contains('dn')) return; const z = el.dataset.z, i = +el.dataset.i; if (z === 'stock' || z[0] === 'f') return;
   const s = z === 'waste' ? { z } : { z, i }; if (z === 'waste' ? i !== waste.length - 1 : i !== tab[+z[1]].length - 1) return;
   const c = stackFor(s)[0]; sel = null; if (!go(s, 'f' + c.s)) { Board.sfx('error'); render(); }
 });
-Board.every(1000, () => { if (t0 && !won) { secs = Math.floor((Board.now() - t0) / 1000); const m = secs; const el = $('#st b:nth-of-type(2)'); if (el) el.textContent = Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0'); } });
-$('#new').onclick = newGame; $('#undo').onclick = undo; $('#hint').onclick = showHint; $('#auto').onclick = autoComplete; $('#draw').onchange = newGame;
+Board.every(1000, () => { if (over) return; const el = $('#tm'); if (el) el.textContent = fmt(elapsed() * 1000); });
+$('#new').onclick = newGame; $('#undo').onclick = undo; $('#hint').onclick = showHint; $('#auto').onclick = autoComplete;
 document.addEventListener('keydown', (e) => {
   if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.toLowerCase(); if (k === 'n') newGame(); else if (k === 'u') undo(); else if (k === 't') showHint();
 });
-newGame();
+
+/* ---------------- shared menu contract ---------------- */
+const GameUI = Board.ui({
+  id: 'solitaire', title: 'Solitaire', subtitle: 'Five ways to clear the deck.', accent: '#06b6d4',
+  modes: MODES, achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Click the stock to turn cards; click the waste top to select it.' },
+    { text: 'Build tableau columns down in alternating colours.' },
+    { text: 'Send Aces to the foundations and build each suit up to King.' },
+    { text: 'Double-click any playable card to send it straight to its foundation.' },
+  ] },
+  hooks: {
+    applyMode: (next) => { gm = MODES.some((m) => m.id === next) ? next : 'classic'; if (stock) newGame(); },
+    applyCosmetic,
+    onStart: () => { menuPaused = false; clockLast = Date.now(); },
+  },
+});
+window.ApexGameMenuActions = {
+  play: function () { menuPaused = false; clockLast = Date.now(); },
+  pause: function (value) { menuPaused = !!value; clockLast = Date.now(); },
+  resume: function () { menuPaused = false; clockLast = Date.now(); },
+  restart: function () { menuPaused = false; newGame(); }
+};
+
+paintPalette(); newGame();
+
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  const state = () => ({
+    mode: gm, draw: CFG[gm].draw, recycle: CFG[gm].recycle, undoAllowed: CFG[gm].undo,
+    stock: stock.length, waste: waste.length, found: found.map((f) => f.length), tab: tab.map((c) => c.length),
+    foundTop: found.map((f) => (f.length ? [f[f.length - 1].s, f[f.length - 1].r] : null)),
+    wasteTop: waste.length ? [waste[waste.length - 1].s, waste[waste.length - 1].r] : null,
+    moves, score: PS.score, won, over, overText, busy, menuPaused, undos, elapsed: elapsed(),
+    clocks: { left: clockLeft }, foundations: foundationCount(), note,
+  });
+  const card = (c) => (Array.isArray(c) ? { s: Number(c[0]), r: Number(c[1]), up: c[2] !== false } : { s: Number(c.s), r: Number(c.r), up: c.up !== false });
+  const srcOf = (z) => {
+    if (z === 'waste') return { z: 'waste' };
+    if (z[0] === 'f') return { z };
+    if (z[0] === 't') { const [c, i] = String(z).split(':'); return { z: c, i: Number(i) }; }
+    return null;
+  };
+  window.SolitaireTest = {
+    state,
+    modes: () => MODES.map((m) => m.id),
+    setMode: (id) => GameUI.setMode(id),
+    getMode: () => GameUI.getMode(),
+    restart: () => { newGame(); return true; },
+    setGame: (o) => {
+      const src = o || {};
+      stock = (src.stock || []).map(card); waste = (src.waste || []).map(card);
+      const f = src.found || [[], [], [], []];
+      found = [0, 1, 2, 3].map((k) => (f[k] || []).map(card));
+      const t = src.tab || [[], [], [], [], [], [], []];
+      tab = [0, 1, 2, 3, 4, 5, 6].map((k) => (t[k] || []).map(card));
+      moves = 0; wshow = Math.min(3, waste.length); hist = []; sel = null; hint = null; note = ''; won = false; over = false; overText = ''; busy = false;
+      PS = { score: Number(src.score) || 0 }; undos = 0; foundCount = 0; flipped = 0; movesPlayed = 0;
+      t0 = Board.now(); render(); return state();
+    },
+    drawStock: () => { drawStock(); return state(); },
+    move: (from, to) => { const s = srcOf(from); const moved = s ? go(s, to) : false; return Object.assign({ moved }, state()); },
+    setScore: (n) => { PS.score = Math.max(0, Number(n) || 0); render(); return PS.score; },
+    setClock: (ms) => { clockLeft = Math.max(0, Number(ms) || 0); render(); return clockLeft; },
+    tick: (ms) => { tickClock(Number(ms) || 0); return state(); },
+    finish: (win) => { conclude(!!win, 'test'); return state(); },
+    undo: () => { undo(); return state(); },
+    menuPaused: (value) => { menuPaused = !!value; clockLast = Date.now(); return menuPaused; },
+    start: () => { menuPaused = false; clockLast = Date.now(); },
+    colors: () => ({ back: PALETTE.back, felt: Object.assign({}, PALETTE.felt), accent: PALETTE.accent, theme: document.body.style.background || 'auto' }),
+    cosmetic: (slot, id) => { applyCosmetic(slot, id); return window.SolitaireTest.colors(); },
+    cosmeticList: () => (window.Meta && Meta.getCosmetics ? Meta.getCosmetics('solitaire') : []).map((item) => ({ id: item.id, slot: item.slot })),
+    achievements: () => (Save.load('solitaire').achievements || []).slice(),
+    stats: () => Save.load('solitaire').stats || {},
+    modalOpen: () => { const d = document.getElementById('bk-dlg'); return !!(d && d.open); },
+    closeModal: () => { const d = document.getElementById('bk-dlg'); if (d && d.open) d.close(); },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

@@ -8,32 +8,34 @@
 <style>
   .db { display: grid; grid-template-columns: auto minmax(240px, 1fr); gap: 22px; align-items: start; }
   @media (max-width: 860px) { .db { grid-template-columns: 1fr; } }
-  #bd { --s: max(290px, min(100vw - 40px, 620px)); width: var(--s); aspect-ratio: 1; background: #0f1424; border-radius: 14px; box-shadow: 0 20px 50px -20px #000, 0 0 0 6px #1b2340; user-select: none; }
+  #bd { --db-bg: #0f1424; --db-frame: #1b2340; --db-line: rgba(255,255,255,.13); --db-dot: #e6e9f5; --db-p1: #06b6d4; --db-p2: #f59e0b; --db-accent: #22d3ee; --s: max(290px, min(100vw - 40px, 620px)); width: var(--s); aspect-ratio: 1; background: var(--db-bg); border-radius: 14px; box-shadow: 0 20px 50px -20px #000, 0 0 0 6px var(--db-frame); user-select: none; }
   #bd svg { width: 100%; height: 100%; display: block; touch-action: manipulation; }
-  .vis { stroke: rgba(255,255,255,.13); stroke-width: 5; stroke-linecap: round; }
+  .vis { stroke: var(--db-line); stroke-width: 5; stroke-linecap: round; }
   .hit { stroke: transparent; stroke-width: 26; stroke-linecap: round; }
   .eg.ok { cursor: pointer; }
   .eg.ok:hover .vis { stroke: rgba(255,255,255,.55); }
-  .eg.p1 .vis { stroke: #06b6d4; stroke-width: 7; }
-  .eg.p2 .vis { stroke: #f59e0b; stroke-width: 7; }
+  .eg.p1 .vis { stroke: var(--db-p1); stroke-width: 7; }
+  .eg.p2 .vis { stroke: var(--db-p2); stroke-width: 7; }
   .eg.last .vis { filter: drop-shadow(0 0 5px #fff); }
-  .eg.hint .vis { stroke: #fff; stroke-width: 7; animation: hp .6s ease-in-out infinite alternate; }
+  .eg.hint .vis { stroke: var(--db-accent); stroke-width: 7; animation: hp .6s ease-in-out infinite alternate; }
   @keyframes hp { to { opacity: .25; } }
   .bx { opacity: .3; animation: bp .55s ease-out; transform-box: fill-box; transform-origin: center; }
-  .bx.p1 { fill: #06b6d4; }
-  .bx.p2 { fill: #f59e0b; }
+  .bx.p1 { fill: var(--db-p1); }
+  .bx.p2 { fill: var(--db-p2); }
   @keyframes bp { from { transform: scale(.3); opacity: 0; } }
   .bt { font: 800 26px "Segoe UI", sans-serif; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
-  .bt.p1 { fill: #06b6d4; } .bt.p2 { fill: #f59e0b; }
-  .dt { fill: #e6e9f5; }
+  .bt.p1 { fill: var(--db-p1); } .bt.p2 { fill: var(--db-p2); }
+  .dt { fill: var(--db-dot); }
   .side { display: grid; gap: 12px; }
   .score { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .score div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 13px; color: var(--muted); }
   .score b { display: block; font-size: 28px; color: var(--text); }
-  .score .on { border-color: var(--cyan); }
-  .score .a2.on { border-color: var(--amber); }
+  .score .on { border-color: var(--db-accent, var(--cyan)); }
+  .score .a2.on { border-color: var(--db-p2); }
   .capt { color: var(--muted); line-height: 1.8; }
   .note { margin-top: 6px; color: var(--amber); font-weight: 600; font-size: 13px; }
+  .clock { font: 700 15px ui-monospace, Consolas, monospace; color: #fde047; margin-bottom: 6px; }
+  .clock.low { color: #fb7185; }
 </style>
 <script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
 </head>
@@ -49,7 +51,7 @@
 <script>
 const ui = Board.shell({
   id: 'dots-boxes', cpu: true, title: 'Dots & Boxes', subtitle: 'Draw lines, close boxes and keep the turn',
-  rules: 'Take turns drawing one line between two neighbouring dots. When your line completes the fourth side of a box, you claim the box and must move again. When every box is claimed, the player with more boxes wins. Be careful: drawing the third side of a box hands it to your rival, so look for safe lines first and make the smallest sacrifice when you run out.',
+  rules: 'Take turns drawing one line between two neighbouring dots. When your line completes the fourth side of a box, you claim the box and must move again. When every box is claimed, the player with more boxes wins. Be careful: drawing the third side of a box hands it to your rival, so look for safe lines first and make the smallest sacrifice when you run out. Blitz adds a 90-second clock, Sprint is a 3×3 race to five boxes, Double Trouble scores double for every box, and Grandmaster is a 1.5× match against the deepest search.',
   controls: [['Click a line', 'Draw it between two dots'], ['T', 'Show a hint'], ['U', 'Undo'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
 });
 ui.main.innerHTML = `
@@ -59,18 +61,94 @@ ui.main.innerHTML = `
     <div class="bk-status" id="st"></div>
     <div class="score" id="sc"></div>
     <div class="bk-row">
-      <label>Play <select class="bk-select" id="mode"><option value="1">You (first) vs computer</option><option value="2">Computer first</option><option value="two">Two players</option></select></label>
+      <label>Play <select class="bk-select" id="seat"><option value="1">You (first) vs computer</option><option value="2">Computer first</option><option value="two">Two players</option></select></label>
       <label>Level <select class="bk-select" id="lvl"><option value="0">Easy</option><option value="1" selected>Medium</option><option value="2">Hard</option></select></label>
       <label>Board <select class="bk-select" id="size"><option value="3">3 × 3</option><option value="4">4 × 4</option><option value="5" selected>5 × 5</option></select></label>
     </div>
     <div class="bk-row"><button class="bk-btn bk-primary" id="new">New game</button><button class="bk-btn" id="undo">Undo</button><button class="bk-btn" id="hint">Hint</button></div>
     <div class="capt" id="cp"></div>
+    <div id="md" style="color:var(--muted);font-size:13px;line-height:1.6"></div>
   </div>
 </div>`;
 const $ = (s) => ui.main.querySelector(s);
 const CELL = 80, PAD = 34;
-let N, EC, EDG, BX, ed, own, turn, over, mode, busy, hist, last, hint, note, gen = 0;
+let N, EC, EDG, BX, ed, own, turn, seat, over, busy, hist, last, hint, note, overText = '', gen = 0, gm = 'classic';
+let PS = { 1: { score: 0 }, 2: { score: 0 } }, drawn = { 1: 0, 2: 0 };
+let clocks = { 1: 0, 2: 0 }, clockLast = 0, clockTimer = null, menuPaused = true;
 const NAME = { 1: 'Cyan', 2: 'Amber' };
+
+/* ---------------- modes, records, cosmetics ---------------- */
+const MODE_NAMES = { classic: 'Classic', blitz: 'Blitz', sprint: 'Sprint', double: 'Double Trouble', grandmaster: 'Grandmaster' };
+const MODE_KEY = { classic: 'Classic', blitz: 'Blitz', sprint: 'Sprint', double: 'Double', grandmaster: 'Grandmaster' };
+const CFG = {
+  classic: { clock: 0, boxTarget: 0, boxMult: 1, mult: 1, bonus: 800 },
+  blitz: { clock: 90000, boxTarget: 0, boxMult: 1, mult: 1.1, bonus: 700 },
+  sprint: { clock: 0, boxTarget: 5, boxMult: 1, mult: 1.2, bonus: 700 },
+  double: { clock: 0, boxTarget: 0, boxMult: 2, mult: 1.3, bonus: 900 },
+  grandmaster: { clock: 0, boxTarget: 0, boxMult: 1, mult: 1.5, bonus: 1200 },
+};
+const MODES = [
+  { id: 'classic', name: 'Classic', blurb: 'The standard rules on the grid you pick. Most boxes wins.' },
+  { id: 'blitz', name: 'Blitz', blurb: '90 seconds each. Run out of time and you lose. 1.1× score.' },
+  { id: 'sprint', name: 'Sprint', blurb: 'A fixed 3×3 board: first to five boxes wins. 1.2× score.' },
+  { id: 'double', name: 'Double Trouble', blurb: 'Every claimed box scores double points. 1.3× score.' },
+  { id: 'grandmaster', name: 'Grandmaster', blurb: 'The deepest search at 1.5× score.', requires: { stat: 'classicWins', gte: 1 }, lockedHint: 'Win a Classic game to unlock' },
+];
+const ACHIEVEMENTS = [
+  { id: 'first-line', name: 'First Line', desc: 'Draw a line.', rarity: 'common' },
+  { id: 'first-box', name: 'Boxed In', desc: 'Claim a box.', rarity: 'common' },
+  { id: 'double-box', name: 'Two At Once', desc: 'Claim two boxes in one turn.', rarity: 'rare' },
+  { id: 'long-chain', name: 'Long Chain', desc: 'Claim four boxes in one turn.', rarity: 'epic' },
+  { id: 'classic-clear', name: 'Grid Regular', desc: 'Win a Classic game.', rarity: 'common' },
+  { id: 'blitz-clear', name: 'Beat The Clock', desc: 'Win a Blitz game.', rarity: 'rare' },
+  { id: 'sprint-clear', name: 'Quick Squares', desc: 'Win a Sprint game.', rarity: 'rare' },
+  { id: 'double-clear', name: 'Double Agent', desc: 'Win a Double Trouble game.', rarity: 'epic' },
+  { id: 'grandmaster-clear', name: 'Grandmaster', desc: 'Win a Grandmaster game.', rarity: 'legendary' },
+  { id: 'shutout', name: 'Clean Sheet', desc: 'Win without conceding a box.', rarity: 'epic' },
+  { id: 'high-score', name: 'High Roller', desc: 'Finish a game with 1,000+ points.', rarity: 'rare' },
+  { id: 'personal-best', name: 'Personal Best', desc: 'Set a new best score.', rarity: 'rare' },
+];
+const LINE_SETS = {
+  'db:lines-cyan': { 1: '#06b6d4', 2: '#f59e0b' },
+  'db:lines-ruby': { 1: '#f43f5e', 2: '#71717a' },
+  'db:lines-jade': { 1: '#34d399', 2: '#fde047' },
+  'db:lines-violet': { 1: '#a78bfa', 2: '#fb7185' },
+  'db:lines-mono': { 1: '#f8fafc', 2: '#94a3b8' },
+};
+const BOARD_SETS = {
+  'db:board-night': { bg: '#0f1424', frame: '#1b2340', line: 'rgba(255,255,255,.13)', dot: '#e6e9f5' },
+  'db:board-slate': { bg: '#0b1220', frame: '#334155', line: 'rgba(148,163,184,.25)', dot: '#cbd5e1' },
+  'db:board-forest': { bg: '#07130c', frame: '#1f5138', line: 'rgba(134,239,172,.2)', dot: '#d1fae5' },
+  'db:board-plum': { bg: '#140a1c', frame: '#4c1d3d', line: 'rgba(244,114,182,.18)', dot: '#fbcfe8' },
+};
+const ACCENTS = { 'db:accent-cyan': '#22d3ee', 'db:accent-amber': '#fbbf24', 'db:accent-rose': '#fb7185', 'db:accent-lime': '#a3e635' };
+const THEMES = {
+  'db:theme-night': '',
+  'db:theme-dusk': 'radial-gradient(1000px 500px at 10% -10%, #4c1d3d, transparent 60%), radial-gradient(800px 500px at 100% 0, #7c2d12, transparent 55%), #0b0705',
+  'db:theme-sea': 'radial-gradient(1000px 500px at 12% -8%, #164e63, transparent 60%), radial-gradient(800px 500px at 100% 0, #14532d, transparent 55%), #041514',
+};
+const PALETTE = {
+  lines: Object.assign({}, LINE_SETS['db:lines-cyan']),
+  board: Object.assign({}, BOARD_SETS['db:board-night']),
+  accent: ACCENTS['db:accent-cyan'],
+};
+function paintPalette() {
+  const el = $('#bd'); if (!el) return;
+  el.style.setProperty('--db-bg', PALETTE.board.bg);
+  el.style.setProperty('--db-frame', PALETTE.board.frame);
+  el.style.setProperty('--db-line', PALETTE.board.line);
+  el.style.setProperty('--db-dot', PALETTE.board.dot);
+  el.style.setProperty('--db-p1', PALETTE.lines[1]);
+  el.style.setProperty('--db-p2', PALETTE.lines[2]);
+  el.style.setProperty('--db-accent', PALETTE.accent);
+}
+function applyCosmetic(slot, id) {
+  if (slot === 'skin' && LINE_SETS[id]) PALETTE.lines = Object.assign({}, LINE_SETS[id]);
+  else if (slot === 'palette' && BOARD_SETS[id]) PALETTE.board = Object.assign({}, BOARD_SETS[id]);
+  else if (slot === 'effect' && ACCENTS[id]) PALETTE.accent = ACCENTS[id];
+  else if (slot === 'theme' && THEMES[id] !== undefined) document.body.style.background = THEMES[id];
+  paintPalette(); if (ed) render();
+}
 
 /* ---- geometry ---- */
 function build() {
@@ -83,6 +161,11 @@ function build() {
 const cnt = (e, b) => BX[b].reduce((n, i) => n + (e[i] ? 1 : 0), 0);
 function apply(e, o, i, p) { e[i] = p; const done = []; for (const b of EDG[i].bx) if (cnt(e, b) === 4 && !o[b]) { o[b] = p; done.push(b); } return done; }
 const score = (p) => own.reduce((n, v) => n + (v === p ? 1 : 0), 0);
+const humanSeat = () => (seat === 'two' ? 1 : seat);
+const human = () => seat === 'two' || turn === seat;
+const addScore = (p, n) => { PS[p].score += Math.max(0, Math.round(n)); };
+const clonePS = (src) => ({ 1: Object.assign({}, src[1]), 2: Object.assign({}, src[2]) });
+const fmt = (ms) => { const t = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 
 /* ---- computer ---- */
 const rnd = (a) => a[Board.rand(a.length)];
@@ -105,12 +188,27 @@ function pick(L) {
   return rnd(best);
 }
 
-/* ---- UI ---- */
-const human = () => mode === 'two' || turn === mode;
+/* ---- game state ---- */
 function newGame() {
-  gen++; N = +$('#size').value; build(); mode = $('#mode').value === 'two' ? 'two' : +$('#mode').value;
-  ed = Array(EC).fill(0); own = Array(N * N).fill(0); turn = 1; over = ''; busy = false; hist = []; last = -1; hint = -1; note = '';
-  render(); cpu();
+  gen += 1; if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  N = gm === 'sprint' ? 3 : +$('#size').value; build();
+  seat = $('#seat').value === 'two' ? 'two' : +$('#seat').value;
+  ed = Array(EC).fill(0); own = Array(N * N).fill(0); turn = 1; over = ''; overText = ''; busy = false; hist = []; last = -1; hint = -1; note = '';
+  PS = { 1: { score: 0 }, 2: { score: 0 } }; drawn = { 1: 0, 2: 0 };
+  clocks = { 1: CFG[gm].clock, 2: CFG[gm].clock }; clockLast = Date.now();
+  paintPalette(); render();
+  if (CFG[gm].clock) clockTimer = setInterval(tickClock, 250);
+  cpu();
+}
+function tickClock(step) {
+  if (over) return;
+  if (step == null) {
+    const now = Date.now(), dt = now - clockLast; clockLast = now;
+    if (menuPaused || Board.paused()) return;
+    clocks[turn] = Math.max(0, clocks[turn] - dt);
+  } else clocks[turn] = Math.max(0, clocks[turn] - step);
+  if (clocks[turn] <= 0) { conclude(3 - turn, 'on time'); return; }
+  render();
 }
 function render() {
   const W = PAD * 2 + N * CELL, can = !over && !busy && human();
@@ -126,32 +224,60 @@ function render() {
   for (let r = 0; r <= N; r++) for (let c = 0; c <= N; c++) s += `<circle class="dt" cx="${PAD + c * CELL}" cy="${PAD + r * CELL}" r="7"/>`;
   $('#bd').innerHTML = s + '</svg>';
   const a = score(1), b = score(2), left = N * N - a - b;
-  $('#st').innerHTML = (over || (busy ? 'Computer is thinking…' : `${NAME[turn]} to move${mode !== 'two' && human() ? ' — your turn' : ''}`)) + (!over && note ? `<div class="note">${note}</div>` : '');
-  $('#sc').innerHTML = `<div class="${turn === 1 && !over ? 'on' : ''}">Cyan${mode === 1 ? ' (you)' : ''}<b>${a}</b></div><div class="a2 ${turn === 2 && !over ? 'on' : ''}">Amber${mode === 2 ? ' (you)' : ''}<b>${b}</b></div>`;
-  $('#cp').innerHTML = `Boxes left: <b>${left}</b><br>Lines drawn: <b>${ed.filter(Boolean).length}</b> of ${EC}`;
+  $('#st').innerHTML = (over || (busy ? 'Computer is thinking…' : `${NAME[turn]} to move${seat !== 'two' && human() ? ' — your turn' : ''}`)) + (!over && note ? `<div class="note">${note}</div>` : '');
+  $('#sc').innerHTML = `<div class="${turn === 1 && !over ? 'on' : ''}">Cyan${seat === 1 ? ' (you)' : ''}<b>${a}</b></div><div class="a2 ${turn === 2 && !over ? 'on' : ''}">Amber${seat === 2 ? ' (you)' : ''}<b>${b}</b></div>`;
+  const clock = CFG[gm].clock ? `<div class="clock${clocks[1] < 20000 || clocks[2] < 20000 ? ' low' : ''}">Cyan ${fmt(clocks[1])} · Amber ${fmt(clocks[2])}</div>` : '';
+  $('#cp').innerHTML = clock + `Boxes left: <b>${left}</b><br>Lines drawn: <b>${ed.filter(Boolean).length}</b> of ${EC}`;
+  $('#size').disabled = gm === 'sprint';
+  const target = CFG[gm].boxTarget ? ` · first to ${CFG[gm].boxTarget} boxes` : '';
+  const grid = gm === 'sprint' ? '3×3' : N + '×' + N;
+  $('#md').textContent = MODE_NAMES[gm] + ' · ' + grid + target + (CFG[gm].clock ? ' · 90 seconds each' : '') + (CFG[gm].boxMult > 1 ? ' · boxes score double' : '');
 }
 function play(i) {
   if (ed[i] || over) return;
-  hist.push({ ed: ed.slice(), own: own.slice(), turn, last, note });
-  const done = apply(ed, own, i, turn); last = i; hint = -1; note = '';
-  if (done.length) { Board.sfx('capture'); note = `${NAME[turn]} claims ${done.length > 1 ? done.length + ' boxes' : 'a box'} and moves again.`; }
-  else { Board.sfx('move'); turn = 3 - turn; }
-  if (own.every(Boolean)) {
-    const a = score(1), b = score(2), w = a > b ? 1 : b > a ? 2 : 0;
-    over = w ? `${NAME[w]} wins ${Math.max(a, b)}–${Math.min(a, b)}` : `Draw ${a}–${b}`; note = '';
-    render(); Board.sfx(!w ? 'move' : mode === 'two' || w === mode ? 'win' : 'lose');
-    const title = !w ? 'Draw' : mode === 'two' ? NAME[w] + ' wins!' : w === mode ? 'You won!' : 'Computer wins';
-    Board.after(600, () => Board.modal(title, over, [['New game', newGame], ['Close']]));
-    return;
-  }
+  hist.push({ ed: ed.slice(), own: own.slice(), turn, last, note, PS: clonePS(PS), drawn: { 1: drawn[1], 2: drawn[2] } });
+  const p = turn, done = apply(ed, own, i, p); last = i; hint = -1; note = ''; drawn[p] += 1; addScore(p, 5);
+  if (human()) GameUI.unlock('first-line');
+  if (done.length) {
+    addScore(p, 25 * done.length * CFG[gm].boxMult); Board.sfx('capture');
+    note = `${NAME[p]} claims ${done.length > 1 ? done.length + ' boxes' : 'a box'} and moves again.`;
+    if (human()) { GameUI.unlock('first-box'); if (done.length >= 2) GameUI.unlock('double-box'); if (done.length >= 4) GameUI.unlock('long-chain'); }
+  } else { Board.sfx('move'); turn = 3 - turn; }
+  const target = CFG[gm].boxTarget;
+  if (target && score(p) >= target) { conclude(p, 'target'); return; }
+  if (own.every(Boolean)) { conclude(null, 'board'); return; }
   render(); cpu();
+}
+function conclude(forced, reason) {
+  if (over) return;
+  gen += 1; if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  const a = score(1), b = score(2), w = forced == null ? (a > b ? 1 : b > a ? 2 : 0) : forced;
+  const humanWon = !!w && w === humanSeat();
+  over = reason === 'on time' ? `${NAME[w]} wins on time` : w ? `${NAME[w]} wins ${Math.max(a, b)}–${Math.min(a, b)}` : `Draw ${a}–${b}`;
+  overText = over; busy = false; hint = -1; note = '';
+  const cfg = CFG[gm], h = humanSeat();
+  const finalScore = Math.round((PS[h].score + (humanWon && reason !== 'on time' ? cfg.bonus : 0)) * cfg.mult);
+  const records = {}; records['best' + MODE_KEY[gm] + 'Score'] = finalScore; records.bestWinMargin = w ? Math.abs(a - b) : 0;
+  const counters = { boxesClaimed: score(h), linesDrawn: drawn[h] };
+  if (humanWon) { counters.wins = 1; counters[gm + 'Wins'] = 1; }
+  const achievements = [];
+  if (humanWon) achievements.push(gm + '-clear');
+  if (humanWon && reason !== 'on time' && score(3 - h) === 0) achievements.push('shutout');
+  if (finalScore >= 1000) achievements.push('high-score');
+  const prevBest = Number(GameUI.stats().bestScore) || 0;
+  GameUI.record({ score: finalScore, result: (w ? NAME[w] + ' won ' : 'Draw ') + MODE_NAMES[gm] + (reason === 'on time' ? ' on time' : ''), records, counters, mins: humanWon ? { fewestLines: drawn[h] } : {}, achievements });
+  if (finalScore > prevBest) GameUI.unlock('personal-best');
+  render();
+  Board.sfx(seat === 'two' || humanWon ? 'win' : w ? 'lose' : 'move');
+  const title = !w ? 'Draw' : seat === 'two' ? NAME[w] + ' wins!' : humanWon ? 'You won!' : 'Computer wins';
+  Board.modal(title, over + ' · ' + finalScore + ' pts · ' + MODE_NAMES[gm], [['New game', newGame], ['Close']]);
 }
 function cpu() {
   if (over || human()) return; busy = true; render();
   const g = gen;
-  Board.think(() => pick(+$('#lvl').value), note ? 650 : 950).then(async (m) => {
+  Board.think(() => pick(gm === 'grandmaster' ? 2 : +$('#lvl').value), note ? 650 : 950).then(async (m) => {
     if (g !== gen || m < 0) return;
-    hint = m; render(); await Board.sleep(Board.pace(450));   /* flash the line it is about to draw */
+    hint = m; render(); await Board.sleep(Board.pace(450));
     if (g !== gen) return;
     busy = false; play(m);
   });
@@ -159,21 +285,93 @@ function cpu() {
 function undo() {
   if (busy || !hist.length) return;
   let h;
-  do { h = hist.pop(); ed = h.ed; own = h.own; turn = h.turn; last = h.last; note = h.note; } while (hist.length && mode !== 'two' && !human());
-  over = ''; hint = -1; gen++; busy = false; render(); cpu();
+  do { h = hist.pop(); ed = h.ed; own = h.own; turn = h.turn; last = h.last; note = h.note; PS = h.PS; drawn = h.drawn; } while (hist.length && seat !== 'two' && !human());
+  over = ''; overText = ''; hint = -1; gen += 1; busy = false; render(); cpu();
 }
 function showHint() { if (over || busy || !human()) return; const m = pick(2); if (m < 0) return; hint = m; render(); }
 $('#bd').addEventListener('click', (e) => {
   const g = e.target.closest('.eg'); if (!g || over || busy || !human()) return;
   const i = +g.dataset.e; if (ed[i]) { Board.sfx('error'); return; } play(i);
 });
-$('#new').onclick = newGame; $('#undo').onclick = undo; $('#hint').onclick = showHint; $('#mode').onchange = newGame; $('#size').onchange = newGame;
+$('#new').onclick = newGame; $('#undo').onclick = undo; $('#hint').onclick = showHint; $('#seat').onchange = newGame; $('#size').onchange = newGame;
 document.addEventListener('keydown', (e) => {
   if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.toLowerCase();
   if (k === 'n') newGame(); else if (k === 'u') undo(); else if (k === 't') showHint();
 });
-newGame();
+
+/* ---------------- shared menu contract ---------------- */
+const GameUI = Board.ui({
+  id: 'dots-boxes', title: 'Dots & Boxes', subtitle: 'Five ways to close the grid.', accent: '#22d3ee',
+  modes: MODES, achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Click an empty line to draw it. Dots mark the grid corners.' },
+    { text: 'Complete the fourth side of a box to claim it — and move again.' },
+    { text: 'Drawing the third side of a box hands it over, so take safe lines first.' },
+    { text: 'Most boxes wins. Sprint ends at five boxes; Double Trouble scores double.' },
+  ] },
+  hooks: {
+    applyMode: (next) => { gm = MODES.some((m) => m.id === next) ? next : 'classic'; if (ed) newGame(); },
+    applyCosmetic,
+    onStart: () => { menuPaused = false; clockLast = Date.now(); },
+  },
+});
+window.ApexGameMenuActions = {
+  play: function () { menuPaused = false; clockLast = Date.now(); },
+  pause: function (value) { menuPaused = !!value; clockLast = Date.now(); },
+  resume: function () { menuPaused = false; clockLast = Date.now(); },
+  restart: function () { menuPaused = false; newGame(); }
+};
+
+paintPalette(); newGame();
+
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  const snap = () => ({
+    mode: gm, seat, turn, over: !!over, overText, busy, menuPaused, last, hint,
+    scores: { 1: score(1), 2: score(2) }, points: { 1: PS[1].score, 2: PS[2].score }, drawn: { 1: drawn[1], 2: drawn[2] },
+    lines: ed.filter(Boolean).length, edgeCount: EC, boxes: N * N, size: N, target: CFG[gm].boxTarget,
+    clocks: Object.assign({}, clocks),
+    free: ed.map((v, i) => (v ? -1 : i)).filter((i) => i >= 0),
+  });
+  window.DotsBoxesTest = {
+    state: snap,
+    modes: () => MODES.map((m) => m.id),
+    setMode: (id) => GameUI.setMode(id),
+    getMode: () => GameUI.getMode(),
+    restart: () => { newGame(); return true; },
+    setSeat: (value) => { const s = $('#seat'); if (!Array.from(s.options).some((o) => o.value === value)) return false; s.value = value; newGame(); return true; },
+    setLevel: (n) => { const s = $('#lvl'); s.value = String(Math.max(0, Math.min(2, Number(n) || 0))); return +s.value; },
+    setDifficulty: (d) => Board.setDifficulty(d),
+    level: () => Board.level(),
+    setSize: (n) => { const v = Math.max(3, Math.min(5, Number(n) || 5)); $('#size').value = String(v); newGame(); return N; },
+    setBoard: (o) => {
+      const src = o || {};
+      if (src.size) { N = Math.max(2, Math.min(9, Number(src.size) || 5)); $('#size').value = String(N); }
+      build();
+      ed = Array(EC).fill(0); own = Array(N * N).fill(0);
+      if (Array.isArray(src.edges)) src.edges.slice(0, EC).forEach((v, k) => { ed[k] = Number(v) === 1 || Number(v) === 2 ? Number(v) : 0; });
+      if (Array.isArray(src.own)) src.own.slice(0, N * N).forEach((v, k) => { own[k] = Number(v) === 1 || Number(v) === 2 ? Number(v) : 0; });
+      turn = Number(src.turn) === 2 ? 2 : 1; over = ''; overText = ''; busy = false; last = -1; hint = -1; note = ''; hist = []; gen += 1; render();
+      return snap();
+    },
+    setTurn: (p) => { gen += 1; turn = Number(p) === 2 ? 2 : 1; busy = false; render(); return turn; },
+    play: (i) => { play(Number(i)); return snap(); },
+    finish: (p) => { conclude(Number(p) === 2 ? 2 : 1, 'test'); return snap(); },
+    undo: () => { undo(); return snap(); },
+    setScore: (p, n) => { PS[Number(p) === 2 ? 2 : 1].score = Math.max(0, Number(n) || 0); render(); return PS[Number(p) === 2 ? 2 : 1].score; },
+    setClock: (p, ms) => { clocks[Number(p) === 2 ? 2 : 1] = Math.max(0, Number(ms) || 0); render(); return clocks[Number(p) === 2 ? 2 : 1]; },
+    tick: (ms) => { tickClock(Number(ms) || 0); return snap(); },
+    menuPaused: (value) => { menuPaused = !!value; clockLast = Date.now(); return menuPaused; },
+    start: () => { menuPaused = false; clockLast = Date.now(); },
+    colors: () => ({ lines: { 1: PALETTE.lines[1], 2: PALETTE.lines[2] }, board: Object.assign({}, PALETTE.board), accent: PALETTE.accent, theme: document.body.style.background || 'auto' }),
+    cosmetic: (slot, id) => { applyCosmetic(slot, id); return window.DotsBoxesTest.colors(); },
+    cosmeticList: () => (window.Meta && Meta.getCosmetics ? Meta.getCosmetics('dots-boxes') : []).map((item) => ({ id: item.id, slot: item.slot })),
+    achievements: () => (Save.load('dots-boxes').achievements || []).slice(),
+    stats: () => Save.load('dots-boxes').stats || {},
+    modalOpen: () => { const d = document.getElementById('bk-dlg'); return !!(d && d.open); },
+    closeModal: () => { const d = document.getElementById('bk-dlg'); if (d && d.open) d.close(); },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

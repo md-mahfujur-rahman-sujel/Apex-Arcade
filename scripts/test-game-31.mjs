@@ -1,0 +1,190 @@
+import assert from 'node:assert/strict';
+import { access } from 'node:fs/promises';
+import { chromium } from 'playwright';
+import { preview } from 'vite';
+
+const server = await preview({ preview: { host: '127.0.0.1', port: 0 } });
+const origin = `http://127.0.0.1:${server.httpServer.address().port}${(server.config.base || '/').replace(/\/$/, '')}`;
+const candidates = [process.env.CHROME_BIN, 'C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].filter(Boolean);
+let executablePath;
+for (const candidate of candidates) { try { await access(candidate); executablePath = candidate; break; } catch {} }
+const browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
+const context = await browser.newContext({ viewport: { width: 1200, height: 950 } });
+await context.addInitScript(() => { try { localStorage.clear(); } catch {} });
+const page = await context.newPage();
+const errors = [];
+page.on('pageerror', (e) => errors.push(e.message));
+page.on('console', (m) => { if (m.type() === 'error' && !m.location().url.includes('favicon')) errors.push(m.text() + ' @ ' + m.location().url); });
+page.on('response', (r) => { if (r.status() >= 400 && !r.url().includes('favicon')) errors.push(r.status() + ' ' + r.url()); });
+await page.goto(`${origin}/assets/games/31-backgammon/index.html?test=1`);
+await page.waitForFunction(() => typeof BackgammonTest !== 'undefined' && !!document.querySelector('.apex-menu-root'));
+
+try {
+  const data = await page.evaluate(() => {
+    const T = BackgammonTest;
+    const save = () => Save.load('backgammon');
+    const stats = () => save().stats || {};
+    const ach = () => save().achievements || [];
+    const zero = Array(24).fill(0);
+    const out = {};
+    out.modes = T.modes();
+    out.menuActions = Array.from(document.querySelectorAll('.apex-menu-root [data-menu-action]')).map((n) => n.getAttribute('data-menu-action'));
+    out.locked = T.setMode('grandmaster');
+    out.modeAfterLock = T.getMode();
+
+    T.setSeat('1');
+    T.setMode('classic');
+    T.restart();
+    out.start = T.state();
+
+    /* Forced-larger rule: a bar entry of 2 is blocked, so only the 5 can enter. */
+    const blocked = zero.slice(); blocked[22] = -2; blocked[17] = -2;
+    T.setBoard({ pts: blocked, bar: [0, 1, 0] }); T.setTurn(1);
+    out.forced = T.setDice(2, 5);
+
+    /* A blot hit scores 10 for the move plus 60 for the hit, and undo restores the score. */
+    const one = zero.slice(); one[5] = 1; one[3] = -1;
+    T.setBoard({ pts: one, bar: [0, 0, 0] }); T.setTurn(1);
+    out.hit = T.setDice(2, 2);
+    out.hitMove = T.move(5, 3);
+    out.hitAch = ach().slice();
+    out.hitUndo = T.undo();
+    out.hitAgain = T.move(5, 3);
+
+    /* Classic: the final checker bears off into a gammon (double stake). */
+    T.setMode('classic');
+    const cp = zero.slice(); cp[0] = 1; cp[23] = -15;
+    T.setBoard({ pts: cp, off: [0, 14, 0] });
+    T.setTurn(1); T.setScore(1, 0);
+    out.classicRoll = T.setDice(1, 2);
+    out.classic = T.move(0, 'off');
+    out.classicBest = stats().bestClassicScore;
+    out.classicWins = stats().classicWins;
+    out.classicModal = T.modalOpen();
+    T.closeModal();
+
+    /* Sprint: bear off 10 checkers; no gammon stake, 1.2x score. */
+    T.setMode('sprint');
+    const sp = zero.slice(); sp[0] = 1; sp[23] = -15;
+    T.setBoard({ pts: sp, off: [0, 9, 0] });
+    T.setTurn(1);
+    out.sprintRoll = T.setDice(1, 2);
+    out.sprint = T.move(0, 'off');
+    out.sprintBest = stats().bestSprintScore;
+    T.closeModal();
+
+    /* Blitz: flagging loses on time with no win bonus. */
+    T.setMode('blitz');
+    T.setScore(1, 200);
+    T.setTurn(2); T.setClock(2, 100);
+    out.blitz = T.tick(1000);
+    out.blitzBest = stats().bestBlitzScore;
+    T.closeModal();
+
+    /* Gammon Rush: every win stakes at least double. */
+    T.setMode('gammon');
+    const gp = zero.slice(); gp[0] = 1; gp[23] = -15;
+    T.setBoard({ pts: gp, off: [0, 14, 0] });
+    T.setTurn(1); T.setDice(1, 2);
+    out.gammon = T.move(0, 'off');
+    out.gammonBest = stats().bestGammonScore;
+    T.closeModal();
+
+    /* Classic win unlocks Grandmaster, which pays 1.5x. */
+    out.gmUnlock = T.setMode('grandmaster');
+    const mp = zero.slice(); mp[0] = 1; mp[23] = -14;
+    T.setBoard({ pts: mp, off: [0, 14, 1] });
+    T.setTurn(1); T.setDice(1, 2);
+    out.grandmaster = T.move(0, 'off');
+    out.grandmasterBest = stats().bestGrandmasterScore;
+    T.closeModal();
+
+    out.defaults = T.colors();
+    out.skin = T.cosmetic('skin', 'backgammon:checker-violet');
+    out.palette = T.cosmetic('palette', 'backgammon:board-slate');
+    out.accent = T.cosmetic('effect', 'backgammon:accent-lime');
+    out.theme = T.cosmetic('theme', 'backgammon:theme-sea');
+    out.cosmetics = T.cosmeticList();
+    out.stats = stats();
+    out.ach = ach();
+    return out;
+  });
+
+  assert.deepEqual(data.modes, ['classic', 'blitz', 'sprint', 'gammon', 'grandmaster']);
+  assert.equal(data.locked, false, 'Grandmaster stays locked before a Classic win');
+  assert.equal(data.modeAfterLock, 'classic');
+  assert.deepEqual(data.menuActions, ['play', 'modes', 'customize', 'options', 'more', 'exit']);
+  assert.equal(data.start.seat, 1);
+  assert.ok([1, 2].includes(data.start.turn), 'a starting side is chosen');
+
+  assert.deepEqual(data.forced.legal, [{ f: -1, t: 19, d: 5 }], 'only the larger die can be played');
+
+  assert.equal(data.hitMove.score[1], 70, '10 to move plus 60 for the hit');
+  assert.equal(data.hitMove.pts[3], 1, 'the cyan checker lands on the blot');
+  assert.equal(data.hitMove.bar[2], 1, 'the amber blot is sent to the bar');
+  for (const id of ['first-roll', 'first-hit']) assert.ok(data.hitAch.includes(id), id + ' unlocked');
+  assert.equal(data.hitUndo.score[1], 0, 'undo restores the score snapshot');
+  assert.equal(data.hitUndo.pts[5], 1, 'undo restores the checker');
+  assert.equal(data.hitAgain.score[1], 70, 'the hit can be replayed after undo');
+
+  assert.equal(data.classic.over, true);
+  assert.equal(data.classicModal, true, 'the win opens the result dialog');
+  assert.equal(data.classicBest, 2110, '110 earned + 2,000 gammon bonus');
+  assert.equal(data.classicWins, 1);
+
+  assert.equal(data.sprint.over, true);
+  assert.equal(data.sprint.off[1], 10, 'Sprint ends at 10 checkers off');
+  assert.equal(data.sprintBest, 1452, '(110 + 1,100) x 1.2, no gammon stake');
+
+  assert.equal(data.blitz.over, true);
+  assert.equal(data.blitzBest, 220, '200 x 1.1 with no time-out bonus');
+
+  assert.equal(data.gammon.over, true);
+  assert.equal(data.gammonBest, 3263, '(110 + 2,400) x 1.3 with a forced gammon stake');
+
+  assert.equal(data.gmUnlock, true, 'a Classic win unlocks Grandmaster');
+  assert.equal(data.grandmaster.over, true);
+  assert.equal(data.grandmasterBest, 2415, '(110 + 1,500) x 1.5 with a single stake');
+
+  assert.equal(data.defaults.checkers[1].fill, '#06b6d4');
+  assert.equal(data.skin.checkers[1].fill, '#a78bfa');
+  assert.equal(data.palette.board.bar, '#1e293b');
+  assert.equal(data.accent.accent, '#a3e635');
+  assert.match(data.theme.theme, /rgb\(4, 21, 20\)/);
+  assert.equal(data.cosmetics.length, 16, 'Backgammon ships 16 cosmetics');
+  for (const slot of ['skin', 'palette', 'effect', 'theme']) assert.ok(data.cosmetics.some((i) => i.slot === slot), slot + ' registered');
+  for (const id of ['backgammon:checker-violet', 'backgammon:board-slate', 'backgammon:accent-lime', 'backgammon:theme-sea']) assert.ok(data.cosmetics.some((i) => i.id === id), id);
+
+  assert.equal(data.stats.plays, 5, 'Classic, Sprint, Blitz, Gammon Rush and Grandmaster recorded');
+  assert.equal(data.stats.wins, 5);
+  assert.equal(data.stats.bestScore, 3263);
+  assert.equal(data.stats.bestClassicScore, 2110);
+  assert.equal(data.stats.bestBlitzScore, 220);
+  assert.equal(data.stats.bestSprintScore, 1452);
+  assert.equal(data.stats.bestGammonScore, 3263);
+  assert.equal(data.stats.bestGrandmasterScore, 2415);
+  assert.equal(data.stats.bestStake, 2, 'the Classic gammon sets the best stake');
+  assert.equal(data.stats.checkersOff, 55, '15 Classic + 10 Sprint + 15 Gammon Rush + 15 Grandmaster');
+  assert.equal(data.stats.blotsHit, 0, 'the abandoned hit game never records its hits');
+  assert.equal(data.stats.rollsPlayed, 4, 'one roll in each completed game except the time-out');
+  assert.equal(data.stats.fewestRolls, 1);
+  for (const id of ['first-roll', 'first-hit', 'first-off', 'classic-clear', 'blitz-clear', 'sprint-clear', 'gammon-clear', 'grandmaster-clear', 'gammon', 'flawless', 'personal-best']) {
+    assert.ok(data.ach.includes(id), id + ' unlocked');
+  }
+  assert.ok(!data.ach.includes('backgammon'), 'no backgammon was played');
+
+  await page.click('.apex-menu-root [data-menu-action="play"]');
+  await page.waitForFunction(() => document.querySelector('.apex-menu-root').hidden === true);
+  const chrome = await page.evaluate(() => ({
+    shell: Boolean(document.querySelector('.bar, .help')),
+    menuToolbar: (() => { const el = document.querySelector('.apex-game-menu'); return el ? getComputedStyle(el).display : 'none'; })(),
+  }));
+  assert.equal(chrome.shell, false, 'no button bar or help box covers the board');
+  assert.equal(chrome.menuToolbar, 'none', 'the control toolbar is hidden during play');
+  assert.equal(errors.length, 0, 'no browser errors: ' + errors.join(' | '));
+  console.log('SMOKE_OK');
+} finally {
+  await context.close();
+  await browser.close();
+  await new Promise((resolve) => server.httpServer.close(resolve));
+}

@@ -21,6 +21,8 @@
   .die.v { opacity: .25; text-decoration: line-through; }
   .stat { color: var(--muted); line-height: 1.8; }
   .note { margin-top: 6px; color: var(--amber); font-weight: 600; font-size: 13px; }
+  .clock { font: 700 15px ui-monospace, Consolas, monospace; color: #fde047; margin-bottom: 6px; }
+  .clock.low { color: #fb7185; }
   .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
   .dot.c { background: #06b6d4; } .dot.a { background: #f59e0b; }
 </style>
@@ -38,7 +40,7 @@
 <script>
 const ui = Board.shell({
   id: 'backgammon', cpu: true, title: 'Backgammon', subtitle: 'Roll, race your checkers home and hit your rival\'s blots',
-  rules: 'Cyan moves anticlockwise from the top-right, round the top and bottom-left, into the bottom-right home board, and bears off there. Amber moves the other way into the top-right home board. Roll two dice and move checkers by those numbers (doubles give four moves). You may land on an empty point, your own point, or a point with a single rival checker (a blot) — which is hit and sent to the bar. A point with two or more rival checkers is blocked. Checkers on the bar must re-enter before anything else moves. Once all 15 of your checkers are in your home board you may bear them off. You must use as many dice as you can; if only one can be played, it must be the larger. First to bear off all 15 wins; a gammon (rival has borne off none) counts double and a backgammon triple.',
+  rules: 'Cyan moves anticlockwise from the top-right, round the top and bottom-left, into the bottom-right home board, and bears off there. Amber moves the other way into the top-right home board. Roll two dice and move checkers by those numbers (doubles give four moves). You may land on an empty point, your own point, or a point with a single rival checker (a blot) — which is hit and sent to the bar. A point with two or more rival checkers is blocked. Checkers on the bar must re-enter before anything else moves. Once all 15 of your checkers are in your home board you may bear them off. You must use as many dice as you can; if only one can be played, it must be the larger. First to bear off all 15 wins; a gammon (rival has borne off none) counts double and a backgammon triple. Blitz adds a two-minute clock, Sprint ends when either side bears off 10 checkers, Gammon Rush always stakes at least a gammon, and Grandmaster is a 1.5× match against the deepest search.',
   controls: [['R / Space', 'Roll the dice'], ['Click a checker, then a point', 'Move it (glowing points are legal)'], ['U', 'Undo your moves this turn'], ['T', 'Show a hint'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
 });
 ui.main.innerHTML = `
@@ -52,15 +54,84 @@ ui.main.innerHTML = `
     </div>
     <div style="display:grid;gap:12px">
       <div class="bk-row">
-        <label>Play <select class="bk-select" id="mode"><option value="1">You (Cyan) vs computer</option><option value="2">You (Amber) vs computer</option><option value="two">Two players</option></select></label>
+        <label>Play <select class="bk-select" id="seat"><option value="1">You (Cyan) vs computer</option><option value="2">You (Amber) vs computer</option><option value="two">Two players</option></select></label>
         <label>Level <select class="bk-select" id="lvl"><option value="0">Easy</option><option value="1" selected>Medium</option><option value="2">Hard</option></select></label>
       </div>
       <div class="stat" id="cp"></div>
+      <div id="md" style="color:var(--muted);font-size:13px;line-height:1.6"></div>
     </div>
   </div>
 </div>`;
 const $ = (s) => ui.main.querySelector(s);
 const NAME = { 1: 'Cyan', 2: 'Amber' }, OFF = 99;
+
+/* ---------------- modes, records, cosmetics ---------------- */
+const MODE_NAMES = { classic: 'Classic', blitz: 'Blitz', sprint: 'Sprint', gammon: 'Gammon Rush', grandmaster: 'Grandmaster' };
+const MODE_KEY = { classic: 'Classic', blitz: 'Blitz', sprint: 'Sprint', gammon: 'Gammon', grandmaster: 'Grandmaster' };
+const CFG = {
+  classic: { clock: 0, offTarget: 15, gammonRush: false, mult: 1, bonus: 1000 },
+  blitz: { clock: 120000, offTarget: 15, gammonRush: false, mult: 1.1, bonus: 900 },
+  sprint: { clock: 0, offTarget: 10, gammonRush: false, mult: 1.2, bonus: 1100 },
+  gammon: { clock: 0, offTarget: 15, gammonRush: true, mult: 1.3, bonus: 1200 },
+  grandmaster: { clock: 0, offTarget: 15, gammonRush: false, mult: 1.5, bonus: 1500 },
+};
+const MODES = [
+  { id: 'classic', name: 'Classic', blurb: 'Standard rules. Bear off all 15 checkers; gammons stake double and backgammons triple.' },
+  { id: 'blitz', name: 'Blitz', blurb: 'Two minutes each. Run out of time and you lose. 1.1\u00d7 score.' },
+  { id: 'sprint', name: 'Sprint', blurb: 'A short race: bear off 10 checkers to win. 1.2\u00d7 score.' },
+  { id: 'gammon', name: 'Gammon Rush', blurb: 'Every win stakes at least a gammon (double). 1.3\u00d7 score.' },
+  { id: 'grandmaster', name: 'Grandmaster', blurb: 'The deepest search at 1.5\u00d7 score.', requires: { stat: 'classicWins', gte: 1 }, lockedHint: 'Win a Classic game to unlock' },
+];
+const ACHIEVEMENTS = [
+  { id: 'first-roll', name: 'First Roll', desc: 'Roll the dice.', rarity: 'common' },
+  { id: 'first-hit', name: 'Blot Hunter', desc: 'Hit a rival blot to the bar.', rarity: 'common' },
+  { id: 'first-off', name: 'Bearing Off', desc: 'Bear off a checker.', rarity: 'common' },
+  { id: 'gammon', name: 'Gammon', desc: 'Win a game without the rival bearing off.', rarity: 'rare' },
+  { id: 'backgammon', name: 'Backgammon', desc: 'Win a triple-stake backgammon.', rarity: 'epic' },
+  { id: 'classic-clear', name: 'Board Veteran', desc: 'Win a Classic game.', rarity: 'common' },
+  { id: 'blitz-clear', name: 'Beat The Clock', desc: 'Win a Blitz game.', rarity: 'rare' },
+  { id: 'sprint-clear', name: 'Fast Finish', desc: 'Win a Sprint game.', rarity: 'rare' },
+  { id: 'gammon-clear', name: 'Gammon Champion', desc: 'Win a Gammon Rush game.', rarity: 'epic' },
+  { id: 'grandmaster-clear', name: 'Grandmaster', desc: 'Win a Grandmaster game.', rarity: 'legendary' },
+  { id: 'flawless', name: 'Untouched', desc: 'Win without a blot being hit.', rarity: 'epic' },
+  { id: 'personal-best', name: 'Personal Best', desc: 'Set a new best score.', rarity: 'rare' },
+];
+const CHECKER_SETS = {
+  'backgammon:checker-cyan': { 1: { fill: '#06b6d4', edge: '#0e7490' }, 2: { fill: '#f59e0b', edge: '#b45309' } },
+  'backgammon:checker-ruby': { 1: { fill: '#f43f5e', edge: '#9f1239' }, 2: { fill: '#71717a', edge: '#18181b' } },
+  'backgammon:checker-jade': { 1: { fill: '#34d399', edge: '#047857' }, 2: { fill: '#fde047', edge: '#a16207' } },
+  'backgammon:checker-violet': { 1: { fill: '#a78bfa', edge: '#6d28d9' }, 2: { fill: '#fb7185', edge: '#be123c' } },
+  'backgammon:checker-mono': { 1: { fill: '#f8fafc', edge: '#94a3b8' }, 2: { fill: '#475569', edge: '#0f172a' } },
+};
+const BOARD_SETS = {
+  'backgammon:board-classic': { bg: '#0c1226', frame: '#10182e', edge: '#26335c', bar: '#1b2340', triA: '#6b4a2e', triB: '#26407a' },
+  'backgammon:board-walnut': { bg: '#0d0906', frame: '#1c120a', edge: '#4a2f1d', bar: '#2b1a0f', triA: '#8a5a2b', triB: '#3b2414' },
+  'backgammon:board-slate': { bg: '#0b1220', frame: '#141d2f', edge: '#334155', bar: '#1e293b', triA: '#64748b', triB: '#1e293b' },
+  'backgammon:board-forest': { bg: '#06120c', frame: '#0d1f15', edge: '#1f5138', bar: '#123024', triA: '#2f6b46', triB: '#10241a' },
+};
+const ACCENTS = { 'backgammon:accent-cyan': '#22d3ee', 'backgammon:accent-amber': '#fbbf24', 'backgammon:accent-rose': '#fb7185', 'backgammon:accent-lime': '#a3e635' };
+const THEMES = {
+  'backgammon:theme-night': '',
+  'backgammon:theme-dusk': 'radial-gradient(1000px 500px at 10% -10%, #4c1d3d, transparent 60%), radial-gradient(800px 500px at 100% 0, #7c2d12, transparent 55%), #0b0705',
+  'backgammon:theme-sea': 'radial-gradient(1000px 500px at 12% -8%, #164e63, transparent 60%), radial-gradient(800px 500px at 100% 0, #14532d, transparent 55%), #041514',
+};
+const PALETTE = {
+  checkers: Object.assign({}, CHECKER_SETS['backgammon:checker-cyan']),
+  board: Object.assign({}, BOARD_SETS['backgammon:board-classic']),
+  accent: ACCENTS['backgammon:accent-cyan'],
+};
+function paintPalette() {
+  const el = $('#bd'); if (!el) return;
+  el.style.background = PALETTE.board.bg;
+  el.style.boxShadow = '0 20px 50px -20px #000, 0 0 0 6px ' + PALETTE.board.edge;
+}
+function applyCosmetic(slot, id) {
+  if (slot === 'skin' && CHECKER_SETS[id]) PALETTE.checkers = Object.assign({}, CHECKER_SETS[id]);
+  else if (slot === 'palette' && BOARD_SETS[id]) PALETTE.board = Object.assign({}, BOARD_SETS[id]);
+  else if (slot === 'effect' && ACCENTS[id]) PALETTE.accent = ACCENTS[id];
+  else if (slot === 'theme' && THEMES[id] !== undefined) document.body.style.background = THEMES[id];
+  paintPalette(); if (st) render();
+}
 
 /* ---- rules ---- */
 const initSt = () => { const pts = Array(24).fill(0); pts[23] = 2; pts[12] = 5; pts[7] = 3; pts[5] = 5; pts[0] = -2; pts[11] = -5; pts[16] = -3; pts[18] = -5; return { pts, bar: [0, 0, 0], off: [0, 0, 0] }; };
@@ -124,7 +195,8 @@ function plans(s, p, rem) {
 
 /* ---- computer evaluation ---- */
 function evalSt(s, p) {
-  const o = 3 - p; if (s.off[p] === 15) return 1e6; if (s.off[o] === 15) return -1e6;
+  const o = 3 - p, target = CFG[gm].offTarget;
+  if (s.off[p] >= target) return 1e6; if (s.off[o] >= target) return -1e6;
   let v = (pip(s, o) - pip(s, p)) + s.bar[o] * 28 - s.bar[p] * 30 + (s.off[p] - s.off[o]) * 14, run = 0, best = 0;
   const dirO = o === 1 ? -1 : 1;
   for (let i = 0; i < 24; i++) {
@@ -141,17 +213,41 @@ function evalSt(s, p) {
 }
 
 /* ---- game state ---- */
-let st, turn, dl = [], phase, mode, busy, sel, turnMoves, turnSt, turnDl, hintM, note, lastMoves, gen = 0;
-const human = () => mode === 'two' || turn === mode;
+let st, turn, seat, gm = 'classic', dl = [], phase, busy, sel, turnMoves, turnSt, turnDl, turnPS, hintM, note, lastMoves, overText = '', gen = 0;
+let PS = { 1: { score: 0, moves: 0, hits: 0, lost: 0 }, 2: { score: 0, moves: 0, hits: 0, lost: 0 } };
+let rolls = 0, clocks = { 1: 0, 2: 0 }, clockLast = 0, clockTimer = null, menuPaused = true;
+const humanSeat = () => (seat === 'two' ? 1 : seat);
+const human = () => seat === 'two' || turn === seat;
 const rem = () => dl.filter((d) => !d.used).map((d) => d.v);
 const validMoves = () => (phase === 'move' ? nextMoves(st, turn, rem()) : []);
+const addScore = (p, n) => { PS[p].score += Math.max(0, Math.round(n)); };
+const clonePS = (src) => ({ 1: Object.assign({}, src[1]), 2: Object.assign({}, src[2]) });
+const fmt = (ms) => { const t = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
+
 function newGame() {
-  gen++; mode = $('#mode').value === 'two' ? 'two' : +$('#mode').value; st = initSt(); turn = 1 + Board.rand(2); dl = []; phase = 'roll'; busy = false; sel = null; turnMoves = []; hintM = null; lastMoves = []; note = NAME[turn] + ' starts.';
-  render(); cpuStart();
+  gen++; if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  seat = $('#seat').value === 'two' ? 'two' : +$('#seat').value;
+  st = initSt(); turn = 1 + Board.rand(2); dl = []; phase = 'roll'; busy = false; sel = null; turnMoves = []; turnSt = null; turnDl = []; turnPS = null; hintM = null; lastMoves = []; overText = ''; note = NAME[turn] + ' starts.';
+  PS = { 1: { score: 0, moves: 0, hits: 0, lost: 0 }, 2: { score: 0, moves: 0, hits: 0, lost: 0 } };
+  rolls = 0; clocks = { 1: CFG[gm].clock, 2: CFG[gm].clock }; clockLast = Date.now();
+  paintPalette(); render();
+  if (CFG[gm].clock) clockTimer = setInterval(tickClock, 250);
+  cpuStart();
+}
+function tickClock(step) {
+  if (phase === 'over') return;
+  if (step == null) {
+    const now = Date.now(), dt = now - clockLast; clockLast = now;
+    if (menuPaused || Board.paused()) return;
+    clocks[turn] = Math.max(0, clocks[turn] - dt);
+  } else clocks[turn] = Math.max(0, clocks[turn] - step);
+  if (clocks[turn] <= 0) { finishGame(3 - turn, 'on time'); return; }
+  render();
 }
 function roll() {
-  if (phase !== 'roll') return; const g = gen, a = 1 + Board.rand(6), b = 1 + Board.rand(6); Board.sfx('dice');
-  dl = (a === b ? [a, a, a, a] : [a, b]).map((v) => ({ v, used: false })); turnSt = st; turnMoves = []; hintM = null; sel = null; lastMoves = []; note = '';
+  if (phase !== 'roll') return; const g = gen, a = 1 + Board.rand(6), b = 1 + Board.rand(6); Board.sfx('dice'); rolls += 1;
+  if (human()) GameUI.unlock('first-roll');
+  dl = (a === b ? [a, a, a, a] : [a, b]).map((v) => ({ v, used: false })); turnSt = st; turnPS = clonePS(PS); turnMoves = []; hintM = null; sel = null; lastMoves = []; note = '';
   const M = maxUse(st, turn, rem());
   if (!M) { note = `${NAME[turn]} rolled ${a}-${b} and has no legal move.`; phase = 'stuck'; render(); Board.after(1500, () => { if (g === gen) endTurn(); }); return; }
   if (M === 1 && a !== b) { const mx = Math.max(a, b); if (singles(st, turn, mx).length) { const j = dl.findIndex((d) => d.v !== mx); dl[j].used = true; dl[j].void = true; note = 'Only one die can be played — the larger.'; } }
@@ -161,28 +257,62 @@ function autoSel() { if (!human()) return; const s = uniq(validMoves().map((m) =
 function doMove(m) {
   const p = turn, hit = m.t !== OFF && oppN(st, m.t, p) === 1, g = gen;
   turnMoves.push(m); st = apply(st, p, m); dl[dl.findIndex((d) => !d.used && d.v === m.d)].used = true; lastMoves.push(m); sel = null; hintM = null;
+  addScore(p, 10); PS[p].moves += 1;
+  if (hit) { addScore(p, 60); PS[p].hits += 1; PS[3 - p].lost += 1; if (human()) GameUI.unlock('first-hit'); }
+  if (m.t === OFF) { addScore(p, 100); if (human()) GameUI.unlock('first-off'); }
   Board.sfx(hit ? 'capture' : m.t === OFF ? 'ladder' : 'move');
-  if (st.off[p] === 15) { phase = 'over'; render(); gameOver(p); return; }
+  if (st.off[p] >= CFG[gm].offTarget) { finishGame(p, 'bear'); return; }
   if (!nextMoves(st, p, rem()).length) { phase = 'done'; render(); Board.after(human() ? 550 : Board.pace(900), () => { if (g === gen) endTurn(); }); return; }
   if (human()) autoSel(); render();
 }
 function endTurn() { turn = 3 - turn; phase = 'roll'; sel = null; turnMoves = []; hintM = null; if (!/no legal/.test(note)) note = ''; render(); cpuStart(); }
-function gameOver(p) {
-  const lo = 3 - p; let mult = 1;
-  if (!st.off[lo]) { mult = 2; const h = p === 1 ? [0, 5] : [18, 23]; let bk = st.bar[lo] > 0; for (let i = h[0]; i <= h[1]; i++) if (own(st, i, lo)) bk = true; if (bk) mult = 3; }
-  const kind = ['', 'a single game', 'a gammon (double)', 'a backgammon (triple)'][mult];
-  const msg = `${NAME[p]} wins ${kind} — ${mult} point${mult > 1 ? 's' : ''}`; $('#st').innerHTML = msg;
-  Board.sfx(mode === 'two' || p === mode ? 'win' : 'lose');
-  Board.after(600, () => Board.modal(mode === 'two' ? NAME[p] + ' wins!' : p === mode ? 'You won!' : 'Computer wins', msg, [['New game', newGame], ['Close']]));
+function finishGame(p, reason) {
+  if (phase === 'over') return;
+  phase = 'over'; busy = false; gen += 1; if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  const cfg = CFG[gm], lo = 3 - p, h = humanSeat();
+  let stake = 1;
+  if (reason !== 'on time' && gm !== 'sprint' && !st.off[lo]) {
+    stake = 2;
+    const home = p === 1 ? [0, 5] : [18, 23];
+    let bk = st.bar[lo] > 0;
+    for (let i = home[0]; i <= home[1]; i++) if (own(st, i, lo)) bk = true;
+    if (bk) stake = 3;
+  }
+  if (cfg.gammonRush && reason !== 'on time') stake = Math.max(stake, 2);
+  const humanWon = p === h;
+  const finalScore = Math.round((PS[h].score + (humanWon && reason !== 'on time' ? cfg.bonus * stake : 0)) * cfg.mult);
+  const records = {}; records['best' + MODE_KEY[gm] + 'Score'] = finalScore;
+  if (stake > 1) records.bestStake = stake;
+  const counters = { checkersOff: st.off[h], blotsHit: PS[h].hits, rollsPlayed: rolls };
+  if (humanWon) { counters.wins = 1; counters[gm + 'Wins'] = 1; }
+  const achievements = [];
+  if (humanWon) achievements.push(gm + '-clear');
+  if (humanWon && reason !== 'on time' && stake === 2) achievements.push('gammon');
+  if (humanWon && reason !== 'on time' && stake === 3) achievements.push('backgammon');
+  if (humanWon && PS[h].lost === 0) achievements.push('flawless');
+  const prevBest = Number(GameUI.stats().bestScore) || 0;
+  const label = NAME[p] + ' won' + (reason === 'on time' ? ' on time' : '');
+  GameUI.record({ score: finalScore, result: label + ' ' + MODE_NAMES[gm], records, counters, mins: humanWon ? { fewestRolls: rolls } : {}, achievements });
+  if (finalScore > prevBest) GameUI.unlock('personal-best');
+  const kind = stake === 3 ? 'backgammon (triple)' : stake === 2 ? 'gammon (double)' : 'single game';
+  const msg = `${NAME[p]} wins ${reason === 'on time' ? 'on time' : kind} — ${stake} point${stake > 1 ? 's' : ''} · ${finalScore} pts`;
+  overText = msg; render();
+  Board.sfx(seat === 'two' || humanWon ? 'win' : 'lose');
+  Board.modal(seat === 'two' ? NAME[p] + ' wins!' : humanWon ? 'You won!' : 'Computer wins', msg + ' · ' + MODE_NAMES[gm], [['New game', newGame], ['Close']]);
 }
 
 /* ---- computer turn ---- */
 function cpuStart() {
   if (phase !== 'roll' || human()) return; busy = true; render(); const g = gen;
-  Board.after(Board.pace(1100), () => { if (g !== gen || Board.paused()) return; busy = false; roll(); if (phase === 'move') cpuPlay(g); });
+  const go = () => {
+    if (g !== gen || phase !== 'roll' || human()) return;
+    if (menuPaused || Board.paused()) { Board.after(250, go); return; }
+    busy = false; roll(); if (phase === 'move') cpuPlay(g);
+  };
+  Board.after(Board.pace(1100), go);
 }
 function choose() {
-  const p = turn, L = +$('#lvl').value, ps = plans(st, p, rem());
+  const p = turn, L = gm === 'grandmaster' ? 2 : +$('#lvl').value, ps = plans(st, p, rem());
   if (!ps.length) return { moves: [] };
   const noise = [45, 8, 0][L]; ps.forEach((x) => (x.v = evalSt(x.st, p) + Math.random() * noise)); ps.sort((a, b) => b.v - a.v);
   if (L < 2) return ps[0];
@@ -201,11 +331,18 @@ function choose() {
 function cpuPlay(g) {
   busy = true; render();
   Board.think(() => choose(), 900).then((pl) => {
-    if (g !== gen) return; busy = false; let k = 0;
-    (function step() { if (g !== gen || Board.paused() || phase !== 'move' || k >= pl.moves.length) return; doMove(pl.moves[k++]); if (phase === 'move') Board.after(Board.pace(950), step); })();
+    if (g !== gen) return;
+    let k = 0;
+    const step = () => {
+      if (g !== gen || phase !== 'move' || k >= pl.moves.length) { busy = false; render(); return; }
+      if (menuPaused || Board.paused()) { Board.after(250, step); return; }
+      doMove(pl.moves[k++]);
+      if (phase === 'move') Board.after(Board.pace(950), step); else busy = false;
+    };
+    step();
   });
 }
-function undo() { if (phase !== 'move' || !human() || !turnMoves.length) return; st = turnSt; dl = turnDl.map((d) => ({ ...d })); turnMoves = []; lastMoves = []; hintM = null; autoSel(); render(); }
+function undo() { if (phase !== 'move' || !human() || !turnMoves.length) return; st = turnSt; PS = clonePS(turnPS); dl = turnDl.map((d) => ({ ...d })); turnMoves = []; lastMoves = []; hintM = null; autoSel(); render(); }
 function showHint() {
   if (phase !== 'move' || !human()) return; const ps = plans(st, turn, rem()); if (!ps.length) return;
   ps.forEach((x) => (x.v = evalSt(x.st, turn))); ps.sort((a, b) => b.v - a.v); const m = ps[0].moves[0]; if (!m) return;
@@ -213,18 +350,22 @@ function showHint() {
 }
 
 /* ---- drawing ---- */
-const PW = 64, BARW = 56, X0 = 20, TOP = 24, BOT = 616, TH = 250, R = 27, TRX = X0 + 12 * PW + BARW + 14, TRW = 70, VW = TRX + TRW + 20, VH = 640, CC = { 1: '#06b6d4', 2: '#f59e0b' };
+const PW = 64, BARW = 56, X0 = 20, TOP = 24, BOT = 616, TH = 250, R = 27, TRX = X0 + 12 * PW + BARW + 14, TRW = 70, VW = TRX + TRW + 20, VH = 640;
 const colX = (c) => X0 + c * PW + (c >= 6 ? BARW : 0);
 const ptPos = (i) => (i >= 12 ? { col: i - 12, top: true } : { col: 11 - i, top: false });
 const slot = (i, k, n) => { const { col, top } = ptPos(i), sp = n <= 5 ? 2 * R : (TH - 2 * R - 4) / (n - 1), x = colX(col) + PW / 2; return { x, y: top ? TOP + R + k * sp : BOT - R - k * sp }; };
-function chk(x, y, p, extra) { return `<circle cx="${x}" cy="${y}" r="${R - 2}" fill="${CC[p]}" stroke="${p === 1 ? '#0e7490' : '#b45309'}" stroke-width="3"/><circle cx="${x}" cy="${y}" r="${R - 11}" fill="none" stroke="rgba(0,0,0,.25)" stroke-width="2"/>${extra || ''}`; }
+function chk(x, y, p, extra) {
+  const c = PALETTE.checkers[p];
+  return `<circle cx="${x}" cy="${y}" r="${R - 2}" fill="${c.fill}" stroke="${c.edge}" stroke-width="3"/><circle cx="${x}" cy="${y}" r="${R - 11}" fill="none" stroke="rgba(0,0,0,.25)" stroke-width="2"/>${extra || ''}`;
+}
 function render() {
   const can = phase === 'move' && human() && !busy, vm = can ? validMoves() : [], srcs = new Set(vm.map((m) => m.f)), dests = new Set(sel !== null ? vm.filter((m) => m.f === sel).map((m) => m.t) : []);
-  let s = `<svg viewBox="0 0 ${VW} ${VH}" role="img" aria-label="Backgammon board"><rect width="${VW}" height="${VH}" fill="#0c1226"/><rect x="${X0 - 8}" y="${TOP - 10}" width="${12 * PW + BARW + 16}" height="${BOT - TOP + 20}" rx="10" fill="#10182e" stroke="#26335c" stroke-width="3"/><rect x="${X0 + 6 * PW}" y="${TOP - 10}" width="${BARW}" height="${BOT - TOP + 20}" fill="#1b2340"/>`;
+  const P = PALETTE.board, A = PALETTE.accent;
+  let s = `<svg viewBox="0 0 ${VW} ${VH}" role="img" aria-label="Backgammon board"><rect width="${VW}" height="${VH}" fill="${P.bg}"/><rect x="${X0 - 8}" y="${TOP - 10}" width="${12 * PW + BARW + 16}" height="${BOT - TOP + 20}" rx="10" fill="${P.frame}" stroke="${P.edge}" stroke-width="3"/><rect x="${X0 + 6 * PW}" y="${TOP - 10}" width="${BARW}" height="${BOT - TOP + 20}" fill="${P.bar}"/>`;
   for (let i = 0; i < 24; i++) {
     const { col, top } = ptPos(i), x = colX(col), pts = top ? `${x},${TOP} ${x + PW},${TOP} ${x + PW / 2},${TOP + TH}` : `${x},${BOT} ${x + PW},${BOT} ${x + PW / 2},${BOT - TH}`;
-    s += `<polygon points="${pts}" fill="${col % 2 ? '#6b4a2e' : '#26407a'}"/>`;
-    if (dests.has(i)) s += `<polygon points="${pts}" fill="rgba(6,182,212,.35)" stroke="#67e8f9" stroke-width="3" class="pulse"/>`;
+    s += `<polygon points="${pts}" fill="${col % 2 ? P.triA : P.triB}"/>`;
+    if (dests.has(i)) s += `<polygon points="${pts}" fill="${A}" fill-opacity=".35" stroke="${A}" stroke-width="3" class="pulse"/>`;
     if (hintM && hintM.t === i) s += `<polygon points="${pts}" fill="none" stroke="#fff" stroke-width="3" stroke-dasharray="8 6"/>`;
   }
   for (let i = 0; i < 24; i++) {
@@ -236,24 +377,28 @@ function render() {
   const bx = X0 + 6 * PW + BARW / 2;
   for (let p = 1; p <= 2; p++) for (let k = 0; k < st.bar[p]; k++) { const y = p === 1 ? 372 + k * 40 : 268 - k * 40; s += chk(bx, y, p); }
   if (can && srcs.has(-1)) s += `<circle cx="${bx}" cy="${turn === 1 ? 372 : 268}" r="${R + 3}" fill="none" stroke="${sel === -1 ? '#fff' : 'rgba(255,255,255,.6)'}" stroke-width="3" stroke-dasharray="${sel === -1 ? 0 : '4 4'}"/>`;
-  s += `<rect x="${TRX}" y="${TOP - 10}" width="${TRW}" height="${BOT - TOP + 20}" rx="10" fill="#10182e" stroke="#26335c" stroke-width="3"/>`;
-  for (let p = 1; p <= 2; p++) for (let k = 0; k < st.off[p]; k++) { const y = p === 1 ? BOT - 16 - k * 15 : TOP + 4 + k * 15; s += `<rect x="${TRX + 8}" y="${y}" width="${TRW - 16}" height="12" rx="3" fill="${CC[p]}"/>`; }
-  if (dests.has(OFF)) s += `<rect x="${TRX}" y="${(turn === 1 ? BOT - 260 : TOP - 10)}" width="${TRW}" height="270" rx="10" fill="rgba(6,182,212,.3)" stroke="#67e8f9" stroke-width="3" class="pulse"/>`;
+  s += `<rect x="${TRX}" y="${TOP - 10}" width="${TRW}" height="${BOT - TOP + 20}" rx="10" fill="${P.frame}" stroke="${P.edge}" stroke-width="3"/>`;
+  for (let p = 1; p <= 2; p++) for (let k = 0; k < st.off[p]; k++) { const y = p === 1 ? BOT - 16 - k * 15 : TOP + 4 + k * 15; s += `<rect x="${TRX + 8}" y="${y}" width="${TRW - 16}" height="12" rx="3" fill="${PALETTE.checkers[p].fill}"/>`; }
+  if (dests.has(OFF)) s += `<rect x="${TRX}" y="${turn === 1 ? BOT - 260 : TOP - 10}" width="${TRW}" height="270" rx="10" fill="${A}" fill-opacity=".3" stroke="${A}" stroke-width="3" class="pulse"/>`;
   s += `<text x="${TRX + TRW / 2}" y="${VH / 2 + 5}" text-anchor="middle" fill="#8b93b3" font-size="14" font-weight="700">OFF</text>`;
   for (let i = 0; i < 24; i++) { const { col, top } = ptPos(i), x = colX(col); s += `<rect class="zone${can ? ' go' : ''}" data-pt="${i}" x="${x}" y="${top ? TOP : BOT - TH}" width="${PW}" height="${TH}"/>`; }
   s += `<rect class="zone${can ? ' go' : ''}" data-bar="1" x="${X0 + 6 * PW}" y="${TOP}" width="${BARW}" height="${BOT - TOP}"/><rect class="zone${can ? ' go' : ''}" data-off="1" x="${TRX}" y="${TOP - 10}" width="${TRW}" height="${BOT - TOP + 20}"/>`;
   $('#bd').innerHTML = s + '</svg>';
 
   let status;
-  if (phase === 'over') status = $('#st').innerHTML;
+  if (phase === 'over') status = overText;
   else if (busy) status = 'Computer is thinking…';
-  else if (phase === 'roll') status = `<span class="dot ${turn === 1 ? 'c' : 'a'}"></span>${NAME[turn]} to roll${mode !== 'two' && human() ? ' — press Roll dice' : ''}`;
-  else if (phase === 'move') status = `<span class="dot ${turn === 1 ? 'c' : 'a'}"></span>${NAME[turn]} to move${mode !== 'two' && human() ? ' — pick a checker, then a glowing point' : ''}`;
+  else if (phase === 'roll') status = `<span class="dot ${turn === 1 ? 'c' : 'a'}"></span>${NAME[turn]} to roll${seat !== 'two' && human() ? ' — press Roll dice' : ''}`;
+  else if (phase === 'move') status = `<span class="dot ${turn === 1 ? 'c' : 'a'}"></span>${NAME[turn]} to move${seat !== 'two' && human() ? ' — pick a checker, then a glowing point' : ''}`;
   else status = `<span class="dot ${turn === 1 ? 'c' : 'a'}"></span>${NAME[turn]}…`;
   if (phase !== 'over') $('#st').innerHTML = status + (note ? `<div class="note">${note}</div>` : '');
+  else $('#st').textContent = status;
   $('#dice').innerHTML = dl.map((d) => `<span class="die${d.void ? ' v' : d.used ? ' u' : ''}">${'⚀⚁⚂⚃⚄⚅'[d.v - 1]}</span>`).join('') || '<span class="stat">Dice appear here</span>';
   $('#roll').disabled = !(phase === 'roll' && human() && !busy); $('#undo').disabled = !(phase === 'move' && human() && turnMoves.length); $('#hint').disabled = !(can);
-  $('#cp').innerHTML = `<span class="dot c"></span>Cyan — pips <b>${pip(st, 1)}</b> · bar <b>${st.bar[1]}</b> · off <b>${st.off[1]}</b><br><span class="dot a"></span>Amber — pips <b>${pip(st, 2)}</b> · bar <b>${st.bar[2]}</b> · off <b>${st.off[2]}</b><br>Pips = total distance still to travel; lower is ahead in the race.`;
+  const clock = CFG[gm].clock ? `<div class="clock${clocks[1] < 20000 || clocks[2] < 20000 ? ' low' : ''}">Cyan ${fmt(clocks[1])} · Amber ${fmt(clocks[2])}</div>` : '';
+  $('#cp').innerHTML = clock + `<span class="dot c"></span>Cyan — pips <b>${pip(st, 1)}</b> · bar <b>${st.bar[1]}</b> · off <b>${st.off[1]}</b><br><span class="dot a"></span>Amber — pips <b>${pip(st, 2)}</b> · bar <b>${st.bar[2]}</b> · off <b>${st.off[2]}</b>`;
+  const target = CFG[gm].offTarget < 15 ? ` · first to ${CFG[gm].offTarget} off` : '';
+  $('#md').textContent = MODE_NAMES[gm] + target + (CFG[gm].clock ? ' · two minutes each' : '') + (CFG[gm].gammonRush ? ' · every win stakes a gammon' : '') + ' · pips = total distance left, lower is ahead.';
 }
 function pickMove(f, t) { const c = validMoves().filter((m) => m.f === f && m.t === t).sort((a, b) => a.d - b.d); return c[0]; }
 $('#bd').addEventListener('click', (e) => {
@@ -268,7 +413,7 @@ $('#bd').addEventListener('click', (e) => {
 });
 function autoOnly() { return uniq(validMoves().map((m) => m.f)).length === 1; }
 $('#roll').onclick = () => { if (phase === 'roll' && human() && !busy) { roll(); } };
-$('#undo').onclick = undo; $('#hint').onclick = showHint; $('#new').onclick = newGame; $('#mode').onchange = newGame;
+$('#undo').onclick = undo; $('#hint').onclick = showHint; $('#new').onclick = newGame; $('#seat').onchange = newGame;
 document.addEventListener('keydown', (e) => {
   if (/INPUT|SELECT|TEXTAREA|BUTTON/.test(e.target.tagName) && e.key === ' ') return;
   if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -276,7 +421,90 @@ document.addEventListener('keydown', (e) => {
   if (k === 'n') newGame(); else if (k === 'u') undo(); else if (k === 't') showHint();
   else if (k === 'r' || k === ' ') { if (phase === 'roll' && human() && !busy) { e.preventDefault(); roll(); } }
 });
-newGame();
+
+/* ---------------- shared menu contract ---------------- */
+const GameUI = Board.ui({
+  id: 'backgammon', title: 'Backgammon', subtitle: 'Five ways to race your checkers home.', accent: '#22d3ee',
+  modes: MODES, achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Pick one of your checkers, then a glowing point to move it by a die.' },
+    { text: 'Doubles give four moves. If only one die can play, it must be the larger.' },
+    { text: 'Land on a lone rival checker to hit it to the bar; bar checkers must re-enter first.' },
+    { text: 'Bear off from your home board. Gammons stake double and backgammons triple.' },
+  ] },
+  hooks: {
+    applyMode: (next) => { gm = MODES.some((m) => m.id === next) ? next : 'classic'; if (st) newGame(); },
+    applyCosmetic,
+    onStart: () => { menuPaused = false; clockLast = Date.now(); },
+  },
+});
+window.ApexGameMenuActions = {
+  play: function () { menuPaused = false; clockLast = Date.now(); },
+  pause: function (value) { menuPaused = !!value; clockLast = Date.now(); },
+  resume: function () { menuPaused = false; clockLast = Date.now(); },
+  restart: function () { menuPaused = false; newGame(); }
+};
+
+paintPalette(); newGame();
+
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  const snap = () => ({
+    mode: gm, seat, turn, phase, dice: dl.map((d) => d.v), used: dl.map((d) => !!d.used),
+    score: { 1: PS[1].score, 2: PS[2].score }, hits: { 1: PS[1].hits, 2: PS[2].hits }, lost: { 1: PS[1].lost, 2: PS[2].lost },
+    pts: st.pts.slice(), bar: st.bar.slice(), off: st.off.slice(), rolls, clocks: Object.assign({}, clocks),
+    over: phase === 'over', menuPaused, note,
+    legal: phase === 'move' ? validMoves().map((m) => ({ f: m.f, t: m.t, d: m.d })) : [],
+  });
+  window.BackgammonTest = {
+    state: snap,
+    modes: () => MODES.map((m) => m.id),
+    setMode: (id) => GameUI.setMode(id),
+    getMode: () => GameUI.getMode(),
+    restart: () => { newGame(); return true; },
+    setSeat: (value) => { const s = $('#seat'); if (!Array.from(s.options).some((o) => o.value === value)) return false; s.value = value; newGame(); return true; },
+    setLevel: (n) => { const s = $('#lvl'); s.value = String(Math.max(0, Math.min(2, Number(n) || 0))); return +s.value; },
+    setDifficulty: (d) => Board.setDifficulty(d),
+    level: () => Board.level(),
+    setBoard: (o) => {
+      const src = o || {};
+      const pts = Array.isArray(src.pts) && src.pts.length === 24 ? src.pts.map((v) => Number(v) || 0) : st.pts.slice();
+      const bar = Array.isArray(src.bar) && src.bar.length >= 3 ? [0, Number(src.bar[1]) || 0, Number(src.bar[2]) || 0] : st.bar.slice();
+      const off = Array.isArray(src.off) && src.off.length >= 3 ? [0, Number(src.off[1]) || 0, Number(src.off[2]) || 0] : st.off.slice();
+      st = { pts, bar, off }; phase = 'roll'; dl = []; sel = null; turnMoves = []; hintM = null; lastMoves = []; note = ''; busy = false; gen += 1; render();
+      return snap();
+    },
+    setTurn: (p) => { gen += 1; turn = Number(p) === 2 ? 2 : 1; phase = 'roll'; dl = []; sel = null; turnMoves = []; hintM = null; note = ''; busy = false; render(); return turn; },
+    setDice: (a, b) => {
+      const x = Math.max(1, Math.min(6, Number(a) || 1)), y = Math.max(1, Math.min(6, Number(b) || 1));
+      gen += 1;
+      dl = (x === y ? [x, x, x, x] : [x, y]).map((v) => ({ v, used: false }));
+      turnSt = st; turnPS = clonePS(PS); turnDl = dl.map((d) => ({ ...d })); turnMoves = []; hintM = null; sel = null; lastMoves = []; note = ''; phase = 'move'; busy = false;
+      rolls += 1; if (human()) GameUI.unlock('first-roll');
+      autoSel(); render(); return snap();
+    },
+    move: (f, t) => {
+      const from = f === 'bar' ? -1 : Number(f), to = t === 'off' ? OFF : Number(t);
+      const m = validMoves().find((x) => x.f === from && x.t === to);
+      if (!m) return false;
+      doMove(m); return snap();
+    },
+    roll: () => { roll(); return snap(); },
+    undo: () => { undo(); return snap(); },
+    finish: (p) => { finishGame(Number(p) === 2 ? 2 : 1, 'test'); return snap(); },
+    setScore: (p, n) => { PS[Number(p) === 2 ? 2 : 1].score = Math.max(0, Number(n) || 0); render(); return PS[Number(p) === 2 ? 2 : 1].score; },
+    setClock: (p, ms) => { clocks[Number(p) === 2 ? 2 : 1] = Math.max(0, Number(ms) || 0); render(); return clocks[Number(p) === 2 ? 2 : 1]; },
+    tick: (ms) => { tickClock(Number(ms) || 0); return snap(); },
+    menuPaused: (value) => { menuPaused = !!value; clockLast = Date.now(); return menuPaused; },
+    start: () => { menuPaused = false; clockLast = Date.now(); },
+    colors: () => ({ checkers: { 1: Object.assign({}, PALETTE.checkers[1]), 2: Object.assign({}, PALETTE.checkers[2]) }, board: Object.assign({}, PALETTE.board), accent: PALETTE.accent, theme: document.body.style.background || 'auto' }),
+    cosmetic: (slot, id) => { applyCosmetic(slot, id); return window.BackgammonTest.colors(); },
+    cosmeticList: () => (window.Meta && Meta.getCosmetics ? Meta.getCosmetics('backgammon') : []).map((item) => ({ id: item.id, slot: item.slot })),
+    achievements: () => (Save.load('backgammon').achievements || []).slice(),
+    stats: () => Save.load('backgammon').stats || {},
+    modalOpen: () => { const d = document.getElementById('bk-dlg'); return !!(d && d.open); },
+    closeModal: () => { const d = document.getElementById('bk-dlg'); if (d && d.open) d.close(); },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>
