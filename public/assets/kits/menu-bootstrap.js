@@ -44,7 +44,7 @@
     ['43-sudoku','sudoku','Sudoku','paper','#38bdf8','sudoku','Fill the grid with one of every digit in each line.','Select a cell, then tap or type 1–9; Backspace erases.'],
     ['44-minesweeper','minesweeper','Minefield','crt','#fbbf24','mine','Read the clues and mark every hidden mine.','Click to reveal; right-click or long-press to flag.'],
     ['45-sliding-puzzle','sliding-puzzle','Slide Tiles','glass','#93c5fd','tiles','Put the picture back together one open space at a time.','Click or tap a tile next to the empty space.'],
-    ['46-nuts-bolts','nuts-bolts','Nuts & Bolts','machine','#cbd5e1','bolts','Sort every coloured nut onto its matching bolt.','Click a bolt to lift its top nut, then choose a destination.'],
+    ['46-nuts-bolts','nuts-bolts','Nuts & Bolts','machine','#cbd5e1','bolts','Unscrew every bolt and pop matched colours in the tray.','Click a bolt to unscrew it into the tray; three of a colour pop.'],
     ['47-colour-sort','colour-sort','Bubble Sort','glass','#22d3ee','tubes','Pour each colour until every tube holds one shade.','Click a source tube, then an available destination.'],
     ['48-fruit-merge','fruit-merge','Orchard Drop','storybook','#fb7185','fruit','Drop matching fruit and let the orchard grow.','Move to aim; click or tap to drop the fruit.'],
     ['49-table-tennis','table-tennis','Table Tennis','scoreboard','#38bdf8','rally','Meet the ball early and return it across the table.','Move the paddle with the pointer or touch; keyboard arrows also work.'],

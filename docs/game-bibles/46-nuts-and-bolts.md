@@ -2,66 +2,100 @@
 
 ## Pitch
 
-Free wooden planks by unscrewing unblocked bolts into the color-matching tray; 3 matched bolts pop and drop the planks. Keep the source game’s recognizable rhythm and make each run readable, quick to restart, and rewarding to master.
+Unscrew bolts from a stack of planks into a tray at the bottom. Three bolts of the same colour pop together and free their slots; a plank with no bolts left falls away and uncovers the bolts beneath it. Clear every plank before the tray fills. Classic is the campaign, Relaxed widens the tray to eight slots, Blitz races a 90-second clock, Precision narrows the tray to five with no undo, and Masterclass packs six colours into five slots with a single undo.
 
 ## Art direction
 
-Preserve the current artwork, silhouettes, animation, and sound on the canonical page. Use the game’s existing #FB923C accent as a guide for new menu and reward states. Keep gameplay objects distinct from the background; never rely on colour alone for hazards or legal moves. Lite and reduced-motion settings must reduce effects without removing gameplay feedback.
+A workbench of rotated wooden planks over a dark bench, with hexagonal bolts in five colours and a tray that fills slot by slot. Plank skins come from `nuts-bolts:wood-*`, the bench from `nuts-bolts:bench-*`, the selection ring from `nuts-bolts:glow-*` and the tray from `nuts-bolts:tray-*`. Covered bolts refuse with a short shake, cleared planks tumble away with a brief fall, and the tray, bolt and match counts are always printed, so feedback never depends on colour or motion alone.
 
 ## Modes and match structure
 
-1. **Classic:** preserve the canonical rules and scoring.
-2. **Daily challenge:** a deterministic seeded puzzle or short target run with a saved local best.
+| Mode | Tray slots | Colours | Undo | Clock | Unlock |
+| --- | --- | --- | --- | --- | --- |
+| Classic | 6 | 5 | 5 | none | open |
+| Relaxed | 8 | 5 | unlimited (99) | none | open |
+| Blitz | 6 | 5 | 2 | 90 s | open |
+| Precision | 5 | 5 | 0 | none | open |
+| Masterclass | 5 | 6 | 1 | none | Classic win |
 
-A mode change must reset only the state named by that mode. Pause and resume preserve the complete in-progress state. Daily seeds use the local date and produce the same starting state for every retry that day.
+1. **Classic:** the campaign. Clearing a level records it and unlocks the next one.
+2. **Relaxed:** two extra tray slots and effectively unlimited undo.
+3. **Blitz:** the standard tray with a 90-second clock; time-out loses the level.
+4. **Precision:** five slots and no undo.
+5. **Masterclass:** a sixth colour squeezed into five slots with one undo; locked until a Classic win (`classicWins ≥ 1`).
 
-## Settings and difficulty
+A mode change rebuilds the level from scratch. Pause preserves the whole in-progress tray, planks and undo history.
 
-| Setting | Behavior |
-| --- | --- |
-| Easy | 0.8× simulation speed or a wider timing/mistake allowance; 1.0× score. |
-| Normal | Preserve the source page’s baseline rules at 1.0× speed and score. |
-| Hard | 1.35× simulation speed or a stricter opponent/puzzle target; 1.25× score. |
-| Performance | Respect Lite, Standard, and Ultra budgets; preserve essential playfield feedback. |
-| Reduced motion | Remove decorative movement, shake, and nonessential flashes; preserve input and game-state motion. |
-| Audio and palette | Inherit global settings, allow per-game overrides, and keep objects legible in colour-blind palettes. |
+## Core rules
+
+- A bolt can be unscrewed only when no plank lies on top of it.
+- Each tapped bolt drops into the next free tray slot.
+- Three bolts of the same colour in the tray pop together and release all three slots.
+- When the last bolt leaves a plank, the plank falls and uncovers anything beneath it.
+- The level is cleared when every plank is gone.
+- The level is lost when the tray is full and no match is available.
+- Every generated level is checked by a solver before it is dealt, so every level can be cleared.
+- The level jump selector lists every level reached so far; Classic resumes at the highest unlocked level.
+
+## Scoring
+
+A clear pays `bolts × 10 + matches × 150 + 400 + level × 50 − undos × 25`, plus a Blitz time bonus of `max(0, 600 − seconds × 5)`. The result floors at 100. A loss scores zero. There is no difficulty score multiplier; the mode's clock and tray limits are the challenge.
+
+## Records and persistence
+
+Saved under `nuts-bolts`:
+
+- `bestScoreClassic`, `bestScoreRelaxed`, `bestScoreBlitz`, `bestScorePrecision`, `bestScoreMaster`
+- `level` (highest cleared, maximum merge)
+- `bestTimeClassic`, `bestTimeRelaxed`, `bestTimeBlitz`, `bestTimePrecision`, `bestTimeMaster` (minimum, wins only)
+- `wins`, `losses`, `levelsCleared`, `bolts`, `matches`, `undos`
+- `classicWins`, `relaxedWins`, `blitzWins`, `precisionWins`, `masterWins`
+- `plays`, `secondsPlayed`, `lastResult`, `lastMode`
 
 ## Cosmetics
 
-Plan 3 cosmetics across palette, board/craft/object skin, effects, and scene/theme slots as applicable to this game. Keep all interactive objects distinguishable and do not change game physics. Purchases use the shared Sparks registry, charge once, and persist ownership and equip state after reload.
+Sixteen registered cosmetics using the `nuts-bolts:` prefix:
+
+| Slot | Items |
+| --- | --- |
+| Skin (planks) | Pine, Walnut, Ash, Rosewood, Ebony |
+| Palette (bench) | Slate, Night, Indigo, Mono |
+| Effect (selection ring) | Amber, Cyan, Lime, Rose |
+| Theme (tray) | Slate, Rose, Mint |
 
 ## Achievements
 
 | Achievement | Trigger | Rarity |
 | --- | --- | --- |
-| First Run | complete one session | Common |
-| Steady Hand | reach the first score milestone | Common |
-| Quick Clear | finish within the target time | Common |
-| Personal Best | set a new personal best | Rare |
-| Daily Player | complete a seeded daily run | Rare |
+| Bench Hand | clear any level | Common |
+| Quick Hands | clear a level in under 60 seconds | Rare |
+| Clean Hands | clear a level without undo | Common |
+| Bolt Collector | unscrew 50 bolts across your career | Rare |
+| Five Benches | clear five levels | Common |
+| Triple Crown | win in three different modes | Rare |
+| Ten Benches | clear ten levels | Epic |
+| Blitz Bench | clear a Blitz level | Rare |
+| Easy Does It | clear a Relaxed level | Common |
+| Steady Hands | clear a Precision level | Rare |
+| Master Mechanic | clear a Masterclass level | Epic |
+| Toolbox Complete | win in every mode | Legendary |
 
-Unlock each once under the host game id and send one achievement event and one toast. Score targets must respect the selected mode’s documented multiplier.
+Unlocks are stored once under `nuts-bolts`; each unlock sends one achievement event and one toast.
 
 ## Tutorial and controls
 
-Use a short illustrated tutorial. Teach the primary objective, legal input, one recovery or strategy tip, and the end condition. Controls shown in the menu and during play: Click or tap a free bolt to unscrew it into the tray. U undo, R restart.
-
-Support keyboard and touch. Board games must offer clear selected/active state and tap targets; action games must keep virtual controls away from hazards and the theatre launch controls. Shared menus must support gamepad focus and activation.
-
-## Current baseline and scope
-
-Canonical page: `46-nuts-bolts/index.html`. Current family: Board Kit (No). Catalog description: “Free wooden planks by unscrewing unblocked bolts into the color-matching tray; 3 matched bolts pop and drop the planks.” Controls: Click or tap a free bolt to unscrew it into the tray. U undo, R restart. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+The interactive tutorial teaches the free-bolt rule, the three-of-a-kind pop, the falling plank and each mode modifier. Controls: click or tap a bolt to unscrew it; U undoes; R restarts the level; N deals a new layout for the same level; H/M toggle help and mute. The side panel shows level, bolts collected, elapsed time, the level best, the tray, and the jump selector.
 
 ## Menu Identity Card
 
 - **Archetype:** machine.
-- **Mood:** Sort every coloured nut onto its matching bolt.
+- **Mood:** Unscrew matching bolts into the tray.
 - **Palette:** `#080d15` background, `color-mix(in srgb, #cbd5e1 8%, rgba(15,22,35,.94))` panel, `#cbd5e1` accent, `color-mix(in srgb, #cbd5e1 76%, white)` button, `#10151e` button text, `#f6f7fb` body text.
 - **Type:** System UI title and body fonts.
-- **Frame and buttons:** Per-title `bolts-frame` frame and `bolts-banner` button identity, using the shared machine treatment.
-- **Scene recipe:** Original procedural bolts mark with an accent-lit background, restrained depth bands, and a static Lite/reduced-motion frame.
-- **Music and UI sounds:** Per-title procedural motif; shared tick, select, and back cues.
-- **Menu items:** Play, Options, About, Exit. No proposed modes or cosmetics are shown as available.
-- **Settings:** Shared audio, display, controls, accessibility, and difficulty options.
-- **Controls:** Click a bolt to lift its top nut, then choose a destination.
-- **Lite fallback:** Static bolts composition with the title accent and scene silhouette.
+- **Frame and buttons:** `bolts-frame` frame and `bolts-banner` button identity, using the shared machine treatment.
+- **Scene recipe:** A procedural hex-bolt field lit by the bench accent, with restrained depth bands and a static Lite/reduced-motion frame.
+- **Music and UI sounds:** Per-title minor procedural motif; shared tick, select and back cues.
+- **Menu items:** Play, Modes, Customize, Options, More, Exit.
+- **Settings:** Shared audio, display, controls, accessibility and difficulty options. The shared difficulty setting has no gameplay effect; the mode sets the tray, clock and undo rules.
+- **Controls:** Click or tap a bolt to unscrew it into the tray; U undo; R restart.
+- **Lite fallback:** Static hex-bolt composition with the title accent and bench silhouette.

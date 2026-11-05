@@ -2,7 +2,7 @@
 
 Generated: 2026-10-22 | Original inventory task: P0.3; rollout audit refreshed through S1-4
 
-Technical inventory of all 50 canonical HTML games in `public/assets/games/`. The per-row size figures are the original P0.3 snapshot; the current aggregate and kit coverage below were re-measured on 2026-10-22.
+Technical inventory of all 50 canonical HTML games in `public/assets/games/`. Rows 46–50 reflect the current post-upgrade pages; the aggregate and kit coverage below were re-measured on 2026-11-05.
 
 | # | Title | File | Size | Kits Loaded | Canvas / Layout | ?diff Support | Category / Engine Family |
 |---|-------|------|------|-------------|-----------------|---------------|--------------------------|
@@ -51,24 +51,27 @@ Technical inventory of all 50 canonical HTML games in `public/assets/games/`. Th
 | 43 | Sudoku | `43-sudoku/index.html` | 24.0 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Board DOM / SVG Grid | Yes | Board Kit |
 | 44 | Minefield | `44-minesweeper/index.html` | 21.6 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Board DOM / SVG Grid | No | Board Kit |
 | 45 | Slide Tiles | `45-sliding-puzzle/index.html` | 20.0 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Board DOM / Grid | No | Board Kit |
-| 46 | Nuts & Bolts | `46-nuts-bolts/index.html` | 11.9 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Canvas 480×640 | No | Board Kit |
-| 47 | Bubble Sort | `47-colour-sort/index.html` | 8.5 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
-| 48 | Orchard Drop | `48-fruit-merge/index.html` | 9.5 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, fx-kit.js | Canvas 400×600 | No | Board Kit |
-| 49 | Table Tennis | `49-table-tennis/index.html` | 48.4 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Canvas 1280×720 (Arena 3D) | Yes | Board Kit |
-| 50 | Mahjong Solitaire — Jade Table | `50-mahjong/index.html` | 15.0 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, score-bridge.js, ui-kit.js | Canvas 12×8 (Arcade) | No | Standalone HTML/JS |
+| 46 | Nuts & Bolts | `46-nuts-bolts/index.html` | 25.4 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Canvas 480×640 | No | Board Kit |
+| 47 | Bubble Sort | `47-colour-sort/index.html` | 24.0 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Board DOM / SVG Grid | No | Board Kit |
+| 48 | Orchard Drop | `48-fruit-merge/index.html` | 29.0 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, fx-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Canvas 400×600 | Yes | Board Kit |
+| 49 | Table Tennis | `49-table-tennis/index.html` | 58.1 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Canvas 1280×720 (Arena 3D) | Yes | Board Kit |
+| 50 | Mahjong Solitaire — Jade Table | `50-mahjong/index.html` | 32.5 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Board DOM / SVG tiles | No | Board Kit |
 
 ## Summary Statistics
 
 - **Total Games**: 50
-- **Current canonical HTML total**: 1562184 bytes (~1.49 MiB; 31.2 KB average; remeasured after games 41–45 on 2026-11-05)
+- **Current canonical HTML total**: 1625897 bytes (~1.55 MiB; 32.5 KB average; remeasured after games 46–50 on 2026-11-05)
 
 ### Script Kits Usage
 
 - **`arcade-core.js`**: 25 games
 - **`platform-kit.js`**: 3 games
 - **`act-kit.js`**: 6 games
-- **`board-kit.js`**: 24 games
-- **`Inline only`**: 1 game
+- **`board-kit.js`**: 25 games
+- **`fx-kit.js`**: 11 games
+- **`music-kit.js`**: 50 games
+- **`menu-kit.js`**: 50 games
+- **`menu-bootstrap.js`**: 46 games (all except 01, 03, 30 and 42)
 - **`perf-kit.js`**: 50 games
 - **`save-kit.js`**: 50 games
 - **`meta-config.js`**: 50 games
@@ -80,13 +83,13 @@ Technical inventory of all 50 canonical HTML games in `public/assets/games/`. Th
 
 - Arcade-core games (01–20, 37–41) map Easy/Normal/Hard to 0.8×/1.0×/1.35× simulation speed; Hard also applies a 1.25× score multiplier.
 - Table Tennis (49) maps the three settings to its three CPU modes.
-- Board Kit exposes `Board.level()` as 1 (Easy), 2 (Normal), 3 (Hard), reads `?diff`, handles `SET_DIFFICULTY`, and syncs compatible `#lvl`, `#difficulty`, `#size`, `#draw`, and unlocked-level selectors. Tic-Tac-Toe (30), Merge 2048 (42), and Mahjong (50) also have game-specific difficulty effects.
+- Board Kit exposes `Board.level()` as 1 (Easy), 2 (Normal), 3 (Hard), reads `?diff`, handles `SET_DIFFICULTY`, and syncs compatible `#lvl`, `#difficulty`, `#size`, `#draw`, and unlocked-level selectors. Tic-Tac-Toe (30), Merge 2048 (42), Orchard Drop (48) and Table Tennis (49) have game-specific difficulty effects; Nuts & Bolts (46), Bubble Sort (47) and Mahjong (50) have no shared-difficulty effect.
 - K8 is rolled out to all 50 entries: each has a documented gameplay effect, and the source audit distinguishes shared mappings from game-specific behavior.
 
 ### Cross-game rollout audit (2026-10-22)
 
 - All 50 canonical pages contain a viewport declaration and load `perf-kit.js`; this checks presence, not full per-game behavior.
-- Verified current external kit order is `perf-kit.js`, `save-kit.js`, `meta-config.js`, `meta-kit.js`, family core, optional family kit, `score-bridge.js`, `ui-kit.js`, optional art/effects/music, then inline game logic. For standalone Mahjong, meta scripts precede its score bridge and inline logic.
+- Verified current external kit order is `perf-kit.js`, `save-kit.js`, `meta-config.js`, `meta-kit.js`, family core, optional family kit, `score-bridge.js`, `ui-kit.js`, optional art/effects/music, then inline game logic.
 - All 50 canonical pages load `save-kit.js` and `score-bridge.js`, verified from each page external script tags. Board-kit pages start reporting on trusted gameplay input; terminal results and page exit send score/session-end events. This static audit confirms wiring presence; runtime behavior is checked separately by the smoke report.
 - Arcade-core pages call `Perf.tick` in the shared game loop. Standalone and board-kit Lite-tier behavior still needs individual runtime verification.
 - W12 Gemini features remain approval-gated and were not included in this audit.
@@ -95,7 +98,7 @@ Technical inventory of all 50 canonical HTML games in `public/assets/games/`. Th
 
 - Audited 50 numeric canonical HTML pages: `perf-kit.js`, `save-kit.js`, `meta-config.js`, `meta-kit.js`, `score-bridge.js`, and `ui-kit.js` each appear exactly once on all 50.
 - Verified script order on all 50; meta config precedes meta kit, and both precede the game core or standalone game logic.
-- Family counts remain 25 `arcade-core.js`, 24 `board-kit.js`, and one standalone inline game (Mahjong). Other kit counts remain 3 `platform-kit.js`, 6 `act-kit.js`, 8 `fx-kit.js`, 3 `music-kit.js`, and 1 `board-art.js`.
+- Family counts are 25 `arcade-core.js` and 25 `board-kit.js`; no game remains standalone after Mahjong (50) adopted the board shell. Other kit counts are 3 `platform-kit.js`, 6 `act-kit.js`, 11 `fx-kit.js`, 50 `music-kit.js`, 50 `menu-kit.js`, 46 `menu-bootstrap.js`, and 1 `board-art.js`.
 - `UI.mountGame` is implemented in `ui-kit.js`; game 01 is the verified config pilot. `ui-kit.js` is 22,726 bytes and all 50 canonical games load it once.
 - `meta-kit.js` is a shared progression writer; the production Profile integration and date-mocked rules are recorded in `docs/APEX_NEXT_PRD.md` under S1-4.
 - The Meta cosmetic registry contains 16 game 01 items across all four slots; Save v3 stores owned/equipped ids and the Customize flow is browser-verified in the S1-6 PRD record.
@@ -150,8 +153,8 @@ Each line states the gameplay effect selected by Easy, Normal and Hard.
 - 43 Sudoku — Easy sets the next Classic/Diagonal puzzle to 40 clues, Normal 32 and Hard 26; fixed-clue modes ignore it.
 - 44 Minefield — each mode fixes its field size and mine count; the shared difficulty setting has no gameplay effect.
 - 45 Slide Tiles — each mode fixes its grid size and goal order; the shared difficulty setting has no gameplay effect.
-- 46 Nuts & Bolts — Easy starts at the first unlocked level, Normal at a middle unlocked level and Hard at the highest unlocked level.
-- 47 Bubble Sort — Easy starts at the first unlocked level, Normal at a middle unlocked level and Hard at the highest unlocked level.
+- 46 Nuts & Bolts — the selected mode fixes tray width, clock and undo limits; the shared difficulty setting has no gameplay effect.
+- 47 Bubble Sort — the selected mode fixes capacity, colour count, spares, undo and clock; the shared difficulty setting has no gameplay effect.
 - 48 Orchard Drop — Easy allows 0.75 seconds between drops, Normal 0.55 seconds and Hard 0.35 seconds.
-- 49 Table Tennis — Easy, Normal and Hard select CPU modes 0, 1 and 2.
-- 50 Mahjong Solitaire — Easy grants 5 hints, Normal 3 and Hard 1 per deal.
+- 49 Table Tennis — Easy, Normal and Hard select CPU skill curves 0, 1 and 2; the mode sets the target and opponent.
+- 50 Mahjong Solitaire — the selected mode fixes board size, hints, undos, shuffles and the Blitz clock; the shared difficulty setting has no gameplay effect.

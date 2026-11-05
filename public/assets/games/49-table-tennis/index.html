@@ -13,6 +13,7 @@
   #cv { width: 100%; aspect-ratio: 16 / 9; display: block; border-radius: 16px; box-shadow: 0 24px 60px -24px #000, 0 0 0 1px rgba(255,255,255,.08); touch-action: none; cursor: none; background: #07102e; user-select: none; -webkit-user-select: none; }
   .hud { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; color: var(--muted); }
   .hud label { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+  .hud .tag { font: 700 13px ui-monospace, Consolas, monospace; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
   .hud input[type=checkbox] { accent-color: var(--cyan); width: 16px; height: 16px; }
   @media (max-width: 640px) {
     .hud { font-size: 12px; gap: 6px; }
@@ -32,11 +33,60 @@
 <script src="../../kits/score-bridge.js"></script>
 <script src="../../kits/ui-kit.js"></script>
 <script>
-const ui = Board.shell({
-  id: 'table-tennis',
+const GAME_ID = 'table-tennis';
+const MODES = [
+  { id: 'classic', name: 'Classic', blurb: 'First to 11, win by two', ai: 1, target: 11, winBy: 2, hint: 'First to 11' },
+  { id: 'blitz', name: 'Blitz', blurb: 'First to 7 against the hard-hitting pro', ai: 2, target: 7, winBy: 2, hint: 'First to 7' },
+  { id: 'marathon', name: 'Marathon', blurb: 'First to 21 — endurance rally tennis', ai: 1, target: 21, winBy: 2, hint: 'First to 21' },
+  { id: 'pro', name: 'Pro Tour', blurb: 'First to 11 against the pro', ai: 2, target: 11, winBy: 2, hint: 'First to 11 · pro', requires: { stat: 'classicWins', gte: 1 }, lockedHint: 'Win a Classic match to unlock' },
+  { id: 'duo', name: 'Two Players', blurb: 'Local versus — first to 11', ai: 3, target: 11, winBy: 2, hint: 'First to 11 · local versus' },
+];
+const ACHIEVEMENTS = [
+  { id: 'first-win', name: 'First Point', desc: 'Win a match.' },
+  { id: 'perfect-game', name: 'Perfect Game', desc: 'Win a match without conceding a point.' },
+  { id: 'clean-win', name: 'Clean Sheet', desc: 'Win a match conceding 5 points or fewer.' },
+  { id: 'rally-10', name: 'Long Rally', desc: 'Keep a rally alive for 10 shots.' },
+  { id: 'rally-20', name: 'Rally Master', desc: 'Keep a rally alive for 20 shots.' },
+  { id: 'blitz-win', name: 'Blitz Winner', desc: 'Win a Blitz match.' },
+  { id: 'marathon-win', name: 'Marathon Winner', desc: 'Win a Marathon match.' },
+  { id: 'pro-win', name: 'Pro Scalp', desc: 'Beat the pro.' },
+  { id: 'duo-win', name: 'House Champion', desc: 'Win a two-player match.' },
+  { id: 'comeback', name: 'Comeback', desc: 'Win after trailing by 3 or more.' },
+  { id: 'five-wins', name: 'Tour Regular', desc: 'Win five career matches.' },
+  { id: 'all-modes', name: 'Grand Slam', desc: 'Win in every mode.' },
+];
+const TT_SKINS = {
+  'table-azure': { top: ['#173f93', '#215ac2', '#2a6ee0'], edge: ['#2c64cf', '#0b2a6b'] },
+  'table-emerald': { top: ['#0f5132', '#12805a', '#1aa875'], edge: ['#1f9b74', '#0a3d28'] },
+  'table-crimson': { top: ['#701a2b', '#961f3c', '#c22a52'], edge: ['#c22a52', '#4a0c18'] },
+  'table-carbon': { top: ['#1f2937', '#374151', '#4b5563'], edge: ['#4b5563', '#111827'] },
+  'table-royal': { top: ['#3b1d7a', '#5227a8', '#6d35d6'], edge: ['#6d35d6', '#25104d'] },
+};
+const TT_ARENAS = {
+  'arena-apex': { sky: ['#02061a', '#091848', '#0c2560'], floor: ['#08153a', '#0c2352'], mat: ['#0e3568', '#14498c'] },
+  'arena-midnight': { sky: ['#02040f', '#0a1030', '#121a44'], floor: ['#050c22', '#0a1436'], mat: ['#0a1c3a', '#102c58'] },
+  'arena-sunset': { sky: ['#1a0614', '#3a0f26', '#54173a'], floor: ['#20081a', '#340d24'], mat: ['#42101f', '#5e1a2e'] },
+  'arena-forest': { sky: ['#03140f', '#082a1f', '#0b3a2b'], floor: ['#051a14', '#0a2c22'], mat: ['#0b3b2c', '#0f5540'] },
+};
+const TT_TRAILS = { 'trail-white': '255,255,255', 'trail-gold': '253,224,71', 'trail-cyan': '56,189,248', 'trail-rose': '251,113,133' };
+const TT_RUBBERS = { 'rubber-slate': ['#4a4f70', '#0a0b12'], 'rubber-crimson': ['#9f1239', '#4c0519'], 'rubber-jade': ['#0f766e', '#042f2e'] };
+const look = { table: 'table-azure', arena: 'arena-apex', trail: 'trail-white', rubber: 'rubber-slate' };
+const cosmeticKey = (id) => String(id || '').split(':').pop();
+let gm = 'classic', mode = 1, initialized = false, paused = true, diffOverride = null, bg = null;
+const cfg = () => MODES.find((m) => m.id === gm) || MODES[0];
+function applyCosmetic(slot, id) {
+  const key = cosmeticKey(id);
+  if (slot === 'skin' && TT_SKINS[key]) look.table = key;
+  else if (slot === 'palette' && TT_ARENAS[key]) look.arena = key;
+  else if (slot === 'effect' && TT_TRAILS[key]) look.trail = key;
+  else if (slot === 'theme' && TT_RUBBERS[key]) look.rubber = key;
+  bg = null;
+}
+const shell = Board.shell({
+  id: GAME_ID,
   title: 'Table Tennis',
-  subtitle: 'First to 11 points, win by two — full arena tournament edition',
-  rules: 'Real table-tennis rules seen from behind your end of the table. A serve must bounce on your side first, then on your opponent\u2019s side. After that every return must clear the net and bounce once on the other side. Let the ball bounce twice on your side, hit the net, or knock it off the table and you lose the point. The whole arena is yours to play in: move your paddle anywhere around you with mouse/touch, push it forward over the table to take the ball early, or pull it back to buy time on fast shots. Sweep the bat quickly for extra speed, or click / press Space just before contact for a power smash. The aim guide shows landing targets and interception circles.',
+  subtitle: 'First to 11, win by two — full arena tournament edition',
+  rules: 'Real table-tennis rules seen from behind your end of the table. A serve must bounce on your side first, then on your opponent\u2019s side. After that every return must clear the net and bounce once on the other side. Let the ball bounce twice on your side, hit the net, or knock it off the table and you lose the point. Move the bat anywhere around your end, push it forward to take the ball early, pull it back to buy time, and click or press Space just before contact to smash. Modes set the target and the opponent: Classic is first to 11, Blitz first to 7 against the pro, Marathon first to 21, Pro Tour is the hard event, and Two Players shares the keyboard.',
   controls: [
     ['Mouse / touch', 'Move paddle anywhere — follows your pointer smoothly'],
     ['Wheel · Q / E · slider', 'Reach: push the bat forward or pull it back'],
@@ -49,9 +99,28 @@ const ui = Board.shell({
     ['H / M', 'Toggle help / mute']
   ],
 });
-ui.main.innerHTML = `<div class="tt">
+const gameUI = Board.ui({
+  id: GAME_ID,
+  title: 'Table Tennis',
+  subtitle: 'First to 11, win by two — full arena tournament edition',
+  accent: '#38bdf8',
+  modes: MODES,
+  achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Move with the mouse or touch — the bat follows your pointer anywhere around your end.' },
+    { text: 'Push the reach slider forward to take the ball early, or pull back to buy time.' },
+    { text: 'Click or press Space just before contact to smash. A serve must bounce on your side first, then theirs.' },
+    { text: 'Win by two. Classic is first to 11, Blitz first to 7, Marathon first to 21, Pro Tour is the hard event, and Two Players shares the keyboard.' },
+  ] },
+  hooks: {
+    applyMode: (next) => { gm = MODES.some((m) => m.id === next) ? next : 'classic'; mode = cfg().ai; if (initialized) { newMatch(); syncModeLabel(); } },
+    applyCosmetic,
+    onStart: () => { paused = false; },
+  },
+});
+shell.main.innerHTML = `<div class="tt">
   <div class="hud">
-    <label>Opponent <select class="bk-select" id="mode"><option value="0">Computer · Easy</option><option value="1" selected>Computer · Medium</option><option value="2">Computer · Hard</option><option value="3">Two players</option></select></label>
+    <span class="tag" id="md">Classic · first to 11</span>
     <label><input type="checkbox" id="guide" checked> Aim guide</label>
     <button class="bk-btn bk-primary" id="new">New match</button>
     <button class="bk-btn" id="pause">Pause</button>
@@ -59,8 +128,9 @@ ui.main.innerHTML = `<div class="tt">
   <div class="stage"><canvas id="cv"></canvas></div>
   <div class="bk-status" id="st"></div>
 </div>`;
-const $ = (s) => ui.main.querySelector(s);
+const $ = (s) => shell.main.querySelector(s);
 const cv = $('#cv'), cx = cv.getContext('2d');
+function syncModeLabel() { const c = cfg(); $('#md').textContent = c.name + ' · first to ' + c.target + (c.ai === 3 ? ' · local versus' : ''); }
 
 /* ---------- world geometry (metres): x across, y up, z along table (0 player, L opponent) ---------- */
 const W = 1280, H = 720;
@@ -242,22 +312,25 @@ const snd = {
 };
 
 /* ---------- state ---------- */
-let sc, srv, state, mode, ball, bats, hitter, need, idx, aiPred, aiDelay, timer, why, over, keys = {}, lastU = 9, shake = 0, paused = false, rally = 0, bestRally = 0, spd = 0, depthPref = ZDEF, ptr = null, ptrOn = false, guide = true, gd = { bounce: null, hit: null }, gdT = 0, hint = 9, banner = '', sliding = false, bounceV = 0, flash = 0;
+let sc, srv, state, ball, bats, hitter, need, idx, aiPred, aiDelay, timer, why, over, keys = {}, lastU = 9, shake = 0, rally = 0, bestRally = 0, spd = 0, depthPref = ZDEF, ptr = null, ptrOn = false, guide = true, gd = { bounce: null, hit: null }, gdT = 0, hint = 9, banner = '', sliding = false, bounceV = 0, flash = 0;
+let matchTime = 0, recorded = false, runTrail = 0, runSmash = 0;
 const tgt = { x: 0, y: .25 };
 
 // Parse URL difficulty param
 try {
   const q = new URLSearchParams(window.location.search).get('diff');
-  if (q === 'easy') $('#mode').value = '0';
-  else if (q === 'hard') $('#mode').value = '2';
-  else if (q === 'normal') $('#mode').value = '1';
+  if (q === 'easy') diffOverride = 0;
+  else if (q === 'hard') diffOverride = 2;
+  else if (q === 'normal') diffOverride = 1;
 } catch (e) {}
 
 function newMatch() {
-  mode = +$('#mode').value; sc = [0, 0]; srv = 0; over = false; paused = false; rally = 0; bestRally = 0; spd = 0; depthPref = ZDEF; ptrOn = false; hint = 9;
+  mode = cfg().ai === 3 ? 3 : (diffOverride == null ? cfg().ai : diffOverride);
+  sc = [0, 0]; srv = 0; over = false; rally = 0; bestRally = 0; spd = 0; depthPref = ZDEF; ptrOn = false; hint = 9;
+  matchTime = 0; recorded = false; runTrail = 0; runSmash = 0;
   for (let i = 0; i < FX_POOL_SIZE; i++) fxPool[i].active = false;
   clearTrail();
-  bats = [mkBat(ZDEF), mkBat(L + .1)]; tgt.x = 0; tgt.y = .25; syncPause(); toServe();
+  bats = [mkBat(ZDEF), mkBat(L + .1)]; tgt.x = 0; tgt.y = .25; syncPause(); syncModeLabel(); toServe();
 }
 function toServe() {
   state = 'serve'; timer = 0; hitter = null; need = []; idx = 0; aiPred = null; clearTrail(); why = '';
@@ -352,6 +425,7 @@ function strike(side, bat, aim) {
   });
 
   if (pw > .85 && (side === 0 || mode === 3)) {
+    if (side === 0 && mode < 3) runSmash++;
     spawnFX((f) => {
       f.k = 'txt'; f.text = 'SMASH!'; f.x = b.x; f.y = b.y + .12; f.z = b.z; f.life = .8; f.col = '#fde047'; f.size = 28;
     });
@@ -426,15 +500,49 @@ function confetti() {
 function point(w, reason) {
   if (state !== 'rally') return;
   const n = names(); sc[w]++; state = 'point'; timer = 1.3; flash = 1;
+  runTrail = Math.max(runTrail, sc[1] - sc[0]);
   why = (w === 0 ? n[0] : n[1]) + ' ' + (mode === 3 ? 'scores' : w === 0 ? 'score' : 'scores') + ' — ' + reason + (rally > 3 ? ' · rally of ' + rally : '');
   if (w === 0 || mode === 3) { Board.sfx('win'); snd.cheer(); confetti(); } else { Board.sfx('error'); snd.groan(); }
-  const hi = Math.max(...sc);
-  if (hi >= 11 && Math.abs(sc[0] - sc[1]) >= 2) {
-    over = true; state = 'over'; msg(); Board.sfx(sc[0] > sc[1] || mode === 3 ? 'win' : 'lose');
-    Board.after(700, () => Board.modal(sc[0] > sc[1] ? (mode === 3 ? 'Player one wins' : 'You win!') : (mode === 3 ? 'Player two wins' : 'Computer wins'), sc[0] + ' – ' + sc[1] + ' · longest rally ' + bestRally, [['New match', newMatch], ['Close']]));
+  const c = cfg(), hi = Math.max(...sc);
+  if (hi >= c.target && Math.abs(sc[0] - sc[1]) >= c.winBy) {
+    over = true; state = 'over'; msg(); Board.sfx(sc[0] > sc[1] ? 'win' : 'lose');
+    endMatch();
     return;
   }
-  const t = sc[0] + sc[1]; srv = (sc[0] >= 10 && sc[1] >= 10) ? t % 2 : (t >> 1) % 2; msg();
+  const t = sc[0] + sc[1]; srv = (sc[0] >= c.target - 1 && sc[1] >= c.target - 1) ? t % 2 : (t >> 1) % 2; msg();
+}
+
+function endMatch() {
+  if (recorded) return false;
+  recorded = true;
+  const c = cfg(), per = gm.charAt(0).toUpperCase() + gm.slice(1), won = sc[0] > sc[1];
+  const score = sc[0] * 120 + bestRally * 25 + (won ? 600 : 0) + c.target * 10;
+  const stats = gameUI.stats();
+  const achievements = [];
+  if (won) achievements.push('first-win');
+  if (won && sc[1] === 0) achievements.push('perfect-game');
+  if (won && sc[1] <= 5) achievements.push('clean-win');
+  if (bestRally >= 10) achievements.push('rally-10');
+  if (bestRally >= 20) achievements.push('rally-20');
+  if (gm === 'blitz' && won) achievements.push('blitz-win');
+  if (gm === 'marathon' && won) achievements.push('marathon-win');
+  if (gm === 'pro' && won) achievements.push('pro-win');
+  if (gm === 'duo' && won) achievements.push('duo-win');
+  if (won && runTrail >= 3) achievements.push('comeback');
+  if (won && (Number(stats.wins) || 0) + 1 >= 5) achievements.push('five-wins');
+  const modeWins = (id) => (Number(stats[id + 'Wins']) || 0) + (won && gm === id ? 1 : 0);
+  if (MODES.every((m) => modeWins(m.id) > 0)) achievements.push('all-modes');
+  gameUI.record({
+    score,
+    seconds: Math.round(matchTime),
+    result: won ? 'Victory' : 'Defeat',
+    records: { ['bestScore' + per]: score, bestRally },
+    counters: { matches: 1, wins: won ? 1 : 0, losses: won ? 0 : 1, points: sc[0] + sc[1], smashes: runSmash, [gm + 'Wins']: won ? 1 : 0 },
+    achievements,
+  });
+  const title = won ? (gm === 'duo' ? 'Player one wins' : 'You win!') : (gm === 'duo' ? 'Player two wins' : 'Computer wins');
+  Board.modal(title, sc[0] + ' – ' + sc[1] + ' · longest rally ' + bestRally + ' · score ' + score, [['New match', newMatch], ['Close']]);
+  return true;
 }
 
 function serve() {
@@ -474,6 +582,7 @@ function clampTarget(t, z, serving) {
 
 function update(dt) {
   hint = Math.max(0, hint - dt); flash = Math.max(0, flash - dt * 2.5);
+  if (!over) matchTime += dt;
   const kb = (k) => keys[k], B0 = bats[0], B1 = bats[1], o0 = [B0.x, B0.y, B0.z], o1 = [B1.x, B1.y, B1.z], serving = state === 'serve' && srv === 0;
   const spd1 = kb('shift') ? 1.4 : 3.8;
   const kx = ((kb('d') || (mode < 3 && kb('arrowright'))) ? 1 : 0) - ((kb('a') || (mode < 3 && kb('arrowleft'))) ? 1 : 0);
@@ -551,7 +660,6 @@ function update(dt) {
 }
 
 /* ---------- pre-rendered lightweight arena background ---------- */
-let bg = null;
 function rr(c, x, y, w, h, r) {
   c.beginPath(); c.moveTo(x + r, y);
   c.arcTo(x + w, y, x + w, y + h, r);
@@ -562,6 +670,7 @@ function rr(c, x, y, w, h, r) {
 }
 
 function mkBg() {
+  const A = TT_ARENAS[look.arena];
   const BW = W + 240;
   bg = document.createElement('canvas');
   bg.width = BW; bg.height = H;
@@ -571,7 +680,7 @@ function mkBg() {
   let seed = 11;
   const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
   let g = x.createLinearGradient(0, 0, 0, 340);
-  g.addColorStop(0, '#02061a'); g.addColorStop(.45, '#091848'); g.addColorStop(1, '#0c2560');
+  g.addColorStop(0, A.sky[0]); g.addColorStop(.45, A.sky[1]); g.addColorStop(1, A.sky[2]);
   x.fillStyle = g; x.fillRect(-120, 0, BW, H);
 
   // Soft crowd (no GPU blur filter to prevent memory explosion)
@@ -637,10 +746,10 @@ function line(x0, y0, x1, y1, col, w) {
 
 function drawFloor() {
   const far = P2y(0, FLOOR, BZ_BACK);
-  let g = cx.createLinearGradient(0, far, 0, H); g.addColorStop(0, '#08153a'); g.addColorStop(1, '#0c2352');
+  let g = cx.createLinearGradient(0, far, 0, H); g.addColorStop(0, TT_ARENAS[look.arena].floor[0]); g.addColorStop(1, TT_ARENAS[look.arena].floor[1]);
   polyFast([[P2x(-16, FLOOR, BZ_BACK), far], [P2x(16, FLOOR, BZ_BACK), far], [P2x(16, FLOOR, -2.4), P2y(16, FLOOR, -2.4)], [P2x(-16, FLOOR, -2.4), P2y(-16, FLOOR, -2.4)]], g);
 
-  const mat = cx.createLinearGradient(0, far, 0, H); mat.addColorStop(0, '#0e3568'); mat.addColorStop(1, '#14498c');
+  const mat = cx.createLinearGradient(0, far, 0, H); mat.addColorStop(0, TT_ARENAS[look.arena].mat[0]); mat.addColorStop(1, TT_ARENAS[look.arena].mat[1]);
   polyFast([[P2x(-3.2, FLOOR, 5.0), P2y(-3.2, FLOOR, 5.0)], [P2x(3.2, FLOOR, 5.0), P2y(3.2, FLOOR, 5.0)], [P2x(3.2, FLOOR, -2.4), P2y(3.2, FLOOR, -2.4)], [P2x(-3.2, FLOOR, -2.4), P2y(-3.2, FLOOR, -2.4)]], mat);
 
   const c = pj(0, FLOOR, NZ), rx = 2.4 * c[2], ry = rx * .42;
@@ -710,11 +819,11 @@ function drawTable() {
   // Edge and top
   const nearY = P2y(0, 0, -E), farY = P2y(0, 0, L + E);
   const eg = cx.createLinearGradient(0, nearY, 0, P2y(0, -.07, -E));
-  eg.addColorStop(0, '#2c64cf'); eg.addColorStop(1, '#0b2a6b');
+  eg.addColorStop(0, TT_SKINS[look.table].edge[0]); eg.addColorStop(1, TT_SKINS[look.table].edge[1]);
   polyFast([[P2x(-HW - E, 0, -E), nearY], [P2x(HW + E, 0, -E), nearY], [P2x(HW + E, -.07, -E), P2y(HW + E, -.07, -E)], [P2x(-HW - E, -.07, -E), P2y(-HW - E, -.07, -E)]], eg);
 
   const tg = cx.createLinearGradient(0, farY, 0, nearY);
-  tg.addColorStop(0, '#173f93'); tg.addColorStop(.6, '#215ac2'); tg.addColorStop(1, '#2a6ee0');
+  tg.addColorStop(0, TT_SKINS[look.table].top[0]); tg.addColorStop(.6, TT_SKINS[look.table].top[1]); tg.addColorStop(1, TT_SKINS[look.table].top[2]);
   polyFast([[P2x(-HW - E, 0, -E), nearY], [P2x(HW + E, 0, -E), nearY], [P2x(HW + E, 0, L + E), farY], [P2x(-HW - E, 0, L + E), farY]], '#e8f0ff');
   polyFast([[P2x(-HW, 0, 0), P2y(-HW, 0, 0)], [P2x(HW, 0, 0), P2y(HW, 0, 0)], [P2x(HW, 0, L), P2y(HW, 0, L)], [P2x(-HW, 0, L), P2y(-HW, 0, L)]], tg);
 
@@ -787,7 +896,7 @@ function drawBall(b, hold) {
       const idx = (trailHead + k) % TRAIL_MAX;
       const t = trailBuffer[idx];
       const p = pj(t[0], t[1], t[2]);
-      cx.fillStyle = `rgba(255,255,255,${(k / trailCount) * .22})`;
+      cx.fillStyle = `rgba(${TT_TRAILS[look.trail]},${(k / trailCount) * .22})`;
       cx.beginPath(); cx.arc(p[0], p[1], .04 * p[2] * (k / trailCount), 0, 7); cx.fill();
     }
   }
@@ -833,7 +942,7 @@ function drawBat(B, mine) {
   cx.fillStyle = '#d9a455'; cx.beginPath(); cx.arc(0, 0, R, 0, 7); cx.fill();
 
   // Rubber face
-  const rb = mine ? ['#4a4f70', '#0a0b12'] : ['#fb7185', '#9f1239'];
+  const rb = mine ? TT_RUBBERS[look.rubber] : ['#fb7185', '#9f1239'];
   const rg = cx.createRadialGradient(-R * .3, -R * .35, R * .1, 0, 0, R);
   rg.addColorStop(0, rb[0]); rg.addColorStop(1, rb[1]);
   cx.fillStyle = rg; cx.beginPath(); cx.arc(0, 0, R * .93, 0, 7); cx.fill();
@@ -1044,15 +1153,15 @@ cv.addEventListener('contextmenu', (e) => e.preventDefault());
 
 function syncPause() { $('#pause').textContent = paused ? 'Resume' : 'Pause'; }
 function togglePause() { if (over) return; paused = !paused; syncPause(); }
+function resumePlay() { paused = false; const help = document.getElementById('bk-help'); if (help) help.open = false; syncPause(); }
 window.ApexGameMenuActions = {
-  play: function () { paused = false; syncPause(); },
+  play: resumePlay,
   pause: function (value) { if (!over) paused = !!value; syncPause(); },
-  resume: function () { if (!over) paused = false; syncPause(); },
-  restart: function () { newMatch(); }
+  resume: resumePlay,
+  restart: function () { paused = false; newMatch(); syncPause(); }
 };
 
 $('#new').onclick = (e) => { e.target.blur(); newMatch(); };
-$('#mode').onchange = (e) => { e.target.blur(); newMatch(); };
 $('#pause').onclick = (e) => { e.target.blur(); togglePause(); };
 $('#guide').onchange = (e) => { guide = e.target.checked; gd.bounce = null; gd.hit = null; e.target.blur(); };
 
@@ -1061,10 +1170,8 @@ window.addEventListener('message', (e) => {
   if ((e.source !== window.parent && e.source !== window) || e.origin !== window.location.origin || !e.data) return;
   if (e.data.type === 'SET_DIFFICULTY') {
     const d = e.data.difficulty;
-    const modeIdx = d === 'easy' ? '0' : d === 'hard' ? '2' : '1';
+    diffOverride = d === 'easy' ? 0 : d === 'hard' ? 2 : 1;
     const keepPaused = paused || window.ApexMenuActive;
-    $('#mode').value = modeIdx;
-    mode = +modeIdx;
     newMatch();
     if (keepPaused) { paused = true; syncPause(); }
   } else if (e.data.type === 'KEY_EVENT') {
@@ -1101,6 +1208,7 @@ window.addEventListener('blur', () => { keys = {}; });
 document.addEventListener('visibilitychange', () => { if (document.hidden && !paused && !over && !window.__apexTheaterEmbedded) togglePause(); });
 
 newMatch();
+initialized = true;
 paused = true;
 syncPause();
 
@@ -1126,6 +1234,46 @@ function loop(currentTime) {
   draw();
 }
 requestAnimationFrame(loop);
+
+/* ---------- deterministic test hooks ---------- */
+function tennisState() {
+  const c = cfg(), won = over && sc[0] > sc[1];
+  return {
+    mode: gm, sc: sc.slice(), srv, state, over, paused, rally, bestRally, target: c.target, winBy: c.winBy, ai: mode,
+    seconds: Math.round(matchTime), score: sc[0] * 120 + bestRally * 25 + (won ? 600 : 0) + c.target * 10,
+    recorded,
+    achievements: typeof Save !== 'undefined' && Save.load ? (Save.load(GAME_ID).achievements || []) : [],
+  };
+}
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  window.TennisTest = {
+    state: tennisState,
+    modes: () => MODES.map((m) => m.id),
+    setMode: (id) => gameUI.setMode(id),
+    getMode: () => gm,
+    restart: () => { newMatch(); return tennisState(); },
+    start: () => { paused = false; syncPause(); return tennisState(); },
+    pause: (value) => { paused = !!value; syncPause(); return paused; },
+    award: (w, rallyLen, reason) => {
+      if (over) return tennisState();
+      state = 'rally';
+      if (rallyLen != null) { rally = Math.max(0, Number(rallyLen) || 0); bestRally = Math.max(bestRally, rally); }
+      point(w ? 1 : 0, reason || 'test');
+      return tennisState();
+    },
+    close: () => { const d = document.getElementById('bk-dlg'); if (d && d.open) d.close(); return true; },
+    modalOpen: () => { const d = document.getElementById('bk-dlg'); return !!(d && d.open); },
+    cosmetic: (slot, id) => { applyCosmetic(slot, id); return { slot, id: cosmeticKey(id) }; },
+    cosmeticList: () => (window.Meta && Meta.getCosmetics ? Meta.getCosmetics(GAME_ID) : []),
+    colors: () => ({
+      table: look.table, tableTop: TT_SKINS[look.table].top.slice(), tableEdge: TT_SKINS[look.table].edge.slice(),
+      arena: look.arena, sky: TT_ARENAS[look.arena].sky.slice(), floor: TT_ARENAS[look.arena].floor.slice(),
+      trail: look.trail, trailRgb: TT_TRAILS[look.trail], rubber: look.rubber, rubberColors: TT_RUBBERS[look.rubber].slice(),
+    }),
+    stats: () => gameUI.stats(),
+    achievements: () => (Save.load(GAME_ID).achievements || []),
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

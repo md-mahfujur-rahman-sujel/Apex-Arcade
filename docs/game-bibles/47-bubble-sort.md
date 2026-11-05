@@ -2,55 +2,88 @@
 
 ## Pitch
 
-Challenging fluid sort puzzle: pour matching colored liquid/bubbles between test tubes until each tube is neatly unified. Keep the source game’s recognizable rhythm and make each run readable, quick to restart, and rewarding to master.
+Pour coloured bubbles between glass tubes until every tube holds one colour. Tap a tube to lift its top bubble — or its top run of matching bubbles — then tap a destination. A pour only lands on an empty tube or on the same colour, and only while the destination has room. Classic is the campaign, Sprint races a 120-second clock, Zen adds a third empty tube and unlimited undo, Precision removes undo and adds a colour, and Masterclass deepens every tube to five bubbles with one undo.
 
 ## Art direction
 
-Preserve the current artwork, silhouettes, animation, and sound on the canonical page. Use the game’s existing #22D3EE accent as a guide for new menu and reward states. Keep gameplay objects distinct from the background; never rely on colour alone for hazards or legal moves. Lite and reduced-motion settings must reduce effects without removing gameplay feedback.
+Tall glass tubes in a dark rack, each holding up to four bubbles (five in Masterclass) in up to twelve colours. Tube skins come from `bubble-sort:tube-*`, the rack from `bubble-sort:bg-*`, the pour highlight from `bubble-sort:glow-*` and the ink from `bubble-sort:ink-*`. A picked tube lifts and a legal destination highlights; a full single-colour tube turns green. Symbols (●▲■★♥◆✚☾♣✿✖☀) can be switched on from the side panel so colour is never the only cue. Reduced-motion removes the pop and shake animations while keeping the lift, selection and sorted state visible.
 
 ## Modes and match structure
 
-1. **Classic:** preserve the canonical rules and scoring.
-2. **Daily challenge:** a deterministic seeded puzzle or short target run with a saved local best.
+| Mode | Tube capacity | Empty tubes | Extra spare tube | Undo | Clock | Unlock |
+| --- | --- | --- | --- | --- | --- | --- |
+| Classic | 4 | 2 | 1 | 5 | none | open |
+| Sprint | 4 | 2 | 1 | 2 | 120 s | open |
+| Zen | 4 | 3 | 2 | unlimited (99) | none | open |
+| Precision | 4 | 2 | 0 | 0 | none | open |
+| Masterclass | 5 | 2 | 0 | 1 | none | Classic win |
 
-A mode change must reset only the state named by that mode. Pause and resume preserve the complete in-progress state. Daily seeds use the local date and produce the same starting state for every retry that day.
+1. **Classic:** the campaign; each clear advances to the next level and saves the highest cleared level.
+2. **Sprint:** the Classic rack against a 120-second clock.
+3. **Zen:** one extra empty tube, two spare-tube additions, unlimited undo and one fewer colour for the level.
+4. **Precision:** one extra colour and no undo or spare tube.
+5. **Masterclass:** five bubbles per tube, one undo, and locked until a Classic win (`classicWins ≥ 1`).
 
-## Settings and difficulty
+Levels use `3 + floor((level − 1) / 2)` colours, capped at twelve; Precision adds one and Zen subtracts one. A mode change starts a fresh level for that mode. Pause freezes the Sprint clock and the move history.
 
-| Setting | Behavior |
-| --- | --- |
-| Easy | 0.8× simulation speed or a wider timing/mistake allowance; 1.0× score. |
-| Normal | Preserve the source page’s baseline rules at 1.0× speed and score. |
-| Hard | 1.35× simulation speed or a stricter opponent/puzzle target; 1.25× score. |
-| Performance | Respect Lite, Standard, and Ultra budgets; preserve essential playfield feedback. |
-| Reduced motion | Remove decorative movement, shake, and nonessential flashes; preserve input and game-state motion. |
-| Audio and palette | Inherit global settings, allow per-game overrides, and keep objects legible in colour-blind palettes. |
+## Core rules
+
+- Tapping a tube selects it; tapping it again clears the selection.
+- A pour moves the top run of one colour onto an empty tube or onto the same colour, provided every moved bubble fits.
+- An illegal pour refuses with a shake and leaves the rack untouched.
+- A tube with one colour and no gaps is locked (shown green) and cannot be picked up.
+- Cleared tubes count toward the level goal; a level is solved when every colour has its own full tube.
+- Undo rewinds the previous pour up to the mode limit.
+- The spare-tube button adds an empty tube, up to the mode's allowance.
+- New layout re-deals the current level; restart re-deals and resets moves, clock and assists.
+
+## Scoring
+
+A clear pays `400 + level × 50 + max(0, 600 − moves × 10) − undos × 25 − spares × 50`, plus `12 × remaining seconds` in Sprint. The result floors at 100. A loss scores zero. There is no difficulty score multiplier; the mode's clock, undo and spare limits are the challenge.
+
+## Records and persistence
+
+Saved under `bubble-sort`:
+
+- `bestScoreClassic`, `bestScoreSprint`, `bestScoreZen`, `bestScorePrecision`, `bestScoreMaster`
+- `level` (highest cleared, maximum merge)
+- `bestMovesClassic`, `bestMovesSprint`, `bestMovesZen`, `bestMovesPrecision`, `bestMovesMaster` (minimum, wins only)
+- `bestTimeClassic`, `bestTimeSprint`, `bestTimeZen`, `bestTimePrecision`, `bestTimeMaster` (minimum, wins only)
+- `wins`, `losses`, `levelsCleared`, `moves`, `undos`, `spares`
+- `classicWins`, `sprintWins`, `zenWins`, `precisionWins`, `masterWins`
+- `plays`, `secondsPlayed`, `lastResult`, `lastMode`
 
 ## Cosmetics
 
-Plan 3 cosmetics across palette, board/craft/object skin, effects, and scene/theme slots as applicable to this game. Keep all interactive objects distinguishable and do not change game physics. Purchases use the shared Sparks registry, charge once, and persist ownership and equip state after reload.
+Sixteen registered cosmetics using the `bubble-sort:` prefix:
+
+| Slot | Items |
+| --- | --- |
+| Skin (tubes) | Glass, Frost, Amber, Jade, Violet |
+| Palette (rack) | Slate, Night, Indigo, Mono |
+| Effect (pour highlight) | Gold, Cyan, Lime, Rose |
+| Theme (ink) | Slate, Plum, Mint |
 
 ## Achievements
 
 | Achievement | Trigger | Rarity |
 | --- | --- | --- |
-| First Run | complete one session | Common |
-| Steady Hand | reach the first score milestone | Common |
-| Quick Clear | finish within the target time | Common |
-| Personal Best | set a new personal best | Rare |
-| Daily Player | complete a seeded daily run | Rare |
-
-Unlock each once under the host game id and send one achievement event and one toast. Score targets must respect the selected mode’s documented multiplier.
+| First Pour | clear any level | Common |
+| Steady Pour | clear a level without undo | Common |
+| No Spare Needed | clear a level without adding a spare tube | Common |
+| Quick Pour | clear a level in under 90 seconds | Rare |
+| Five Racks | clear five levels | Common |
+| Ten Racks | clear ten levels | Epic |
+| Triple Crown | win in three different modes | Rare |
+| Sprint Sorter | clear a Sprint level | Rare |
+| Zen Sorter | clear a Zen level | Common |
+| Diamond Hands | clear a Precision level | Rare |
+| Pour Master | clear a Masterclass level | Epic |
+| Every Rack | win in every mode | Legendary |
 
 ## Tutorial and controls
 
-Use a short illustrated tutorial. Teach the primary objective, legal input, one recovery or strategy tip, and the end condition. Controls shown in the menu and during play: Tap tube to pick up, tap another tube to pour. Keys 1-9 & 0 select tubes.
-
-Support keyboard and touch. Board games must offer clear selected/active state and tap targets; action games must keep virtual controls away from hazards and the theatre launch controls. Shared menus must support gamepad focus and activation.
-
-## Current baseline and scope
-
-Canonical page: `47-colour-sort/index.html`. Current family: Board Kit (No). Catalog description: “Challenging fluid sort puzzle: pour matching colored liquid/bubbles between test tubes until each tube is neatly unified.” Controls: Tap tube to pick up, tap another tube to pour. Keys 1-9 & 0 select tubes. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+The interactive tutorial covers picking up a run, the empty-or-matching pour rule, the locked full tube and the mode modifiers. Controls: click or tap a tube, then a destination; 1–9 and 0 select tubes by number (0 is tube ten); U undoes; R restarts; T adds a spare tube; N deals a new layout; H/M toggle help and mute. The side panel shows level, moves, time, best level, symbols toggle, undo and spare actions, and the level jump selector.
 
 ## Menu Identity Card
 
@@ -58,10 +91,10 @@ Canonical page: `47-colour-sort/index.html`. Current family: Board Kit (No). Cat
 - **Mood:** Pour each colour until every tube holds one shade.
 - **Palette:** `#080d15` background, `color-mix(in srgb, #22d3ee 8%, rgba(15,22,35,.94))` panel, `#22d3ee` accent, `color-mix(in srgb, #22d3ee 76%, white)` button, `#10151e` button text, `#f6f7fb` body text.
 - **Type:** System UI title and body fonts.
-- **Frame and buttons:** Per-title `tubes-frame` frame and `tubes-banner` button identity, using the shared glass treatment.
-- **Scene recipe:** Original procedural tubes mark with an accent-lit background, restrained depth bands, and a static Lite/reduced-motion frame.
-- **Music and UI sounds:** Per-title procedural motif; shared tick, select, and back cues.
-- **Menu items:** Play, Options, About, Exit. No proposed modes or cosmetics are shown as available.
-- **Settings:** Shared audio, display, controls, accessibility, and difficulty options.
+- **Frame and buttons:** `tubes-frame` frame and `tubes-banner` button identity, using the shared glass treatment.
+- **Scene recipe:** A procedural hex-field of glass tubes lit by the rack accent, with restrained depth bands and a static Lite/reduced-motion frame.
+- **Music and UI sounds:** Per-title minor procedural motif; shared tick, select and back cues.
+- **Menu items:** Play, Modes, Customize, Options, More, Exit.
+- **Settings:** Shared audio, display, controls, accessibility and difficulty options. The shared difficulty setting has no gameplay effect; the mode sets capacity, clock and assists.
 - **Controls:** Click a source tube, then an available destination.
-- **Lite fallback:** Static tubes composition with the title accent and scene silhouette.
+- **Lite fallback:** Static tube composition with the title accent and rack silhouette.

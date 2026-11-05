@@ -71,7 +71,7 @@ async function signature(frame, gameId) {
           case 'minesweeper': return [revealed, flagged, state];
           case 'sliding-puzzle': return [B, moves, done];
           case 'nuts-bolts': return [left(), tray, state];
-          case 'colour-sort': return [T, moves, sel];
+          case 'colour-sort': return [tubes, moves, sel];
           case 'fruit-merge': return [fr.map((f) => [f.id, f.l, f.x, f.y]), score, cur, cool];
           case 'table-tennis': return [score, turn, mode];
           case 'mahjong': return [removed, moves, won];
@@ -113,16 +113,16 @@ async function testMove(frame, isTouch, gameId) {
     carrom: async () => ({ carrom: true }),
     'tycoon-town': async () => ({ key: 'r' }),
     checkers: async () => frame.evaluate(() => {
-      $('#mode').value = 'two'; newGame();
+      newGame();
       const m = moves(B, turn)[0], square = (i) => [...document.querySelectorAll('#bd [data-k]')].find((el) => (flip ? 63 - +el.dataset.k : +el.dataset.k) === i);
       return { from: square(m.path[0])?.dataset.k, to: square(m.path[m.path.length - 1])?.dataset.k };
     }),
     mancala: async () => frame.evaluate(() => {
-      $('#mode').value = 'two'; newGame();
+      newGame();
       return { pit: legal(B, turn)[0] };
     }),
     reversi: async () => frame.evaluate(() => {
-      $('#mode').value = 'two'; newGame();
+      newGame();
       return { cell: movesOf(B, turn)[0][0] };
     }),
     'tic-tac-toe': async () => frame.evaluate(() => {
@@ -150,9 +150,9 @@ async function testMove(frame, isTouch, gameId) {
       return { nuts: { x: point.x, y: point.y } };
     }),
     'colour-sort': async () => frame.evaluate(() => {
-      const source = T.findIndex((tube) => tube.length);
-      const color = T[source].at(-1);
-      const target = T.findIndex((tube, i) => i !== source && tube.length < 4 && (!tube.length || tube.at(-1) === color));
+      const source = tubes.findIndex((tube) => tube.length);
+      const color = tubes[source].at(-1);
+      const target = tubes.findIndex((tube, i) => i !== source && tube.length < cap && (!tube.length || tube.at(-1) === color));
       return { source, target };
     }),
     'fruit-merge': async () => ({ canvas: true }),
@@ -404,7 +404,7 @@ async function testGame(game, viewport, browserContext) {
             { value: difficulty, undo: difficulty === 'easy' ? 8 : difficulty === 'hard' ? 1 : 4 });
           if (game.number === '48') gameEffectSynced &&= await frame.evaluate((expected) => { newGame(); drop(); return cool === expected; },
             difficulty === 'easy' ? 0.75 : difficulty === 'hard' ? 0.35 : 0.55);
-          if (game.number === '49') gameEffectSynced &&= await frame.evaluate((expected) => document.querySelector('#mode')?.value === expected,
+          if (game.number === '49') gameEffectSynced &&= await frame.evaluate((expected) => String(mode) === expected,
             difficulty === 'easy' ? '0' : difficulty === 'hard' ? '2' : '1');
         }
         result.difficulty = selectorsSynced && gameEffectSynced

@@ -6,14 +6,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bubble Sort</title>
 <style>
-  .cs { display: grid; gap: 16px; }
-  .top { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center; color: var(--muted); font: 600 14px ui-monospace, Consolas, monospace; } .top b { color: var(--text); }
-  #bd { display: flex; flex-wrap: wrap; gap: 22px 18px; justify-content: center; padding: 26px 12px 18px; background: linear-gradient(#1a2140, #121830); border-radius: 18px; min-height: 300px; box-shadow: 0 20px 50px -20px #000; align-content: center; user-select: none; touch-action: manipulation; }
-  .tb { width: 58px; height: 218px; border: 3px solid rgba(255,255,255,.35); border-top-color: rgba(255,255,255,.15); border-radius: 8px 8px 30px 30px; display: flex; flex-direction: column-reverse; align-items: center; padding: 6px 0 6px; gap: 3px; cursor: pointer; background: rgba(255,255,255,.05); transition: transform .15s, border-color .15s; position: relative; }
-  .tb:hover { border-color: rgba(255,255,255,.65); } .tb.sel { transform: translateY(-16px); border-color: #fde047; } .tb.done { border-color: #4ade80; box-shadow: 0 0 18px rgba(74,222,128,.4); }
-  .bb { width: 44px; height: 44px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font: 800 17px sans-serif; color: rgba(0,0,0,.55); box-shadow: inset -4px -5px 0 rgba(0,0,0,.2), inset 3px 3px 0 rgba(255,255,255,.4); }
+  .cs { display: grid; grid-template-columns: auto minmax(220px, 1fr); gap: 22px; align-items: start; }
+  @media (max-width: 860px) { .cs { grid-template-columns: 1fr; } }
+  .side { display: grid; gap: 12px; } .stats { display: flex; flex-wrap: wrap; gap: 18px; color: var(--muted); font: 600 14px ui-monospace, Consolas, monospace; } .stats b { color: var(--text); }
+  #bd { display: flex; flex-wrap: wrap; gap: 22px 18px; justify-content: center; padding: 26px 12px 18px; background: linear-gradient(var(--cs-bg1, #1a2140), var(--cs-bg2, #121830)); border-radius: 18px; min-height: 300px; box-shadow: 0 20px 50px -20px #000; align-content: center; user-select: none; touch-action: manipulation; max-width: calc(100vw - 36px); }
+  .tb { width: 58px; height: 218px; border: 3px solid var(--cs-tube, rgba(255,255,255,.35)); border-top-color: rgba(255,255,255,.15); border-radius: 8px 8px 30px 30px; display: flex; flex-direction: column-reverse; align-items: center; padding: 6px 0 6px; gap: 3px; cursor: pointer; background: linear-gradient(var(--cs-tube-a, rgba(255,255,255,.05)), var(--cs-tube-b, rgba(255,255,255,.01))); transition: transform .15s, border-color .15s; position: relative; }
+  .tb:hover { border-color: rgba(255,255,255,.65); }
+  .tb.sel { transform: translateY(-16px); border-color: var(--cs-glow, #fde047); box-shadow: 0 0 22px var(--cs-glow, rgba(253,224,71,.55)); }
+  .tb.done { border-color: #4ade80; box-shadow: 0 0 18px rgba(74,222,128,.4); }
+  .bb { width: 44px; height: 44px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font: 800 17px sans-serif; color: var(--cs-ink, rgba(0,0,0,.55)); box-shadow: inset -4px -5px 0 rgba(0,0,0,.2), inset 3px 3px 0 rgba(255,255,255,.4); }
   .bb.pop { animation: pp .25s ease-out; } @keyframes pp { from { transform: scale(.4); } }
   .tb.shake { animation: sk .25s; } @keyframes sk { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+  @media (prefers-reduced-motion: reduce) { .tb, .bb.pop, .tb.shake { transition: none; animation: none; } }
 </style>
 <script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
 </head>
@@ -29,69 +33,392 @@
 <script>
 const ui = Board.shell({
   id: 'bubble-sort', title: 'Bubble Sort', subtitle: 'Pour the bubbles until every tube holds a single colour',
-  rules: 'Tap a tube to pick it up, then tap another tube to pour. You can only pour the top bubble (or run of same-coloured bubbles) onto an empty tube or onto a matching colour, as long as there is room — each tube holds four. Sort every colour into its own tube to clear the level. Stuck? Undo as often as you like, add a spare tube once per level, or restart. Every level is solvable. Turn on Symbols if the colours are hard to tell apart.',
+  rules: 'Tap a tube to pick it up, then tap another tube to pour. You can only pour the top bubble (or run of same-coloured bubbles) onto an empty tube or onto a matching colour, as long as there is room — each tube holds four bubbles (five in Masterclass). Sort every colour into its own tube to clear the level. Stuck? Undo, add a spare tube, or restart. Every level is solvable. Turn on Symbols if the colours are hard to tell apart. Classic is the campaign, Sprint races a 120-second clock, Zen adds a third spare tube and unlimited undo, Precision removes undo and adds a colour, and Masterclass deepens every tube to five bubbles with one undo.',
   controls: [['Click / tap a tube', 'Pick up, then tap a second tube to pour'], ['1 – 9, 0', 'Select tube by number (0 = tube 10)'], ['U', 'Undo'], ['R', 'Restart the level'], ['T', 'Add a spare tube'], ['N', 'New layout for this level'], ['H / M', 'Toggle help / mute']],
 });
-ui.main.innerHTML = `<div class="cs"><div class="top"><span>Level <b id="lv">1</b></span><span>Moves <b id="mv">0</b></span><span>Best <b id="bs">1</b></span></div>
-  <div id="bd"></div><div class="bk-status" id="st"></div>
-  <div class="bk-row"><button class="bk-btn" id="undo">Undo</button><button class="bk-btn" id="rst">Restart</button><button class="bk-btn" id="add">＋ Spare tube</button><button class="bk-btn" id="sym">Symbols: off</button><button class="bk-btn bk-primary" id="nxt">New layout</button>
-    <label style="color:var(--muted)">Level <select class="bk-select" id="jump"></select></label></div></div>`;
+ui.main.innerHTML = `<div class="cs"><div id="bd"></div><div class="side">
+  <div class="stats"><span>Level <b id="lv">1</b></span><span>Moves <b id="mv">0</b></span><span>Time <b id="tm">0:00</b></span><span>Best <b id="bs">1</b></span></div>
+  <div class="bk-status" id="st"></div>
+  <div class="bk-status" id="goal"></div>
+  <div class="bk-row"><button class="bk-btn" id="undo">Undo</button><button class="bk-btn" id="add">＋ Spare tube</button></div>
+  <div class="bk-row"><button class="bk-btn" id="rst">Restart</button><button class="bk-btn bk-primary" id="nxt">New layout</button></div>
+  <div class="bk-row"><button class="bk-btn" id="sym">Symbols: off</button><label>Jump to level <select class="bk-select" id="jump"></select></label></div></div></div>`;
 const $ = (s) => ui.main.querySelector(s);
-const COL = ['#ef4444', '#3b82f6', '#22c55e', '#facc15', '#a855f7', '#fb923c', '#22d3ee', '#f472b6', '#84cc16', '#94a3b8', '#8b5a2b', '#14b8a6'], SYM = '●▲■★♥◆✚☾♣✿✖☀', CAP = 4;
-let T, level, moves, sel, hist, start0, spare, sym, busy;
 const bd = $('#bd');
+const GAME_ID = 'bubble-sort';
+const COL = ['#ef4444', '#3b82f6', '#22c55e', '#facc15', '#a855f7', '#fb923c', '#22d3ee', '#f472b6', '#84cc16', '#94a3b8', '#8b5a2b', '#14b8a6'];
+const SYM = '●▲■★♥◆✚☾♣✿✖☀';
+const MODES = [
+  { id: 'classic', name: 'Classic', blurb: 'Two spare tubes, five undos', free: 2, cap: 4, undo: 5, spare: 1 },
+  { id: 'sprint', name: 'Sprint', blurb: '120-second clock, two undos', free: 2, cap: 4, undo: 2, spare: 1, limit: 120 },
+  { id: 'zen', name: 'Zen', blurb: 'Three spare tubes, unlimited undo', free: 3, cap: 4, undo: 99, spare: 2, easier: 1 },
+  { id: 'precision', name: 'Precision', blurb: 'One extra colour, no undo', free: 2, cap: 4, undo: 0, spare: 0, harder: 1 },
+  { id: 'master', name: 'Masterclass', blurb: 'Five-bubble tubes, one undo', free: 2, cap: 5, undo: 1, spare: 0, requires: { stat: 'classicWins', gte: 1 }, lockedHint: 'Clear a Classic level to unlock' },
+];
+const ACHIEVEMENTS = [
+  { id: 'first-clear', name: 'First Pour', desc: 'Clear any level.' },
+  { id: 'no-undo', name: 'Steady Pour', desc: 'Clear a level without undo.' },
+  { id: 'no-spare', name: 'No Spare Needed', desc: 'Clear a level without adding a spare tube.' },
+  { id: 'speed-clear', name: 'Quick Pour', desc: 'Clear a level in under 90 seconds.' },
+  { id: 'five-levels', name: 'Five Racks', desc: 'Clear five levels across your career.' },
+  { id: 'ten-clear', name: 'Ten Racks', desc: 'Clear ten levels across your career.' },
+  { id: 'triple-crown', name: 'Triple Crown', desc: 'Win in three different modes.' },
+  { id: 'sprint-clear', name: 'Sprint Sorter', desc: 'Clear a Sprint level.' },
+  { id: 'zen-clear', name: 'Zen Sorter', desc: 'Clear a Zen level.' },
+  { id: 'precision-clear', name: 'Diamond Hands', desc: 'Clear a Precision level.' },
+  { id: 'master-clear', name: 'Pour Master', desc: 'Clear a Masterclass level.' },
+  { id: 'all-modes', name: 'Every Rack', desc: 'Win in every mode.' },
+];
+const SKINS = {
+  'tube-glass': ['rgba(255,255,255,.35)', 'rgba(255,255,255,.05)', 'rgba(255,255,255,.01)'],
+  'tube-frost': ['#cfe8ff', 'rgba(140,190,255,.16)', 'rgba(90,140,220,.06)'],
+  'tube-amber': ['#fcd34d', 'rgba(251,191,36,.18)', 'rgba(180,120,20,.06)'],
+  'tube-jade': ['#6ee7b7', 'rgba(52,211,153,.18)', 'rgba(20,140,100,.06)'],
+  'tube-violet': ['#c4b5fd', 'rgba(167,139,250,.2)', 'rgba(110,70,200,.08)'],
+};
+const PALETTES = { 'bg-slate': ['#1a2140', '#121830'], 'bg-night': ['#12141f', '#070810'], 'bg-indigo': ['#262552', '#141334'], 'bg-mono': ['#26282d', '#131418'] };
+const EFFECTS = { 'glow-gold': '#fde047', 'glow-cyan': '#22d3ee', 'glow-lime': '#a3e635', 'glow-rose': '#fb7185' };
+const THEMES = { 'ink-slate': 'rgba(0,0,0,.55)', 'ink-plum': '#2a1030', 'ink-mint': '#062a22' };
+const look = { skin: 'tube-glass', palette: 'bg-slate', effect: 'glow-gold', theme: 'ink-slate' };
+const cosmeticKey = (id) => String(id || '').split(':').pop();
+const rootStyle = document.documentElement.style;
+function applyCosmetic(slot, id) {
+  const key = cosmeticKey(id);
+  if (slot === 'skin' && SKINS[key]) {
+    look.skin = key;
+    rootStyle.setProperty('--cs-tube', SKINS[key][0]);
+    rootStyle.setProperty('--cs-tube-a', SKINS[key][1]);
+    rootStyle.setProperty('--cs-tube-b', SKINS[key][2]);
+  } else if (slot === 'palette' && PALETTES[key]) {
+    look.palette = key;
+    rootStyle.setProperty('--cs-bg1', PALETTES[key][0]);
+    rootStyle.setProperty('--cs-bg2', PALETTES[key][1]);
+  } else if (slot === 'effect' && EFFECTS[key]) {
+    look.effect = key;
+    rootStyle.setProperty('--cs-glow', EFFECTS[key]);
+  } else if (slot === 'theme' && THEMES[key]) {
+    look.theme = key;
+    rootStyle.setProperty('--cs-ink', THEMES[key]);
+  }
+}
+let gm = 'classic', initialized = false, menuPaused = true;
+const GameUI = Board.ui({
+  id: GAME_ID, title: 'Bubble Sort', subtitle: 'Pour three of a kind into their own tube.', accent: '#fde047',
+  modes: MODES, achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Tap a tube to lift its top bubbles, then tap a second tube to pour.' },
+    { text: 'A pour only lands on an empty tube or the same colour, and only while there is room.' },
+    { text: 'A tube full of one colour turns green; sort every colour to clear the level.' },
+    { text: 'Sprint adds a clock, Zen widens the rack, Precision removes undo, and Masterclass deepens every tube.' },
+  ] },
+  hooks: {
+    applyMode: (next) => { gm = MODES.some((m) => m.id === next) ? next : 'classic'; if (initialized) newGame(); },
+    applyCosmetic,
+    onStart: () => resumeClock(),
+  },
+});
+window.ApexGameMenuActions = {
+  play: () => resumeClock(),
+  pause: (value) => { if (value) pauseClock(); else resumeClock(); },
+  resume: () => resumeClock(),
+  restart: () => { menuPaused = false; restart(); },
+};
+const cfg = () => MODES.find((m) => m.id === gm) || MODES[0];
+const fmt = (ms) => { const s = Math.max(0, ms / 1000 | 0); return (s / 60 | 0) + ':' + String(s % 60).padStart(2, '0'); };
+let cap = 4, level = 1, tubes = [], sel = -1, hist = [], startSeed = '', symbols = false;
+let moves = 0, undosUsed = 0, sparesUsed = 0, spareLeft = 1, lastScore = 0, state = 'play', overReason = '';
+let started = false, clockAccum = 0, clockSince = null;
+const elapsedMs = () => clockAccum + (clockSince ? Date.now() - clockSince : 0);
+const timeLeft = () => { const limit = cfg().limit; return limit ? Math.max(0, limit * 1000 - elapsedMs()) : 0; };
+function pauseClock() { if (clockSince) { clockAccum += Date.now() - clockSince; clockSince = null; } }
+function resumeClock() {
+  menuPaused = false;
+  if (!clockSince && started && state === 'play') clockSince = Date.now();
+  const help = document.getElementById('bk-help'); if (help) help.open = false;
+}
+const isFull = (x) => x.length === cap && x.every((c) => c === x[0]);
+const solved = (t) => t.every((x) => !x.length || isFull(x));
+function colorsFor(lvl) {
+  const c = cfg();
+  return Math.max(3, Math.min(12, 3 + ((lvl - 1) >> 1) + (c.harder || 0) - (c.easier || 0)));
+}
 function solvable(t0) {
   const seen = new Set(); let nodes = 0;
-  const key = (t) => t.map((x) => x.join('')).sort().join('|');
+  const key = (t) => t.map((x) => x.join(',')).sort().join('|');
   function dfs(t) {
-    if (t.every((x) => !x.length || (x.length === CAP && x.every((c) => c === x[0])))) return true; if (++nodes > 30000) return false;
+    if (solved(t)) return true;
+    if (++nodes > 30000) return false;
     const k = key(t); if (seen.has(k)) return false; seen.add(k);
-    for (let a = 0; a < t.length; a++) { if (!t[a].length || (t[a].length === CAP && t[a].every((c) => c === t[a][0]))) continue;
-      for (let b = 0; b < t.length; b++) { if (a === b) continue; const A = t[a], B = t[b], c = A[A.length - 1]; if (B.length >= CAP || (B.length && B[B.length - 1] !== c)) continue; if (!B.length && A.every((x) => x === c)) continue;
-        let n = 0; while (n < A.length && A[A.length - 1 - n] === c && B.length + n < CAP) n++;
-        const nt = t.map((x) => x.slice()); nt[b].push(...nt[a].splice(nt[a].length - n, n)); if (dfs(nt)) return true; } }
+    for (let a = 0; a < t.length; a++) {
+      if (!t[a].length || isFull(t[a])) continue;
+      for (let b = 0; b < t.length; b++) {
+        if (a === b) continue;
+        const A = t[a], B = t[b], c = A[A.length - 1];
+        if (B.length >= cap || (B.length && B[B.length - 1] !== c)) continue;
+        if (!B.length && A.every((x) => x === c)) continue;
+        let n = 0; while (n < A.length && A[A.length - 1 - n] === c && B.length + n < cap) n++;
+        const nt = t.map((x) => x.slice()); nt[b].push(...nt[a].splice(nt[a].length - n, n));
+        if (dfs(nt)) return true;
+      }
+    }
     return false;
   }
   return dfs(t0.map((x) => x.slice()));
 }
 function make(lvl) {
-  const nc = Math.min(12, 3 + ((lvl - 1) >> 1)), nt = nc + 2;
+  const colors = colorsFor(lvl), nt = colors + cfg().free;
   for (let tries = 0; ; tries++) {
-    const pool = []; for (let c = 0; c < nc; c++) for (let k = 0; k < CAP; k++) pool.push(c); Board.shuffle(pool);
-    const t = Array.from({ length: nt }, () => []); pool.forEach((c, i) => t[i % nc].push(c));
-    if (t.slice(0, nc).some((x) => x.every((c) => c === x[0]))) continue; if (solvable(t) || tries > 40) return t;
+    const pool = []; for (let c = 0; c < colors; c++) for (let k = 0; k < cap; k++) pool.push(c); Board.shuffle(pool);
+    const t = Array.from({ length: nt }, () => []); pool.forEach((c, i) => t[i % colors].push(c));
+    if (t.slice(0, colors).some((x) => x.every((c) => c === x[0]))) continue;
+    if (solvable(t) || tries > 40) return t;
   }
 }
-function begin(lvl, same) { level = lvl; T = same ? JSON.parse(start0) : make(lvl); start0 = JSON.stringify(T); moves = 0; sel = -1; hist = []; spare = false; busy = false; const b = +Board.ls.get('apex:cs:best') || 1; $('#bs').textContent = b; fillJump(); render(); }
-function fillJump() { const best = +Board.ls.get('apex:cs:best') || 1, j = $('#jump'); j.innerHTML = ''; for (let i = 1; i <= Math.max(best, level); i++) { const o = document.createElement('option'); o.value = i; o.textContent = i; if (i === level) o.selected = true; j.appendChild(o); } }
-const full = (x) => x.length === CAP && x.every((c) => c === x[0]);
+function fillJump() {
+  const best = Math.max(1, Number(GameUI.stats().level) || 1, level), j = $('#jump'); j.innerHTML = '';
+  for (let i = 1; i <= Math.min(99, best); i++) { const o = document.createElement('option'); o.value = i; o.textContent = i; if (i === level) o.selected = true; j.appendChild(o); }
+}
 function render(popTube) {
-  bd.innerHTML = ''; T.forEach((x, i) => { const d = document.createElement('div'); d.className = 'tb' + (i === sel ? ' sel' : '') + (full(x) ? ' done' : ''); d.dataset.i = i; d.title = 'Tube ' + (i + 1);
-    x.forEach((c, k) => { const b = document.createElement('div'); b.className = 'bb' + (i === popTube && k >= x.length - 1 ? ' pop' : ''); b.style.background = COL[c]; b.textContent = sym ? SYM[c] : ''; d.appendChild(b); }); bd.appendChild(d); });
-  $('#lv').textContent = level; $('#mv').textContent = moves; $('#st').textContent = sel >= 0 ? 'Tube ' + (sel + 1) + ' lifted — tap where to pour' : 'Tap a tube to lift its top bubbles';
+  bd.innerHTML = '';
+  tubes.forEach((x, i) => {
+    const d = document.createElement('div');
+    d.className = 'tb' + (i === sel ? ' sel' : '') + (isFull(x) ? ' done' : '');
+    d.dataset.i = i; d.title = 'Tube ' + (i + 1);
+    x.forEach((c, k) => {
+      const b = document.createElement('div');
+      b.className = 'bb' + (i === popTube && k === x.length - 1 ? ' pop' : '');
+      b.style.background = COL[c]; b.textContent = symbols ? SYM[c] : '';
+      d.appendChild(b);
+    });
+    bd.appendChild(d);
+  });
+  $('#lv').textContent = level;
+  $('#mv').textContent = moves;
+  $('#tm').textContent = cfg().limit ? fmt(timeLeft()) : fmt(elapsedMs());
+  $('#bs').textContent = Math.max(1, Number(GameUI.stats().level) || 1);
+  const status = $('#st');
+  if (state === 'won') status.textContent = 'Level cleared! 🎉';
+  else if (state === 'lost') status.textContent = overReason === 'time' ? '⏰ Time up.' : 'Rack closed.';
+  else if (sel >= 0) status.textContent = 'Tube ' + (sel + 1) + ' lifted — tap where to pour';
+  else status.textContent = moves + ' pours · ' + spareLeft + ' spare tube' + (spareLeft === 1 ? '' : 's') + ' left';
+  const undo = $('#undo'); undo.disabled = state !== 'play' || !hist.length || undosUsed >= cfg().undo;
+  const add = $('#add'); add.disabled = state !== 'play' || spareLeft <= 0;
+  if (gm === 'sprint') $('#goal').textContent = 'Sprint · ' + fmt(timeLeft()) + ' left · ' + cap + ' per tube';
+  else if (gm === 'zen') $('#goal').textContent = 'Zen · ' + cfg().free + ' spare tubes · unlimited undo';
+  else if (gm === 'precision') $('#goal').textContent = 'Precision · one extra colour · no undo';
+  else if (gm === 'master') $('#goal').textContent = 'Masterclass · ' + cap + ' per tube · one undo';
+  else $('#goal').textContent = 'Classic · ' + Math.max(0, cfg().undo - undosUsed) + ' undo left · ' + spareLeft + ' spare';
 }
+function newGame() {
+  const stats = GameUI.stats();
+  startLevel(gm === 'classic' ? Math.max(1, Number(stats.level) || 1) : 1);
+}
+function startLevel(lvl) {
+  cap = cfg().cap;
+  level = Math.max(1, Math.min(99, Number(lvl) || 1));
+  tubes = make(level);
+  startSeed = JSON.stringify(tubes);
+  resetRun();
+}
+function resetRun() {
+  moves = 0; sel = -1; hist = []; undosUsed = 0; sparesUsed = 0; spareLeft = cfg().spare;
+  lastScore = 0; state = 'play'; overReason = ''; started = false; clockAccum = 0; clockSince = null;
+  initialized = true; fillJump(); render();
+}
+function restart() {
+  if (!startSeed) return;
+  tubes = JSON.parse(startSeed);
+  resetRun();
+}
+const snapshot = () => ({ t: JSON.stringify(tubes), n: spareLeft, s: sparesUsed, m: moves });
+function pushHist() { hist.push(snapshot()); if (hist.length > 400) hist.shift(); }
 function pick(i) {
-  if (busy) return;
-  if (sel < 0) { if (!T[i].length) { Board.sfx('error'); return; } sel = i; Board.sfx('click'); render(); return; }
-  if (i === sel) { sel = -1; render(); return; }
-  const A = T[sel], B = T[i], c = A[A.length - 1];
-  if (B.length >= CAP || (B.length && B[B.length - 1] !== c)) { Board.sfx('error'); const el = bd.children[i]; el.classList.add('shake'); Board.after(260, () => el.classList.remove('shake')); if (B.length && B[B.length - 1] !== c) { sel = i; render(); } else { sel = -1; render(); } return; }
-  let n = 0; while (n < A.length && A[A.length - 1 - n] === c && B.length + n < CAP) n++;
-  hist.push(JSON.stringify(T)); T[i].push(...T[sel].splice(T[sel].length - n, n)); moves++; sel = -1; Board.sfx('move'); render(i);
-  if (T.every((x) => !x.length || full(x))) { const b = Math.max(+Board.ls.get('apex:cs:best') || 1, level + 1); Board.ls.set('apex:cs:best', b); busy = true; Board.sfx('win'); $('#st').textContent = 'Level cleared! 🎉'; Board.after(500, () => Board.modal('Level ' + level + ' cleared!', moves + ' moves.', [['Next level', () => begin(level + 1)], ['Close', () => { busy = false; }]])); }
+  if (menuPaused || state !== 'play' || !tubes[i]) return false;
+  if (sel < 0) {
+    if (!tubes[i].length) { Board.sfx('error'); return false; }
+    sel = i; Board.sfx('click'); render(); return true;
+  }
+  if (i === sel) { sel = -1; render(); return true; }
+  const A = tubes[sel], B = tubes[i], c = A[A.length - 1];
+  if (B.length >= cap || (B.length && B[B.length - 1] !== c)) {
+    Board.sfx('error');
+    const el = bd.children[i];
+    if (el) { el.classList.add('shake'); Board.after(260, () => el.classList.remove('shake')); }
+    sel = B.length && B[B.length - 1] !== c ? i : -1;
+    render();
+    return false;
+  }
+  let n = 0; while (n < A.length && A[A.length - 1 - n] === c && B.length + n < cap) n++;
+  pushHist();
+  B.push(...A.splice(A.length - n, n));
+  moves++; sel = -1;
+  if (!started) { started = true; clockSince = menuPaused ? null : Date.now(); }
+  Board.sfx('move'); render(i);
+  if (solved(tubes)) finishRun(true, 'clear');
+  return true;
 }
-function undo() { if (!hist.length || busy) return; T = JSON.parse(hist.pop()); moves = Math.max(0, moves - 1); sel = -1; spare = T.length > JSON.parse(start0).length; render(); }
-$('#bd').addEventListener('click', (e) => { const d = e.target.closest('.tb'); if (d) pick(+d.dataset.i); });
-$('#undo').onclick = undo; $('#rst').onclick = () => begin(level, true); $('#nxt').onclick = () => begin(level);
-$('#add').onclick = () => { if (spare || busy) return; spare = true; T.push([]); render(); };
-$('#sym').onclick = () => { sym = !sym; $('#sym').textContent = 'Symbols: ' + (sym ? 'on' : 'off'); render(); };
-$('#jump').onchange = (e) => { begin(+e.target.value); e.target.blur(); };
+function undo() {
+  if (state !== 'play' || !hist.length || undosUsed >= cfg().undo) { if (undosUsed >= cfg().undo) Board.sfx('error'); return false; }
+  const snap = hist.pop();
+  tubes = JSON.parse(snap.t); spareLeft = snap.n; sparesUsed = snap.s; moves = snap.m;
+  undosUsed++; sel = -1; Board.sfx('click'); render();
+  return true;
+}
+function spare() {
+  if (menuPaused || state !== 'play' || spareLeft <= 0) { Board.sfx('error'); return false; }
+  pushHist();
+  tubes.push([]); spareLeft--; sparesUsed++;
+  Board.sfx('click'); render();
+  return true;
+}
+function finishRun(win, reason) {
+  if (state === 'won' || state === 'lost') return;
+  state = win ? 'won' : 'lost'; overReason = win ? '' : (reason || 'time');
+  pauseClock();
+  const secs = Math.round(elapsedMs() / 1000);
+  let score = 0;
+  if (win) {
+    const bonus = cfg().limit ? Math.max(0, Math.round(timeLeft() / 1000)) * 12 : 0;
+    score = 400 + level * 50 + Math.max(0, 600 - moves * 10) - undosUsed * 25 - sparesUsed * 50 + bonus;
+    score = Math.max(100, Math.round(score));
+  }
+  lastScore = score;
+  const stats = GameUI.stats(), careerWins = (Number(stats.wins) || 0) + (win ? 1 : 0);
+  const perMode = gm.charAt(0).toUpperCase() + gm.slice(1);
+  const records = { ['bestScore' + perMode]: score };
+  const mins = {};
+  if (win) {
+    records.level = level;
+    mins['bestMoves' + perMode] = moves;
+    mins['bestTime' + perMode] = secs;
+  }
+  const counters = { wins: win ? 1 : 0, losses: win ? 0 : 1, levelsCleared: win ? 1 : 0, moves, undos: undosUsed, spares: sparesUsed, [gm + 'Wins']: win ? 1 : 0 };
+  const achievements = [];
+  if (win) {
+    achievements.push('first-clear');
+    if (undosUsed === 0) achievements.push('no-undo');
+    if (sparesUsed === 0) achievements.push('no-spare');
+    if (secs < 90) achievements.push('speed-clear');
+    if (careerWins >= 5) achievements.push('five-levels');
+    if (careerWins >= 10) achievements.push('ten-clear');
+    if (gm === 'sprint') achievements.push('sprint-clear');
+    if (gm === 'zen') achievements.push('zen-clear');
+    if (gm === 'precision') achievements.push('precision-clear');
+    if (gm === 'master') achievements.push('master-clear');
+    const modesWon = MODES.filter((m) => (Number(stats[m.id + 'Wins']) || 0) + (m.id === gm ? 1 : 0) > 0);
+    if (modesWon.length >= 3) achievements.push('triple-crown');
+    if (modesWon.length === MODES.length) achievements.push('all-modes');
+  }
+  GameUI.record({ score, seconds: secs, result: win ? 'Won' : 'Lost', records, mins, counters, achievements });
+  if (win) Board.sfx('win');
+  render();
+  const title = win ? 'Level ' + level + ' cleared!' : 'Time up';
+  const copy = win
+    ? `${moves} pours · ${fmt(secs * 1000)} · ${undosUsed} undo${undosUsed === 1 ? '' : 's'} · ${score} pts`
+    : 'The clock ran out on level ' + level + '.';
+  Board.modal(title, copy, win ? [['Next level', () => startLevel(level + 1)], ['Close']] : [['Restart', restart], ['Close']]);
+  return true;
+}
+bd.addEventListener('click', (e) => { const d = e.target.closest('.tb'); if (d) pick(+d.dataset.i); });
+$('#undo').onclick = (e) => { e.target.blur(); undo(); };
+$('#rst').onclick = (e) => { e.target.blur(); restart(); };
+$('#add').onclick = (e) => { e.target.blur(); spare(); };
+$('#sym').onclick = (e) => { symbols = !symbols; e.target.textContent = 'Symbols: ' + (symbols ? 'on' : 'off'); e.target.blur(); render(); };
+$('#nxt').onclick = (e) => { e.target.blur(); startLevel(level); };
+$('#jump').onchange = (e) => { startLevel(+e.target.value); e.target.blur(); };
 document.addEventListener('keydown', (e) => {
-  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || document.getElementById('bk-dlg')?.open) return; const k = e.key.toLowerCase();
-  if (k === 'u') undo(); else if (k === 'r') begin(level, true); else if (k === 'n') begin(level); else if (k === 't') $('#add').click();
-  else if (/^[0-9]$/.test(k)) { const i = k === '0' ? 9 : +k - 1; if (i < T.length) pick(i); }
+  if (menuPaused || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || document.getElementById('bk-dlg')?.open) return;
+  const k = e.key.toLowerCase();
+  if (k === 'u') undo();
+  else if (k === 'r') restart();
+  else if (k === 'n') startLevel(level);
+  else if (k === 't') spare();
+  else if (/^[0-9]$/.test(k)) { const i = k === '0' ? 9 : +k - 1; if (i < tubes.length) pick(i); }
 });
-begin(Math.min(+Board.ls.get('apex:cs:best') || 1, 99));
+window.addEventListener('apex:board-pause', (e) => { if (e.detail?.paused) pauseClock(); else resumeClock(); });
+setInterval(() => {
+  if (state !== 'play') return;
+  if (cfg().limit) {
+    const leftMs = timeLeft();
+    $('#tm').textContent = fmt(leftMs);
+    if (started && leftMs <= 0) finishRun(false, 'time');
+  } else if (started) $('#tm').textContent = fmt(elapsedMs());
+}, 250);
+newGame();
+
+/* ---------- deterministic test hooks ---------- */
+function gameState() {
+  return {
+    mode: gm, level, cap, moves, undos: undosUsed, spares: sparesUsed, spareLeft, sel,
+    tubes: tubes.length, started, done: state !== 'play', won: state === 'won',
+    time: Math.round(elapsedMs() / 1000), clock: Math.round(timeLeft() / 1000), score: lastScore,
+    overReason, menuPaused,
+    achievements: typeof Save !== 'undefined' && Save.load ? (Save.load(GAME_ID).achievements || []) : [],
+  };
+}
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  window.SortTest = {
+    state: gameState,
+    tubes: () => tubes.map((x) => x.slice()),
+    modes: () => MODES.map((m) => m.id),
+    setMode: (id) => GameUI.setMode(id),
+    getMode: () => gm,
+    restart: () => { restart(); return gameState(); },
+    newGame: () => { newGame(); return gameState(); },
+    startLevel: (n) => { startLevel(Number(n) || 1); return gameState(); },
+    setBoard: (o) => {
+      const src = o || {};
+      cap = cfg().cap;
+      if (Array.isArray(src.tubes)) tubes = src.tubes.map((x) => (Array.isArray(x) ? x.slice() : []));
+      if (src.level != null) level = Math.max(1, Number(src.level) || 1);
+      startSeed = JSON.stringify(tubes);
+      moves = 0; sel = -1; hist = []; undosUsed = 0; sparesUsed = 0; spareLeft = cfg().spare;
+      lastScore = 0; overReason = ''; state = 'play';
+      started = true; clockAccum = Number(src.elapsed) || 0; clockSince = null;
+      updOnly(); return gameState();
+    },
+    setRun: (o) => {
+      const src = o || {};
+      if (src.moves != null) moves = Math.max(0, Number(src.moves) || 0);
+      if (src.undos != null) undosUsed = Math.max(0, Number(src.undos) || 0);
+      if (src.spares != null) { sparesUsed = Math.max(0, Number(src.spares) || 0); spareLeft = Math.max(0, cfg().spare - sparesUsed); }
+      if (src.elapsed != null) { clockAccum = Math.max(0, Number(src.elapsed) || 0); clockSince = null; }
+      if (src.started != null) started = !!src.started;
+      updOnly(); return gameState();
+    },
+    pick: (i) => { pick(Number(i) || 0); return gameState(); },
+    pour: (a, b) => { pick(Number(a) || 0); pick(Number(b) || 0); return gameState(); },
+    undo: () => { undo(); return gameState(); },
+    spare: () => { spare(); return gameState(); },
+    tick: (ms) => { clockAccum = Math.max(0, clockAccum + (Number(ms) || 0)); clockSince = null; if (state === 'play' && cfg().limit && timeLeft() <= 0) finishRun(false, 'time'); else updOnly(); return gameState(); },
+    complete: () => {
+      const colors = Array.from(new Set(tubes.flat())).sort((a, b) => a - b);
+      tubes = colors.map((c) => Array(cap).fill(c)).concat(Array.from({ length: cfg().free }, () => []));
+      if (!started) started = true;
+      finishRun(true, 'clear');
+      return gameState();
+    },
+    close: () => { const d = document.getElementById('bk-dlg'); if (d && d.open) d.close(); return true; },
+    modalOpen: () => { const d = document.getElementById('bk-dlg'); return !!(d && d.open); },
+    cosmetic: (slot, id) => { applyCosmetic(slot, id); return { slot, id: cosmeticKey(id) }; },
+    cosmeticList: () => (window.Meta && Meta.getCosmetics ? Meta.getCosmetics(GAME_ID) : []),
+    colors: () => {
+      const css = (name) => rootStyle.getPropertyValue(name).trim();
+      return {
+        skin: look.skin, border: css('--cs-tube') || SKINS[look.skin][0],
+        body1: css('--cs-tube-a') || SKINS[look.skin][1], body2: css('--cs-tube-b') || SKINS[look.skin][2],
+        palette: look.palette, bg1: css('--cs-bg1') || PALETTES[look.palette][0], bg2: css('--cs-bg2') || PALETTES[look.palette][1],
+        effect: look.effect, glow: css('--cs-glow') || EFFECTS[look.effect],
+        theme: look.theme, ink: css('--cs-ink') || THEMES[look.theme],
+      };
+    },
+    stats: () => GameUI.stats(),
+    achievements: () => (Save.load(GAME_ID).achievements || []),
+    menuPaused: (value) => { menuPaused = !!value; return menuPaused; },
+    start: () => { resumeClock(); return gameState(); },
+  };
+}
+function updOnly() { render(); }
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

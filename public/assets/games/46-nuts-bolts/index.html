@@ -25,28 +25,102 @@
 <script>
 const ui = Board.shell({
   id: 'nuts-bolts', title: 'Nuts & Bolts', subtitle: 'Unscrew the planks — match three bolts in the tray',
-  rules: 'Tap a bolt to unscrew it; it drops into the tray at the bottom. Get three bolts of the same colour into the tray and they pop, freeing up space. A bolt can only be unscrewed if no plank lies on top of it. When a plank loses all its bolts it falls away and uncovers what was underneath. Clear every plank to finish the level. If the tray fills up with no match, the level is lost — undo a bolt or restart. Every level can be cleared.',
+  rules: 'Tap a bolt to unscrew it; it drops into the tray at the bottom. Get three bolts of the same colour into the tray and they pop, freeing space. A bolt can only be unscrewed if no plank lies on top of it. When a plank loses all its bolts it falls away and uncovers what was underneath. Clear every plank to finish the level. If the tray fills with no match, the level is lost — undo a bolt or restart. Every level can be cleared. Classic is the six-slot campaign, Relaxed widens the tray to eight, Blitz races a 90-second clock, Precision narrows the tray to five with no undo, and Masterclass packs six colours into a five-slot tray with one undo.',
   controls: [['Click / tap a bolt', 'Unscrew it into the tray'], ['U', 'Undo the last bolt'], ['R', 'Restart the level'], ['N', 'New layout for this level'], ['H / M', 'Toggle help / mute']],
 });
 ui.main.innerHTML = `<div class="nb"><canvas id="cv" width="480" height="640"></canvas><div class="side">
-  <div class="stats"><span>Level <b id="lv">1</b></span><span>Bolts left <b id="bl">0</b></span><span>Best <b id="bs">1</b></span></div>
+  <div class="stats"><span>Level <b id="lv">1</b></span><span>Bolts <b id="bl">0</b></span><span>Time <b id="tm">0:00</b></span><span>Best <b id="bs">–</b></span></div>
   <div class="bk-status" id="st"></div>
+  <div class="bk-status" id="goal"></div>
   <div class="bk-row"><button class="bk-btn" id="undo">Undo</button><button class="bk-btn" id="rst">Restart</button><button class="bk-btn bk-primary" id="nxt">New layout</button></div>
   <div class="bk-row"><label>Jump to level <select class="bk-select" id="jump"></select></label></div></div></div>`;
 const $ = (s) => ui.main.querySelector(s);
-const cv = $('#cv'), cx = cv.getContext('2d'), TR = 6;
+const GAME_ID = 'nuts-bolts';
+const MODES = [
+  { id: 'classic', name: 'Classic', blurb: 'Six tray slots, rising levels', tray: 6, colors: 5, undo: 5 },
+  { id: 'relaxed', name: 'Relaxed', blurb: 'Eight tray slots, unlimited undo', tray: 8, colors: 5, undo: 99 },
+  { id: 'blitz', name: 'Blitz', blurb: '90-second clock, six tray slots', tray: 6, colors: 5, undo: 2, limit: 90 },
+  { id: 'precision', name: 'Precision', blurb: 'Five tray slots, no undo', tray: 5, colors: 5, undo: 0 },
+  { id: 'master', name: 'Masterclass', blurb: 'Six colours, five slots, one undo', tray: 5, colors: 6, undo: 1, requires: { stat: 'classicWins', gte: 1 }, lockedHint: 'Clear a Classic level to unlock' },
+];
+const ACHIEVEMENTS = [
+  { id: 'first-clear', name: 'Bench Hand', desc: 'Clear any level.' },
+  { id: 'speed-clear', name: 'Quick Hands', desc: 'Clear a level in under 60 seconds.' },
+  { id: 'clean-hands', name: 'Clean Hands', desc: 'Clear a level without undo.' },
+  { id: 'bolt-collector', name: 'Bolt Collector', desc: 'Unscrew 50 bolts across your career.' },
+  { id: 'five-levels', name: 'Five Benches', desc: 'Clear five levels across your career.' },
+  { id: 'triple-crown', name: 'Triple Crown', desc: 'Win in three different modes.' },
+  { id: 'ten-clear', name: 'Ten Benches', desc: 'Clear ten levels across your career.' },
+  { id: 'blitz-clear', name: 'Blitz Bench', desc: 'Clear a Blitz level.' },
+  { id: 'relaxed-clear', name: 'Easy Does It', desc: 'Clear a Relaxed level.' },
+  { id: 'precision-clear', name: 'Steady Hands', desc: 'Clear a Precision level.' },
+  { id: 'master-clear', name: 'Master Mechanic', desc: 'Clear a Masterclass level.' },
+  { id: 'all-modes', name: 'Toolbox Complete', desc: 'Win in every mode.' },
+];
+const SKINS = {
+  'wood-pine': ['#d9a066', '#a8703a'],
+  'wood-walnut': ['#b07a4a', '#7a4a26'],
+  'wood-ash': ['#b9b2a6', '#7d766b'],
+  'wood-rose': ['#d99a9a', '#a86464'],
+  'wood-ebony': ['#6a5548', '#3a2c24'],
+};
+const PALETTES = { 'bench-slate': ['#26304f', '#141a30'], 'bench-night': ['#171a26', '#0a0c14'], 'bench-indigo': ['#2a2a52', '#141428'], 'bench-mono': ['#2b2e35', '#14161b'] };
+const EFFECTS = { 'glow-amber': 'rgba(251,191,36,.85)', 'glow-cyan': 'rgba(34,211,238,.85)', 'glow-lime': 'rgba(163,230,53,.85)', 'glow-rose': 'rgba(251,113,133,.85)' };
+const THEMES = { 'tray-slate': '#0c1226', 'tray-rose': '#24101a', 'tray-mint': '#08231c' };
 const COLS = ['#ef4444', '#3b82f6', '#22c55e', '#facc15', '#a855f7', '#fb923c'];
-let level, planks = [], tray = [], falling = [], hist, state, seedLvl;
+const look = { skin: 'wood-pine', palette: 'bench-slate', effect: 'glow-amber', theme: 'tray-slate' };
+const cosmeticKey = (id) => String(id || '').split(':').pop();
+function applyCosmetic(slot, id) {
+  const key = cosmeticKey(id);
+  if (slot === 'skin' && SKINS[key]) look.skin = key;
+  else if (slot === 'palette' && PALETTES[key]) look.palette = key;
+  else if (slot === 'effect' && EFFECTS[key]) look.effect = key;
+  else if (slot === 'theme' && THEMES[key]) look.theme = key;
+}
+let gm = 'classic', initialized = false, menuPaused = true;
+const GameUI = Board.ui({
+  id: GAME_ID, title: 'Nuts & Bolts', subtitle: 'Match three bolts and drop the planks.', accent: '#fb923c',
+  modes: MODES, achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Tap a free bolt to drop it into the tray; covered bolts refuse with a shake.' },
+    { text: 'Three bolts of the same colour pop together and free their slots.' },
+    { text: 'A plank with no bolts falls away and uncovers the plank beneath it.' },
+    { text: 'Clear every plank to finish. Relaxed widens the tray, Blitz adds a clock, Precision removes undo, and Masterclass adds a sixth colour.' },
+  ] },
+  hooks: {
+    applyMode: (next) => { gm = MODES.some((m) => m.id === next) ? next : 'classic'; if (initialized) newGame(); },
+    applyCosmetic,
+    onStart: () => resumeClock(),
+  },
+});
+window.ApexGameMenuActions = {
+  play: () => resumeClock(),
+  pause: (value) => { if (value) pauseClock(); else resumeClock(); },
+  resume: () => resumeClock(),
+  restart: () => { menuPaused = false; restart(); },
+};
+const cv = $('#cv'), cx = cv.getContext('2d');
+let level = 1, planks = [], tray = [], falling = [], hist = [], state = 'play', seedLevel = '', trCap = 6;
+let runBolts = 0, runMatches = 0, runUndos = 0, lastScore = 0, overReason = '';
+let started = false, clockAccum = 0, clockSince = null;
+const cfg = () => MODES.find((m) => m.id === gm) || MODES[0];
+const fmt = (ms) => { const s = Math.max(0, ms / 1000 | 0); return (s / 60 | 0) + ':' + String(s % 60).padStart(2, '0'); };
+const elapsedMs = () => clockAccum + (clockSince ? Date.now() - clockSince : 0);
+const timeLeft = () => { const limit = cfg().limit; return limit ? Math.max(0, limit * 1000 - elapsedMs()) : 0; };
+function pauseClock() { if (clockSince) { clockAccum += Date.now() - clockSince; clockSince = null; } }
+function resumeClock() {
+  menuPaused = false;
+  if (!clockSince && started && (state === 'play')) clockSince = Date.now();
+  const help = document.getElementById('bk-help'); if (help) help.open = false;
+}
 const rnd = (a, b) => a + Math.random() * (b - a);
-
-/* ---- geometry ---- */
 const inside = (p, x, y, pad) => { const dx = x - p.x, dy = y - p.y, c = Math.cos(-p.a), s = Math.sin(-p.a), lx = dx * c - dy * s, ly = dx * s + dy * c; return Math.abs(lx) <= p.l / 2 + pad && Math.abs(ly) <= p.w / 2 + pad; };
 const sp = (p, h) => ({ x: p.x + Math.cos(p.a) * h.t, y: p.y + Math.sin(p.a) * h.t });
-function blocked(pi, s) { const q = sp(planks[pi], s); for (let r = pi + 1; r < planks.length; r++) if (!planks[r].gone && inside(planks[r], q.x, q.y, 6)) return true; return false; }
-
-/* ---- level generation ---- */
+const boltPos = (pi, ji) => sp(planks[pi], planks[pi].h[ji]);
+function blocked(pi, h) { const q = sp(planks[pi], h); for (let r = pi + 1; r < planks.length; r++) if (!planks[r].gone && inside(planks[r], q.x, q.y, 6)) return true; return false; }
+const left = () => planks.reduce((a, p) => a + p.h.filter((h) => h.on).length, 0);
 function build(lvl) {
-  const np = Math.min(12, 3 + lvl), nc = Math.min(6, 3 + (lvl >> 1)); let tries = 0;
+  const c = cfg(), np = Math.min(12, 3 + lvl), nc = Math.min(c.colors, 3 + (lvl >> 1)); let tries = 0;
   for (;;) {
     tries++; const P = []; let guard = 0;
     while (P.length < np && guard++ < 400) {
@@ -66,87 +140,266 @@ function build(lvl) {
     planks = P; if (greedy() || tries > 80) return;
   }
 }
-function greedy() { /* exact search: can the level be cleared without overflowing the tray? (tray contents depend only on which bolts are gone) */
-  const B = []; planks.forEach((p, i) => p.h.forEach((h, j) => { const q = sp(p, h), cov = []; for (let r = i + 1; r < planks.length; r++) if (inside(planks[r], q.x, q.y, 6)) cov.push(r); B.push({ i, c: h.c, cov }); }));
+function greedy() {
+  const B = []; planks.forEach((p, i) => p.h.forEach((h) => { const q = sp(p, h), cov = []; for (let r = i + 1; r < planks.length; r++) if (inside(planks[r], q.x, q.y, 6)) cov.push(r); B.push({ i, c: h.c, cov }); }));
   const n = B.length, byPlank = planks.map((p, i) => B.map((b, k) => (b.i === i ? k : -1)).filter((k) => k >= 0)), seen = new Set(); let nodes = 0;
   const rm = Array(n).fill(false), cnt = Array(COLS.length).fill(0);
   const dead = (r) => byPlank[r].every((k) => rm[k]);
-  function dfs(left) {
-    if (!left) return true; if (++nodes > 60000) return false;
+  function dfs(remaining) {
+    if (!remaining) return true; if (++nodes > 60000) return false;
     const key = rm.map((x) => (x ? 1 : 0)).join(''); if (seen.has(key)) return false; seen.add(key);
-    const c = []; for (let k = 0; k < n; k++) if (!rm[k] && B[k].cov.every(dead)) c.push(k);
-    c.sort((x, y) => (cnt[B[y].c] % 3) - (cnt[B[x].c] % 3));
-    for (const k of c) {
+    const cand = []; for (let k = 0; k < n; k++) if (!rm[k] && B[k].cov.every(dead)) cand.push(k);
+    cand.sort((x, y) => (cnt[B[y].c] % 3) - (cnt[B[x].c] % 3));
+    for (const k of cand) {
       const col = B[k].c; rm[k] = true; cnt[col]++;
       let sum = 0; for (let q = 0; q < cnt.length; q++) sum += cnt[q] % 3;
-      if (sum < TR && dfs(left - 1)) return true; rm[k] = false; cnt[col]--;
+      if (sum < trCap && dfs(remaining - 1)) return true; rm[k] = false; cnt[col]--;
     }
     return false;
   }
   return dfs(n);
 }
-
-/* ---- game ---- */
-function start(lvl) {
-  level = lvl; build(lvl); tray = Array(TR).fill(null); falling = []; hist = []; state = 'play'; seedLvl = JSON.stringify(planks);
-  const best = +Board.ls.get('apex:nb:best') || 1; $('#bs').textContent = best; $('#lv').textContent = lvl; fillJump(); upd();
+function startLevel(lvl) {
+  const c = cfg();
+  level = Math.max(1, Math.min(99, Number(lvl) || 1)); trCap = c.tray;
+  build(level); tray = Array(trCap).fill(null); falling = []; hist = [];
+  runBolts = runMatches = runUndos = 0; lastScore = 0; overReason = ''; started = false;
+  clockAccum = 0; clockSince = null;
+  state = 'play'; seedLevel = JSON.stringify(planks); initialized = true;
+  fillJump(); upd();
 }
-function restart() { planks = JSON.parse(seedLvl); tray = Array(TR).fill(null); falling = []; hist = []; state = 'play'; upd(); }
-function fillJump() { const best = +Board.ls.get('apex:nb:best') || 1, j = $('#jump'); j.innerHTML = ''; for (let i = 1; i <= Math.max(best, level); i++) { const o = document.createElement('option'); o.value = i; o.textContent = i; if (i === level) o.selected = true; j.appendChild(o); } }
-const left = () => planks.reduce((a, p) => a + p.h.filter((h) => h.on).length, 0);
-function upd() { $('#bl').textContent = left(); $('#st').textContent = state === 'lost' ? 'Tray full — undo or restart' : state === 'won' ? 'Level cleared! 🎉' : tray.filter(Boolean).length + ' / ' + TR + ' tray slots used'; }
+function restart() {
+  if (!seedLevel) return;
+  const saved = JSON.parse(seedLevel);
+  planks = saved.map((p) => ({ ...p, h: p.h.map((h) => ({ ...h })), gone: false, shake: 0 }));
+  tray = Array(trCap).fill(null); falling = []; hist = [];
+  runBolts = runMatches = runUndos = 0; lastScore = 0; overReason = ''; started = false;
+  clockAccum = 0; clockSince = null; state = 'play'; upd();
+}
+function newGame() {
+  const stats = GameUI.stats();
+  startLevel(gm === 'classic' ? Math.max(1, Number(stats.level) || 1) : 1);
+}
+function fillJump() {
+  const best = Math.max(1, Number(GameUI.stats().level) || 1, level), j = $('#jump'); j.innerHTML = '';
+  for (let i = 1; i <= Math.min(99, best); i++) { const o = document.createElement('option'); o.value = i; o.textContent = i; if (i === level) o.selected = true; j.appendChild(o); }
+}
+function upd() {
+  $('#lv').textContent = level;
+  $('#bl').textContent = left();
+  $('#tm').textContent = cfg().limit ? fmt(timeLeft()) : fmt(elapsedMs());
+  $('#bs').textContent = Math.max(1, Number(GameUI.stats().level) || 1);
+  const undo = $('#undo'); undo.disabled = state !== 'play' || !hist.length || runUndos >= cfg().undo;
+  $('#st').textContent = state === 'lost' ? (overReason === 'time' ? '⏰ Time up.' : 'Tray full — restart the level.') : state === 'won' ? 'Level cleared! 🎉' : tray.filter(Boolean).length + ' / ' + trCap + ' tray slots used';
+  if (gm === 'relaxed') $('#goal').textContent = 'Relaxed · ' + trCap + ' slots · unlimited undo';
+  else if (gm === 'blitz') $('#goal').textContent = 'Blitz · ' + fmt(timeLeft()) + ' left · ' + trCap + ' slots';
+  else if (gm === 'precision') $('#goal').textContent = 'Precision · ' + trCap + ' slots · no undo';
+  else if (gm === 'master') $('#goal').textContent = 'Masterclass · ' + trCap + ' slots · six colours · one undo';
+  else $('#goal').textContent = 'Classic · ' + trCap + ' slots · ' + Math.max(0, cfg().undo - runUndos) + ' undo left';
+}
 function tap(x, y) {
-  if (state !== 'play') return;
+  if (menuPaused || state !== 'play') return false;
   for (let i = planks.length - 1; i >= 0; i--) {
     const p = planks[i]; if (p.gone) continue;
-    for (let j = 0; j < p.h.length; j++) { const h = p.h[j]; if (!h.on) continue; const q = sp(p, h); if (Math.hypot(q.x - x, q.y - y) < 20) { if (blocked(i, h)) { Board.sfx('error'); p.shake = 0.3; return; } take(i, j); return; } }
+    for (let j = 0; j < p.h.length; j++) { const h = p.h[j]; if (!h.on) continue; const q = sp(p, h); if (Math.hypot(q.x - x, q.y - y) < 20) { if (blocked(i, h)) { Board.sfx('error'); p.shake = 0.3; return false; } take(i, j); return true; } }
   }
+  return false;
 }
 function take(i, j) {
-  const p = planks[i], h = p.h[j], slot = tray.indexOf(null); if (slot < 0) return;
-  h.on = false; const q = sp(p, h); const it = { c: h.c, t0: Board.now(), x0: q.x, y0: q.y }; tray[slot] = it; hist.push({ i, j, it });
+  if (state !== 'play') return false;
+  const p = planks[i]; if (!p) return false;
+  const h = p.h[j]; if (!h || !h.on) return false;
+  const slot = tray.indexOf(null); if (slot < 0) return false;
+  if (blocked(i, h)) { Board.sfx('error'); p.shake = 0.3; return false; }
+  h.on = false; const q = sp(p, h); tray[slot] = { c: h.c, t0: Board.now(), x0: q.x, y0: q.y };
+  hist.push({ i, j, slot }); runBolts++;
+  if (!started) { started = true; clockSince = menuPaused ? null : Date.now(); }
   if (!p.h.some((g) => g.on)) { p.gone = true; falling.push({ p, t0: Board.now() }); Board.sfx('capture'); } else Board.sfx('step');
-  const same = tray.filter((t) => t && t.c === h.c && !t.pop);
-  if (same.length >= 3) { same.slice(0, 3).forEach((t) => { t.pop = true; }); hist.length = 0; Board.after(320, () => { tray = tray.map((t) => (t && t.pop ? null : t)); Board.sfx('win'); chk(); }); }
+  const same = tray.filter((t) => t && t.c === h.c);
+  if (same.length >= 3) {
+    same.slice(0, 3).forEach((t) => { const k = tray.indexOf(t); if (k >= 0) tray[k] = null; });
+    runMatches++; hist.length = 0; Board.sfx('win');
+  }
   upd(); chk();
+  return true;
+}
+function undo() {
+  if (state !== 'play' || !hist.length || runUndos >= cfg().undo) { if (runUndos >= cfg().undo) Board.sfx('error'); return false; }
+  const h = hist.pop(), p = planks[h.i]; if (!p) return false;
+  if (tray[h.slot] && tray[h.slot].c === p.h[h.j].c) tray[h.slot] = null;
+  else { const alt = tray.findIndex((t) => t && t.c === p.h[h.j].c); if (alt >= 0) tray[alt] = null; }
+  p.h[h.j].on = true; if (p.gone) { p.gone = false; falling = falling.filter((f) => f.p !== p); }
+  runUndos++; state = 'play'; Board.sfx('click'); upd();
+  return true;
 }
 function chk() {
   if (state !== 'play') return;
-  if (left() === 0) { state = 'won'; upd(); const best = Math.max(+Board.ls.get('apex:nb:best') || 1, level + 1); Board.ls.set('apex:nb:best', best); Board.sfx('win'); Board.after(600, () => Board.modal('Level ' + level + ' cleared!', 'Every plank is down.', [['Next level', () => start(level + 1)], ['Close']])); }
-  else if (tray.every((t) => t && !t.pop)) { state = 'lost'; upd(); Board.sfx('lose'); Board.after(400, () => Board.modal('Tray full', 'No match left to make. Undo a bolt or restart the level.', [['Restart', restart], ['Close']])); }
+  if (left() === 0) finishRun(true, 'clear');
+  else if (tray.every(Boolean)) finishRun(false, 'tray');
 }
-function undo() { if (!hist.length || state === 'won') return; const h = hist.pop(), p = planks[h.i]; const k = tray.indexOf(h.it); if (k < 0) return; tray[k] = null; p.h[h.j].on = true; if (p.gone) { p.gone = false; falling = falling.filter((f) => f.p !== p); } state = 'play'; Board.sfx('click'); upd(); }
-
-/* ---- drawing ---- */
-function bolt(x, y, c, r, s) { cx.save(); cx.translate(x, y); cx.scale(s, s); cx.fillStyle = 'rgba(0,0,0,.35)'; cx.beginPath(); cx.arc(1, 3, r, 0, 6.3); cx.fill(); cx.fillStyle = COLS[c]; cx.beginPath(); for (let k = 0; k < 6; k++) cx.lineTo(Math.cos(k * 1.0472 + .5) * r, Math.sin(k * 1.0472 + .5) * r); cx.closePath(); cx.fill(); cx.strokeStyle = 'rgba(255,255,255,.5)'; cx.lineWidth = 2; cx.stroke(); cx.fillStyle = 'rgba(0,0,0,.35)'; cx.beginPath(); cx.arc(0, 0, r * .38, 0, 6.3); cx.fill(); cx.restore(); }
+function finishRun(win, reason) {
+  if (state === 'won' || state === 'lost') return;
+  state = win ? 'won' : 'lost'; overReason = win ? '' : (reason || 'tray');
+  pauseClock();
+  const secs = Math.round(elapsedMs() / 1000);
+  let score = 0;
+  if (win) {
+    const bonus = cfg().limit ? Math.max(0, 600 - secs * 5) : 0;
+    score = runBolts * 10 + runMatches * 150 + 400 + level * 50 + bonus - runUndos * 25;
+    score = Math.max(100, Math.round(score));
+  }
+  lastScore = score;
+  const stats = GameUI.stats(), careerWins = (Number(stats.wins) || 0) + (win ? 1 : 0);
+  const perMode = gm.charAt(0).toUpperCase() + gm.slice(1);
+  const records = { ['bestScore' + perMode]: score };
+  if (win) records.level = level;
+  const mins = {}; if (win) mins['bestTime' + perMode] = secs;
+  const counters = { wins: win ? 1 : 0, losses: win ? 0 : 1, levelsCleared: win ? 1 : 0, bolts: runBolts, matches: runMatches, undos: runUndos, [gm + 'Wins']: win ? 1 : 0 };
+  const achievements = [];
+  if (win) {
+    achievements.push('first-clear');
+    if (secs < 60) achievements.push('speed-clear');
+    if (runUndos === 0) achievements.push('clean-hands');
+    if ((Number(stats.bolts) || 0) + runBolts >= 50) achievements.push('bolt-collector');
+    if (careerWins >= 5) achievements.push('five-levels');
+    if (careerWins >= 10) achievements.push('ten-clear');
+    if (gm === 'blitz') achievements.push('blitz-clear');
+    if (gm === 'relaxed') achievements.push('relaxed-clear');
+    if (gm === 'precision') achievements.push('precision-clear');
+    if (gm === 'master') achievements.push('master-clear');
+    const modesWon = MODES.filter((m) => (Number(stats[m.id + 'Wins']) || 0) + (m.id === gm ? 1 : 0) > 0);
+    if (modesWon.length >= 3) achievements.push('triple-crown');
+    if (modesWon.length === MODES.length) achievements.push('all-modes');
+  }
+  GameUI.record({ score, seconds: secs, result: win ? 'Won' : 'Lost', records, mins, counters, achievements });
+  if (win) Board.sfx('win');
+  upd();
+  const title = win ? 'Level ' + level + ' cleared!' : overReason === 'time' ? 'Time up' : 'Tray full';
+  const copy = win
+    ? `${runBolts} bolts · ${runMatches} matches · ${score} pts`
+    : overReason === 'time' ? 'The clock ran out on level ' + level + '.' : 'No match left to make. Restart the level.';
+  Board.modal(title, copy, win ? [['Next level', () => startLevel(level + 1)], ['Close']] : [['Restart', restart], ['Close']]);
+}
+function bolt(x, y, c, r, s) {
+  cx.save(); cx.translate(x, y); cx.scale(s, s);
+  cx.fillStyle = 'rgba(0,0,0,.35)'; cx.beginPath(); cx.arc(1, 3, r, 0, 6.3); cx.fill();
+  cx.fillStyle = COLS[c]; cx.beginPath(); for (let k = 0; k < 6; k++) cx.lineTo(Math.cos(k * 1.0472 + .5) * r, Math.sin(k * 1.0472 + .5) * r); cx.closePath(); cx.fill();
+  cx.strokeStyle = 'rgba(255,255,255,.5)'; cx.lineWidth = 2; cx.stroke();
+  cx.fillStyle = 'rgba(0,0,0,.35)'; cx.beginPath(); cx.arc(0, 0, r * .38, 0, 6.3); cx.fill();
+  cx.restore();
+}
 function drawPlank(p, ox, oy, rot, alpha) {
-  cx.save(); cx.globalAlpha = alpha; cx.translate(p.x + ox, p.y + oy); cx.rotate(p.a + rot); const g = cx.createLinearGradient(0, -p.w / 2, 0, p.w / 2); g.addColorStop(0, '#d9a066'); g.addColorStop(1, '#a8703a');
-  cx.fillStyle = 'rgba(0,0,0,.3)'; cx.beginPath(); cx.roundRect(-p.l / 2 + 3, -p.w / 2 + 6, p.l, p.w, 10); cx.fill(); cx.fillStyle = g; cx.beginPath(); cx.roundRect(-p.l / 2, -p.w / 2, p.l, p.w, 10); cx.fill();
-  cx.strokeStyle = 'rgba(80,40,10,.35)'; cx.lineWidth = 1.5; for (let k = -2; k <= 2; k += 2) { cx.beginPath(); cx.moveTo(-p.l / 2 + 12, k * 6); cx.lineTo(p.l / 2 - 12, k * 6); cx.stroke(); } cx.restore();
+  cx.save(); cx.globalAlpha = alpha; cx.translate(p.x + ox, p.y + oy); cx.rotate(p.a + rot);
+  const g = cx.createLinearGradient(0, -p.w / 2, 0, p.w / 2); g.addColorStop(0, SKINS[look.skin][0]); g.addColorStop(1, SKINS[look.skin][1]);
+  cx.fillStyle = 'rgba(0,0,0,.3)'; cx.beginPath(); cx.roundRect(-p.l / 2 + 3, -p.w / 2 + 6, p.l, p.w, 10); cx.fill();
+  cx.fillStyle = g; cx.beginPath(); cx.roundRect(-p.l / 2, -p.w / 2, p.l, p.w, 10); cx.fill();
+  cx.strokeStyle = 'rgba(80,40,10,.35)'; cx.lineWidth = 1.5; for (let k = -2; k <= 2; k += 2) { cx.beginPath(); cx.moveTo(-p.l / 2 + 12, k * 6); cx.lineTo(p.l / 2 - 12, k * 6); cx.stroke(); }
+  cx.restore();
 }
 function draw() {
-  const now = Board.now();
-  const bg = cx.createLinearGradient(0, 0, 0, 640); bg.addColorStop(0, '#26304f'); bg.addColorStop(1, '#141a30'); cx.fillStyle = bg; cx.fillRect(0, 0, 480, 640);
+  const now = Board.now(), pal = PALETTES[look.palette];
+  const bg = cx.createLinearGradient(0, 0, 0, 640); bg.addColorStop(0, pal[0]); bg.addColorStop(1, pal[1]); cx.fillStyle = bg; cx.fillRect(0, 0, 480, 640);
   cx.fillStyle = 'rgba(255,255,255,.04)'; for (let y = 0; y < 480; y += 40) for (let x = (y / 40 % 2) * 20; x < 480; x += 40) cx.fillRect(x, y, 2, 2);
   planks.forEach((p) => {
     if (p.gone) return; const sh = p.shake > 0 ? Math.sin(now / 25) * 4 * p.shake / .3 : 0; if (p.shake > 0) p.shake -= 0.016;
     drawPlank(p, sh, 0, 0, 1);
-    p.h.forEach((h) => { const q = sp(p, h); if (!h.on) { cx.fillStyle = 'rgba(0,0,0,.45)'; cx.beginPath(); cx.arc(q.x + sh, q.y, 7, 0, 6.3); cx.fill(); return; } bolt(q.x + sh, q.y, h.c, 12, 1); });
+    p.h.forEach((h) => {
+      const q = sp(p, h);
+      if (!h.on) { cx.fillStyle = 'rgba(0,0,0,.45)'; cx.beginPath(); cx.arc(q.x + sh, q.y, 7, 0, 6.3); cx.fill(); return; }
+      cx.strokeStyle = EFFECTS[look.effect]; cx.lineWidth = 2; cx.beginPath(); cx.arc(q.x + sh, q.y, 15, 0, 6.3); cx.stroke();
+      bolt(q.x + sh, q.y, h.c, 12, 1);
+    });
   });
-  for (const f of falling) { const t = (now - f.t0) / 1000; if (t > 1.2) { f.done = true; continue; } drawPlank(f.p, 0, 500 * t * t, t * 1.4, Math.max(0, 1 - t / 1.2)); } falling = falling.filter((f) => !f.done);
-  cx.fillStyle = '#0c1226'; cx.beginPath(); cx.roundRect(14, 548, 452, 78, 16); cx.fill();
-  for (let i = 0; i < TR; i++) {
-    const sx = 240 - (TR * 72) / 2 + 36 + i * 72, sy = 587;
-    cx.fillStyle = 'rgba(255,255,255,.07)'; cx.beginPath(); cx.arc(sx, sy, 26, 0, 6.3); cx.fill();
-    const t = tray[i]; if (!t) continue; const k = Math.min(1, (now - t.t0) / 260), e = 1 - Math.pow(1 - k, 3), px = t.x0 + (sx - t.x0) * e, py = t.y0 + (sy - t.y0) * e;
-    bolt(px, py, t.c, 12 + 8 * e, t.pop ? 1 + Math.sin(((now - (t.pt || (t.pt = now))) / 320) * 3.1) * 0.3 : 1);
+  for (const f of falling) { const t = (now - f.t0) / 1000; if (t > 1.2) { f.done = true; continue; } drawPlank(f.p, 0, 500 * t * t, t * 1.4, Math.max(0, 1 - t / 1.2)); }
+  falling = falling.filter((f) => !f.done);
+  cx.fillStyle = THEMES[look.theme]; cx.beginPath(); cx.roundRect(14, 548, 452, 78, 16); cx.fill();
+  const step = 432 / trCap;
+  for (let i = 0; i < trCap; i++) {
+    const sx = 24 + step * (i + 0.5), sy = 587;
+    cx.fillStyle = 'rgba(255,255,255,.07)'; cx.beginPath(); cx.arc(sx, sy, 24, 0, 6.3); cx.fill();
+    const t = tray[i]; if (!t) continue;
+    const k = Math.min(1, (now - t.t0) / 260), e = 1 - Math.pow(1 - k, 3);
+    bolt(t.x0 + (sx - t.x0) * e, t.y0 + (sy - t.y0) * e, t.c, 12 + 8 * e, 1);
   }
 }
 (function loop() { requestAnimationFrame(loop); if (!Board.paused()) draw(); })();
 cv.addEventListener('pointerdown', (e) => { const r = cv.getBoundingClientRect(); tap((e.clientX - r.left) * 480 / r.width, (e.clientY - r.top) * 640 / r.height); });
-$('#undo').onclick = undo; $('#rst').onclick = () => { restart(); }; $('#nxt').onclick = () => start(level); $('#jump').onchange = (e) => { start(+e.target.value); e.target.blur(); };
-document.addEventListener('keydown', (e) => { if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || document.getElementById('bk-dlg')?.open) return; const k = e.key.toLowerCase(); if (k === 'u') undo(); else if (k === 'r') restart(); else if (k === 'n') start(level); });
-start(Math.min(+Board.ls.get('apex:nb:best') || 1, 99));
+$('#undo').onclick = (e) => { e.target.blur(); undo(); };
+$('#rst').onclick = (e) => { e.target.blur(); restart(); };
+$('#nxt').onclick = (e) => { e.target.blur(); startLevel(level); };
+$('#jump').onchange = (e) => { startLevel(+e.target.value); e.target.blur(); };
+document.addEventListener('keydown', (e) => {
+  if (menuPaused || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || document.getElementById('bk-dlg')?.open) return;
+  const k = e.key.toLowerCase();
+  if (k === 'u') undo(); else if (k === 'r') restart(); else if (k === 'n') startLevel(level);
+});
+window.addEventListener('apex:board-pause', (e) => { if (e.detail?.paused) pauseClock(); else resumeClock(); });
+setInterval(() => {
+  if (state !== 'play') return;
+  if (cfg().limit) {
+    const leftMs = timeLeft();
+    $('#tm').textContent = fmt(leftMs);
+    if (started && leftMs <= 0) finishRun(false, 'time');
+  } else if (started) $('#tm').textContent = fmt(elapsedMs());
+}, 250);
+newGame();
+
+/* ---------- deterministic test hooks ---------- */
+function gameState() {
+  return {
+    mode: gm, level, state, bolts: left(), trayUsed: tray.filter(Boolean).length, trayCap: trCap,
+    runBolts, runMatches, runUndos, started, time: Math.round(elapsedMs() / 1000), clock: Math.round(timeLeft() / 1000),
+    score: lastScore, done: state !== 'play', won: state === 'won', overReason, menuPaused,
+    achievements: typeof Save !== 'undefined' && Save.load ? (Save.load(GAME_ID).achievements || []) : [],
+  };
+}
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  window.BoltsTest = {
+    state: gameState,
+    board: () => JSON.parse(JSON.stringify(planks)),
+    tray: () => tray.map((t) => (t ? t.c : null)),
+    modes: () => MODES.map((m) => m.id),
+    setMode: (id) => GameUI.setMode(id),
+    getMode: () => gm,
+    restart: () => { restart(); return gameState(); },
+    newGame: () => { newGame(); return gameState(); },
+    startLevel: (n) => { startLevel(Number(n) || 1); return gameState(); },
+    setBoard: (o) => {
+      const src = o || {};
+      if (Array.isArray(src.planks)) planks = JSON.parse(JSON.stringify(src.planks));
+      if (src.level != null) level = Math.max(1, Number(src.level) || 1);
+      trCap = cfg().tray; tray = Array(trCap).fill(null); falling = []; hist = [];
+      runBolts = runMatches = runUndos = 0; lastScore = 0; overReason = ''; state = 'play';
+      started = true; clockAccum = Number(src.elapsed) || 0; clockSince = null;
+      seedLevel = JSON.stringify(planks); upd(); return gameState();
+    },
+    setRun: (o) => {
+      const src = o || {};
+      if (src.bolts != null) runBolts = Math.max(0, Number(src.bolts) || 0);
+      if (src.matches != null) runMatches = Math.max(0, Number(src.matches) || 0);
+      if (src.undos != null) runUndos = Math.max(0, Number(src.undos) || 0);
+      if (src.elapsed != null) { clockAccum = Math.max(0, Number(src.elapsed) || 0); clockSince = null; }
+      if (src.started != null) started = !!src.started;
+      upd(); return gameState();
+    },
+    tap: (x, y) => { tap(Number(x) || 0, Number(y) || 0); return gameState(); },
+    take: (i, j) => { take(Number(i) || 0, Number(j) || 0); return gameState(); },
+    boltAt: (i, j) => { const p = planks[Number(i) || 0]; if (!p || !p.h[Number(j) || 0]) return null; return boltPos(Number(i) || 0, Number(j) || 0); },
+    blocked: (i, j) => { const p = planks[Number(i) || 0]; if (!p) return false; const h = p.h[Number(j) || 0]; if (!h) return false; return blocked(Number(i) || 0, h); },
+    undo: () => { undo(); return gameState(); },
+    tick: (ms) => { clockAccum = Math.max(0, clockAccum + (Number(ms) || 0)); clockSince = null; if (state === 'play' && cfg().limit && timeLeft() <= 0) finishRun(false, 'time'); else upd(); return gameState(); },
+    complete: () => { finishRun(true, 'clear'); return gameState(); },
+    close: () => { const d = document.getElementById('bk-dlg'); if (d && d.open) d.close(); return true; },
+    modalOpen: () => { const d = document.getElementById('bk-dlg'); return !!(d && d.open); },
+    cosmetic: (slot, id) => { applyCosmetic(slot, id); return { slot, id: cosmeticKey(id) }; },
+    cosmeticList: () => (window.Meta && Meta.getCosmetics ? Meta.getCosmetics(GAME_ID) : []),
+    colors: () => ({ skin: look.skin, light: SKINS[look.skin][0], dark: SKINS[look.skin][1], palette: look.palette, top: PALETTES[look.palette][0], bottom: PALETTES[look.palette][1], effect: look.effect, glow: EFFECTS[look.effect], theme: look.theme, tray: THEMES[look.theme] }),
+    stats: () => GameUI.stats(),
+    achievements: () => (Save.load(GAME_ID).achievements || []),
+    menuPaused: (value) => { menuPaused = !!value; return menuPaused; },
+    start: () => { resumeClock(); return gameState(); },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>
