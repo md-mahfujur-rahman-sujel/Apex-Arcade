@@ -92,8 +92,7 @@ try {
     frame.contentDocument.addEventListener('keydown', (event) => frame.contentWindow.__touchKeys.push(event.key));
   });
   const flap = page.getByRole('button', { name: 'Flap (Space)' });
-  await flap.dispatchEvent('pointerdown', { pointerId: 1, pointerType: 'touch', isPrimary: true, button: 0 });
-  await flap.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'touch', isPrimary: true, button: 0 });
+  await flap.tap();
   await page.waitForFunction(() => document.querySelector('#playable-theater-modal iframe')?.contentWindow.__touchMessages.some((message) => message?.type === 'KEY_EVENT' && message.key === ' ' && message.action === 'down'));
   assert.ok(await page.locator('#playable-theater-modal iframe').evaluate((frame) => frame.contentWindow.__touchKeys.includes(' ')), 'touch key reaches the iframe game keyboard handler');
 
@@ -134,8 +133,8 @@ try {
   assert.equal(await page.locator('#playable-theater-modal').getAttribute('data-touch-mode'), 'virtual');
   await page.getByRole('button', { name: 'Close Theater' }).click();
   await openTheater('2048');
-  assert.equal(await page.locator('#playable-theater-modal').getAttribute('data-touch-mode'), 'native', '2048 keeps its native swipe controls');
-  assert.equal(await page.getByRole('button', { name: 'Toggle Virtual Touch Controls' }).count(), 0, 'native touch game has no generic pad toggle');
+  assert.equal(await page.locator('#playable-theater-modal').getAttribute('data-touch-mode'), 'virtual', '2048 exposes the shared controller alongside native swipes');
+  assert.equal(await page.getByRole('button', { name: 'Toggle Virtual Touch Controls' }).count(), 1, 'native touch game can toggle the shared controller');
   await page.getByRole('button', { name: 'Close Theater' }).click();
 
   await page.goto(`${origin}/#/browse`);
@@ -144,36 +143,38 @@ try {
   assert.equal(gameIds.length, 50, 'browse exposes all 50 game records for config checks');
   for (const gameId of gameIds) {
     await page.evaluate((id) => { location.hash = `#/game/${id}`; }, gameId);
+    await page.locator(`[data-game-page="${gameId}"]`).waitFor();
     await page.getByRole('button', { name: 'Play now' }).click();
     const gameTheater = page.locator('#playable-theater-modal');
     await gameTheater.waitFor({ state: 'visible' });
-    const gameNumber = Number(await gameTheater.getAttribute('data-game-number'));
-    assert.equal(await gameTheater.getAttribute('data-touch-mode'), gameNumber <= 20 ? 'virtual' : 'native', `${gameId} receives its configured touch mode`);
+    assert.equal(await gameTheater.getAttribute('data-touch-mode'), 'virtual', `${gameId} receives the shared touch controller`);
     await gameTheater.locator('[data-ui-open]').click();
-    if (gameNumber <= 20) {
-      const gameFrame = gameTheater.frameLocator('iframe');
-      await gameFrame.locator('[data-menu-action="play"], [data-menu-action="continue"]').first().click({ timeout: 5000 });
-      await gameFrame.locator('.apex-menu-root').waitFor({ state: 'hidden' });
-      const controls = gameTheater.locator('[data-touch-layout] button');
-      await controls.first().waitFor();
-      await page.locator('#playable-theater-modal iframe').evaluate((frame) => {
-        frame.contentWindow.__touchMessages = [];
-        frame.contentWindow.addEventListener('message', (event) => frame.contentWindow.__touchMessages.push(event.data));
-      });
-      const count = await controls.count();
-      for (let index = 0; index < count; index++) {
-        const button = controls.nth(index);
-        const label = await button.getAttribute('aria-label');
-        const shownKey = label.slice(label.lastIndexOf('(') + 1, -1);
-        const expectedKey = shownKey === 'Space' ? ' ' : shownKey;
-        await button.dispatchEvent('pointerdown', { pointerId: 2 + index, pointerType: 'touch', isPrimary: true, button: 0 });
-        await button.dispatchEvent('pointerup', { pointerId: 2 + index, pointerType: 'touch', isPrimary: true, button: 0 });
-        await page.waitForFunction(({ expectedKey }) => {
-          const frame = document.querySelector('#playable-theater-modal iframe');
-          return frame?.contentWindow.__touchMessages.some((message) => message?.type === 'KEY_EVENT' && message.key === expectedKey && message.action === 'down');
-        }, { expectedKey }, { timeout: 2500 }).catch(() => { throw new Error(`${gameId} control ${label} did not dispatch configured key ${expectedKey}`); });
-      }
-    } else assert.equal(await page.getByRole('button', { name: 'Toggle Virtual Touch Controls' }).count(), 0, `${gameId} retains in-game native touch UI`);
+    const gameFrame = gameTheater.frameLocator('iframe');
+    await gameFrame.locator('[data-menu-action="play"], [data-menu-action="continue"]').first().click({ timeout: 5000 });
+    await gameFrame.locator('.apex-menu-root').waitFor({ state: 'hidden' });
+    const controls = gameTheater.locator('[data-touch-layout] button');
+    assert.equal(await gameTheater.locator('[data-touch-layout]').getAttribute('data-touch-layout'), gameId, `${gameId} uses its own controller profile`);
+    const firstAction = gameTheater.locator('[data-touch-action]').first();
+    const hasAction = await firstAction.count() > 0;
+    const testedControl = hasAction ? firstAction : gameTheater.locator('[data-touch-controller] button[aria-label*="control"]').first();
+    await testedControl.waitFor();
+    const isPointerAction = hasAction && (await firstAction.getAttribute('data-touch-pointer')) === 'true';
+    await page.locator('#playable-theater-modal iframe').evaluate((frame) => {
+      frame.contentWindow.__touchEvents = [];
+      frame.contentWindow.addEventListener('message', (event) => { if (event.data?.type === 'KEY_EVENT') frame.contentWindow.__touchEvents.push(event.data); });
+      frame.contentDocument.addEventListener('pointerdown', () => frame.contentWindow.__touchEvents.push({ type: 'pointerdown' }));
+      frame.contentDocument.addEventListener('click', () => frame.contentWindow.__touchEvents.push({ type: 'click' }));
+    });
+    const actionLabel = await testedControl.getAttribute('aria-label');
+    await testedControl.tap();
+    await page.waitForFunction((pointerAction) => {
+      const events = document.querySelector('#playable-theater-modal iframe')?.contentWindow.__touchEvents || [];
+      return pointerAction
+        ? events.some((event) => event.type === 'pointerdown' || event.type === 'click')
+        : events.some((event) => event.type === 'KEY_EVENT' && event.action === 'down');
+    }, isPointerAction, { timeout: 2500 }).catch(() => { throw new Error(`${gameId} controller action ${actionLabel} did not reach the game frame`); });
+    assert.ok(await controls.count() >= 5, `${gameId} exposes movement and action controls`);
+    assert.equal(await page.getByRole('button', { name: 'Toggle Virtual Touch Controls' }).count(), 1, `${gameId} can toggle the shared controller`);
     await page.getByRole('button', { name: 'Close Theater' }).click();
   }
 

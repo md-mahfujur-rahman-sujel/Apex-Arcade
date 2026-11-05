@@ -1212,10 +1212,40 @@ const ARCADE_TOUCH_CONTROLS: Record<number, NonNullable<GameInfo['touchControls'
   18: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight', down: 'ArrowDown' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Attack', key: 'x' }, { label: 'Roll', key: 'Shift' }] },
   19: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Dash', key: 'Shift' }, { label: 'Flare', key: 'x' }] },
   20: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Punch', key: 'x' }] },
+  21: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select square', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'Flip board', key: 'f' }, { label: 'Hint', key: 't' }] },
+  22: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Roll', key: ' ' }, { label: 'New game', key: 'n' }, { label: 'Select', pointer: true }] },
+  23: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Roll', key: ' ' }, { label: 'New game', key: 'n' }, { label: 'Select', pointer: true }] },
+  24: { mode: 'virtual', pointerCursor: true, directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Shoot', key: ' ' }, { label: 'Aim', pointer: true }, { label: 'New game', key: 'n' }] },
+  25: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Advance', key: ' ' }, { label: 'Build', key: 'b' }, { label: 'Select', pointer: true }, { label: 'New game', key: 'n' }] },
+  26: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select piece', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'Flip board', key: 'f' }] },
+  27: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Drop', key: 'Enter' }, { label: 'Undo', key: 'u' }, { label: 'New game', key: 'n' }] },
+  28: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select pit', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'New game', key: 'n' }] },
+  29: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select square', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'Hint', key: 't' }] },
+  30: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Place mark', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'New game', key: 'n' }] },
+  31: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select point', pointer: true }, { label: 'Roll', key: ' ' }, { label: 'Undo', key: 'u' }, { label: 'Hint', key: 't' }] },
+  32: { mode: 'virtual', pointerCursor: true, directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Draw line', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'Hint', key: 't' }] },
+  33: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Place stone', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'Pass', key: 'p' }, { label: 'Hint', key: 't' }] },
+  34: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select card', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'New game', key: 'n' }, { label: 'Hint', key: 't' }] },
+  35: { mode: 'virtual', directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Flip card', key: ' ' }, { label: 'New game', key: 'n' }, { label: 'Hint', key: 't' }] },
+  36: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select answer', pointer: true }, { label: 'Erase', key: 'Backspace' }, { label: 'Submit', key: 'Enter' }, { label: 'Hint', key: 't' }] },
+  37: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Aim or shoot', pointer: true }, { label: 'New game', key: 'n' }] },
+  38: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Bowl', pointer: true }, { label: 'New game', key: 'n' }] },
+  39: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Shoot', pointer: true }, { label: 'New game', key: 'n' }] },
+  40: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Aim or putt', pointer: true }, { label: 'New game', key: 'n' }] },
+  41: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Aim or shoot', pointer: true }, { label: 'New game', key: 'n' }] },
+  42: { mode: 'virtual', directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Undo', key: 'u' }, { label: 'New game', key: 'n' }] },
+  43: { mode: 'virtual', pointerCursor: true, directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Select 1', key: '1' }, { label: 'Erase', key: 'Backspace' }, { label: 'Select 2', key: '2' }, { label: 'Hint', key: 't' }] },
+  44: { mode: 'virtual', pointerCursor: true, directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Reveal', key: ' ' }, { label: 'Flag', key: 'f' }, { label: 'Select', pointer: true }, { label: 'New game', key: 'n' }] },
+  45: { mode: 'virtual', directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Undo', key: 'u' }, { label: 'New game', key: 'n' }] },
+  46: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select or move bolt', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'Restart', key: 'r' }] },
+  47: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select tube', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'Hint', key: 't' }, { label: 'Restart', key: 'r' }] },
+  48: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Drop fruit', key: ' ' }, { label: 'New game', key: 'n' }] },
+  49: { mode: 'virtual', directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Hit ball', key: ' ' }, { label: 'Serve or alt hit', key: 'Enter' }, { label: 'Pause', key: 'p' }, { label: 'Guide', key: 'g' }] },
+  50: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select tile', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'Shuffle', key: 's' }, { label: 'Hint', key: 'h' }] },
 };
 
 const getTouchControls = (game: GameInfo): NonNullable<GameInfo['touchControls']> =>
-  ARCADE_TOUCH_CONTROLS[game.gameNumber] || { mode: 'native' };
+  ARCADE_TOUCH_CONTROLS[game.gameNumber] || { mode: 'virtual', actions: [{ label: 'Select', pointer: true }] };
 
 const launcherDefaults: Record<GameInfo['category'], Omit<CompleteLauncherMetadata, 'tags' | 'storyBlurb' | 'status'>> = {
   arcade: {

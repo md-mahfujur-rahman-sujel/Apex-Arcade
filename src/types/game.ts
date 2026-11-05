@@ -24,13 +24,16 @@ export type PlayableEngineId =
 
 export interface TouchKeyControl {
   label: string;
-  key: string;
+  key?: string;
+  button?: 'A' | 'B' | 'X' | 'Y';
+  pointer?: boolean;
 }
 
 export interface TouchControlsConfig {
   mode: 'native' | 'virtual';
   directions?: Partial<Record<'up' | 'down' | 'left' | 'right', string>>;
   actions?: TouchKeyControl[];
+  pointerCursor?: boolean;
 }
 
 export interface GameInfo {
@@ -54,7 +57,7 @@ export interface GameInfo {
   icon: string;
   difficulty: 'Easy' | 'Medium' | 'Hard' | 'Brutal';
   htmlPath: string; // Direct path to the complete dedicated HTML game
-  usesDirectTouch?: boolean; // Game handles touch gestures itself and should not receive the theater virtual pad.
+  usesDirectTouch?: boolean; // Game has first-class touch gestures that remain available with the shared theater pad.
   touchControls?: TouchControlsConfig;
   playableEngineId?: PlayableEngineId; // Optional 2.5D Canvas engine
   variant?: string;

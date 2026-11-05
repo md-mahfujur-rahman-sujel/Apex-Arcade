@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GameInfo, DifficultySetting } from '../types/game';
 import { TheaterPauseOverlay } from './TheaterPauseOverlay';
+import { TouchGamepad } from './TouchGamepad';
 import { CyberFlapEngine } from './engines/CyberFlapEngine';
 import { HoloPongEngine } from './engines/HoloPongEngine';
 import { QuantumSnakeEngine } from './engines/QuantumSnakeEngine';
@@ -95,8 +96,10 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
   const [engineKey, setEngineKey] = useState(0);
   const [viewMode, setViewMode] = useState<'2.5d' | 'classic'>('classic');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [showVirtualControls, setShowVirtualControls] = useState(false);
   const [dismissRotateTip, setDismissRotateTip] = useState(false);
+  const [touchCursor, setTouchCursor] = useState({ x: 0.5, y: 0.5 });
 
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -115,6 +118,8 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     hasLaunched &&
     showVirtualControls &&
     game.touchControls?.mode === 'virtual' &&
+    !isPaused &&
+    !showSettings &&
     (showingEngine || iframeStarted)
   );
 
@@ -122,7 +127,8 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
   useEffect(() => {
     const isTouch =
       typeof window !== 'undefined' &&
-      ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0) || window.innerWidth < 800);
+      ((navigator && navigator.maxTouchPoints > 0) || window.matchMedia('(pointer: coarse)').matches);
+    setIsTouchDevice(isTouch);
     setShowVirtualControls(isTouch);
   }, []);
 
@@ -135,6 +141,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     setViewMode('classic');
     setHasLaunched(false);
     setIframeStarted(false);
+    setTouchCursor({ x: 0.5, y: 0.5 });
     setShowSettings(false);
     setReducedMotion(game ? readReducedMotionPreference(game.id, defaultPreferencesRef.current.reducedMotion || window.matchMedia('(prefers-reduced-motion: reduce)').matches) : false);
     setVolume(defaultPreferencesRef.current.sfxVolume);
@@ -549,6 +556,73 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     );
   };
 
+  const moveTouchCursor = (dx: number, dy: number) => {
+    setTouchCursor((current) => ({
+      x: Math.max(0.015, Math.min(0.985, current.x + dx / Math.max(180, window.innerWidth * 0.38))),
+      y: Math.max(0.015, Math.min(0.985, current.y + dy / Math.max(180, window.innerHeight * 0.38))),
+    }));
+  };
+
+  const virtualPointerTargetRef = useRef<Element | null>(null);
+  const dispatchVirtualPointer = (action: 'down' | 'up') => {
+    let target: Element | null = null;
+    let clientX = 0;
+    let clientY = 0;
+    let view: Window | null = null;
+    const frame = iframeRef.current;
+    if (frame?.contentDocument && iframeStarted) {
+      const doc = frame.contentDocument;
+      clientX = touchCursor.x * Math.max(1, frame.clientWidth);
+      clientY = touchCursor.y * Math.max(1, frame.clientHeight);
+      target = doc.elementFromPoint(clientX, clientY) || doc.body;
+      view = doc.defaultView;
+    } else {
+      const stage = document.getElementById('playable-theater-stage');
+      if (!stage) return;
+      const surface = stage.querySelector('canvas') || stage;
+      const rect = surface.getBoundingClientRect();
+      clientX = rect.left + touchCursor.x * rect.width;
+      clientY = rect.top + touchCursor.y * rect.height;
+      target = document.elementFromPoint(clientX, clientY);
+      view = window;
+    }
+    if (action === 'down') virtualPointerTargetRef.current = target;
+    target = action === 'up' ? virtualPointerTargetRef.current || target : target;
+    if (!target || !view) return;
+    const targetWindow = view as Window & typeof globalThis;
+    const eventType = action === 'down' ? 'pointerdown' : 'pointerup';
+    const pointerInit: PointerEventInit = {
+      bubbles: true,
+      cancelable: true,
+      pointerId: 83,
+      pointerType: 'touch',
+      isPrimary: true,
+      button: 0,
+      buttons: action === 'down' ? 1 : 0,
+      clientX,
+      clientY,
+    };
+    if (typeof targetWindow.PointerEvent !== 'undefined') {
+      target.dispatchEvent(new targetWindow.PointerEvent(eventType, pointerInit));
+    }
+    if (action === 'up') {
+      target.dispatchEvent(new targetWindow.MouseEvent('click', { bubbles: true, cancelable: true, button: 0, clientX, clientY }));
+      virtualPointerTargetRef.current = null;
+    }
+  };
+
+  const touchCursorStyle = () => {
+    const stage = document.getElementById('playable-theater-stage');
+    const surface = iframeRef.current || stage?.querySelector('canvas');
+    if (!stage || !surface) return { left: '50%', top: '50%' };
+    const stageRect = stage.getBoundingClientRect();
+    const surfaceRect = surface.getBoundingClientRect();
+    return {
+      left: `${surfaceRect.left - stageRect.left + touchCursor.x * surfaceRect.width}px`,
+      top: `${surfaceRect.top - stageRect.top + touchCursor.y * surfaceRect.height}px`,
+    };
+  };
+
   const dispatchReachDelta = (delta: number) => {
     try {
       iframeRef.current?.contentWindow?.postMessage(
@@ -875,7 +949,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
           {/* Action Toolbar */}
           <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
             {/* Toggle Virtual Touch Controls button */}
-            {game.touchControls?.mode === 'virtual' && <button
+            {isTouchDevice && game.touchControls?.mode === 'virtual' && <button
               onClick={() => setShowVirtualControls(!showVirtualControls)}
               className={`p-1.5 sm:p-2 rounded-lg transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center ${
                 showVirtualControls
@@ -964,7 +1038,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
         )}
 
         {/* Stage Container (Responsive height on mobile/tablet/desktop) */}
-        <div id="playable-theater-stage" inert={isPaused || showSettings} className="relative flex-1 p-0 sm:p-2 md:p-3 flex flex-col items-center justify-center bg-[#05060D] overflow-hidden">
+        <div id="playable-theater-stage" inert={isPaused || showSettings} style={showTouchPad ? { paddingLeft: 'clamp(4.25rem, 19vw, 6.5rem)', paddingRight: 'clamp(4.25rem, 19vw, 6.5rem)' } : undefined} className="relative flex-1 p-0 sm:p-2 md:p-3 flex flex-col items-center justify-center bg-[#05060D] overflow-hidden">
           {!hasLaunched ? (
             <div className="relative flex h-full w-full max-w-3xl flex-col justify-end overflow-hidden rounded-2xl border border-white/10 bg-[#0d1425] p-6 sm:p-10" style={{ background: `radial-gradient(circle at 75% 25%, ${game.accentColor}55, transparent 42%), #0d1425` }}>
               <div aria-hidden="true" className="pointer-events-none absolute right-6 top-6 grid h-20 w-20 place-items-center rounded-3xl border border-white/10 bg-white/5 text-5xl shadow-xl backdrop-blur-sm sm:right-8 sm:top-8 sm:h-24 sm:w-24 sm:text-6xl" style={{ boxShadow: `0 12px 48px ${game.accentColor}25` }}>{game.icon}</div>
@@ -995,13 +1069,10 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
               }} />
             </div>
           ) : renderEngine()}
-          {showTouchPad && game.touchControls && <div aria-label={`${game.title} touch controls`} data-touch-layout={game.id} className="z-10 mt-2 flex w-full shrink-0 items-end justify-between gap-3 px-2 pb-[env(safe-area-inset-bottom)]">
-            {game.touchControls.directions && <div className="pointer-events-auto grid grid-cols-3 gap-1 rounded-2xl border border-white/10 bg-[#070B18]/85 p-2 shadow-2xl backdrop-blur-md">
-              <span />{(['up'] as const).map((direction) => game.touchControls?.directions?.[direction] && <button key={direction} type="button" aria-label={`${direction} (${game.touchControls.directions[direction]})`} onPointerDown={(event) => { event.preventDefault(); dispatchVirtualKey(game.touchControls!.directions![direction]!, 'down'); }} onPointerUp={() => dispatchVirtualKey(game.touchControls!.directions![direction]!, 'up')} onPointerCancel={() => dispatchVirtualKey(game.touchControls!.directions![direction]!, 'up')} onPointerLeave={() => dispatchVirtualKey(game.touchControls!.directions![direction]!, 'up')} className="h-11 w-11 rounded-xl bg-white/10 text-sm font-bold text-cyan-200">&#8593;</button>)}<span />
-              {(['left','down','right'] as const).map((direction) => game.touchControls?.directions?.[direction] && <button key={direction} type="button" aria-label={`${direction} (${game.touchControls.directions[direction]})`} onPointerDown={(event) => { event.preventDefault(); dispatchVirtualKey(game.touchControls!.directions![direction]!, 'down'); }} onPointerUp={() => dispatchVirtualKey(game.touchControls!.directions![direction]!, 'up')} onPointerCancel={() => dispatchVirtualKey(game.touchControls!.directions![direction]!, 'up')} onPointerLeave={() => dispatchVirtualKey(game.touchControls!.directions![direction]!, 'up')} className="h-11 w-11 rounded-xl bg-white/10 text-sm font-bold text-cyan-200">{direction === 'left' ? '\u2190' : direction === 'right' ? '\u2192' : '\u2193'}</button>)}
-            </div>}
-            {game.touchControls.actions && <div className="pointer-events-auto flex max-w-[70%] flex-wrap justify-end gap-2 rounded-2xl border border-white/10 bg-[#070B18]/85 p-2 shadow-2xl backdrop-blur-md">{game.touchControls.actions.map((action) => <button key={`${action.label}-${action.key}`} type="button" aria-label={`${action.label} (${action.key === ' ' ? 'Space' : action.key})`} onPointerDown={(event) => { event.preventDefault(); dispatchVirtualKey(action.key, 'down'); }} onPointerUp={() => dispatchVirtualKey(action.key, 'up')} onPointerCancel={() => dispatchVirtualKey(action.key, 'up')} onPointerLeave={() => dispatchVirtualKey(action.key, 'up')} className="min-h-12 min-w-12 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 px-3 text-xs font-extrabold text-slate-950">{action.label}</button>)}</div>}
-          </div>}
+          {showTouchPad && game.touchControls && <>
+            {game.touchControls.pointerCursor && <div aria-hidden="true" data-virtual-cursor className="pointer-events-none absolute z-20 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-cyan-400/25 shadow-[0_0_14px_#67e8f9]" style={touchCursorStyle()} />}
+            <TouchGamepad gameId={game.id} gameTitle={game.title} controls={game.touchControls} onKey={dispatchVirtualKey} onPointer={dispatchVirtualPointer} onCursorMove={moveTouchCursor} onPause={pauseGame} />
+          </>}
         </div>
 
         {/* Bottom Helper Bar (Responsive layout) */}
