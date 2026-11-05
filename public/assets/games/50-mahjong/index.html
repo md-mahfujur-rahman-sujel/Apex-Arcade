@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>(()=>{const raw=new URLSearchParams(location.search).get('seed');if(raw!==null&&/^\d+$/.test(raw)){let state=Number(raw)>>>0;Math.random=()=>{state=(state+0x6D2B79F5)>>>0;let value=state;value=Math.imul(value^(value>>>15),value|1);value^=value+Math.imul(value^(value>>>7),value|61);return((value^(value>>>14))>>>0)/4294967296}}})();</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mahjong Solitaire</title>
@@ -60,7 +61,7 @@
 <script src="../../kits/save-kit.js"></script>
 <script src="../../kits/meta-config.js"></script>
 <script src="../../kits/meta-kit.js"></script>
-<script src="../../kits/board-kit.js"></script>
+<script src="../../kits/board-kit.js?v=20261105"></script>
 <script src="../../kits/score-bridge.js"></script>
 <script src="../../kits/ui-kit.js"></script>
 <script>
@@ -174,7 +175,7 @@ const $ = (s) => shell.main.querySelector(s);
 const stage = $('#mj-stage'), root = $('#mj-root'), statusEl = $('#mj-status');
 
 let gm = 'classic', initialized = false, menuPaused = true;
-let tiles = [], boardPairs = 0, selected = null, hinted = [], history = [];
+let tiles = [], solution = [], boardPairs = 0, selected = null, hinted = [], history = [];
 let pairs = 0, moves = 0, score = 0, elapsed = 0;
 let hintsUsed = 0, undosUsed = 0, shufflesUsed = 0;
 let hintLeft = 3, undoLeft = 3, shuffleLeft = 1;
@@ -246,15 +247,15 @@ function axisOverlap(a, az, b, bz) {
   const A = layerSpan(a, az), B = layerSpan(b, bz);
   return A[0] < B[1] && B[0] < A[1];
 }
-function isFree(t) {
+function isFree(t, board = tiles) {
   if (t.removed) return false;
-  for (let i = 0; i < tiles.length; i++) {
-    const o = tiles[i];
+  for (let i = 0; i < board.length; i++) {
+    const o = board[i];
     if (!o.removed && o.z > t.z && axisOverlap(t.x, t.z, o.x, o.z) && axisOverlap(t.y, t.z, o.y, o.z)) return false;
   }
   let left = false, right = false;
-  for (let i = 0; i < tiles.length; i++) {
-    const o = tiles[i];
+  for (let i = 0; i < board.length; i++) {
+    const o = board[i];
     if (o.removed || o.z !== t.z || o.y !== t.y) continue;
     if (o.x === t.x - 1) left = true;
     else if (o.x === t.x + 1) right = true;
@@ -409,7 +410,7 @@ function paint() {
 }
 
 /* ---------- deals and turns ---------- */
-function dealBoard() {
+function layoutPositions() {
   const layout = LAYOUTS[cfg().layout] || LAYOUTS.full;
   const pos = [];
   layout.forEach((layer) => {
@@ -420,11 +421,48 @@ function dealBoard() {
       }
     }
   });
-  const copies = Math.max(2, Math.round(pos.length / 36));
-  const pool = [];
-  for (let f = 0; f < FACES.length; f++) for (let k = 0; k < copies; k++) pool.push(f);
-  Board.shuffle(pool);
-  tiles = pos.map((p, i) => ({ id: i, x: p.x, y: p.y, z: p.z, face: pool[i], removed: false }));
+  return pos;
+}
+
+function removalPlan(pos, randomize) {
+  const board = pos.map((p) => ({ ...p, removed: false }));
+  const plan = [];
+  for (let i = 0; i < board.length; i += 2) {
+    const free = board.filter((t) => isFree(t, board));
+    if (free.length < 2) return null;
+    if (randomize) Board.shuffle(free);
+    else free.sort((a, b) => b.z - a.z || a.y - b.y || a.x - b.x);
+    const a = free[0], b = free[1];
+    a.removed = true; b.removed = true;
+    plan.push([a, b]);
+  }
+  return plan;
+}
+
+function arrangePairs(rem) {
+  const pos = layoutPositions();
+  let plan = null;
+  for (let attempt = 0; attempt < 12 && !plan; attempt++) plan = removalPlan(pos, true);
+  // Every layout row is even, so peeling its exposed ends top-down always succeeds.
+  if (!plan) plan = removalPlan(pos, false);
+  const slots = plan.slice(-rem.length / 2);
+  const counts = new Map();
+  rem.forEach((t) => counts.set(t.face, (counts.get(t.face) || 0) + 1));
+  const faces = [];
+  counts.forEach((count, face) => { for (let i = 0; i < count; i += 2) faces.push(face); });
+  Board.shuffle(faces);
+  solution = slots.map((pair, i) => pair.map((p, j) => {
+    const t = rem[i * 2 + j];
+    t.x = p.x; t.y = p.y; t.z = p.z; t.face = faces[i];
+    return t.id;
+  }));
+}
+
+function dealBoard() {
+  const pos = layoutPositions();
+  const copies = pos.length / FACES.length;
+  tiles = pos.map((p, i) => ({ ...p, id: i, face: Math.floor(i / copies), removed: false }));
+  arrangePairs(tiles);
   boardPairs = tiles.length / 2;
 }
 
@@ -474,7 +512,7 @@ function choose(id) {
     render(); paint();
     if (tiles.every((x) => x.removed)) { finish(true); return; }
     setStatus('Beautiful match. <b>+100</b>');
-    if (!availablePairs().length) setStatus('No matches remain — shuffle to reopen the board.');
+    if (!availablePairs().length) recoverBoard();
   } else {
     selected = id;
     if (!bulk) Board.sfx('error');
@@ -483,11 +521,21 @@ function choose(id) {
   }
 }
 
+function recoverBoard() {
+  const actions = [];
+  if (undoLeft > 0 && history.length) actions.push(['Undo last match', undo]);
+  if (shuffleLeft > 0) actions.push(['Shuffle tiles', shuffleBoard]);
+  if (!actions.length) { finish(false, 'blocked'); return; }
+  const message = 'No matching tiles are free. ' + (actions.length === 2 ? 'Undo the last match or shuffle the remaining tiles.' : undoLeft > 0 && history.length ? 'Undo the last match to try another path.' : 'Shuffle the remaining tiles to reopen the board.');
+  setStatus(message);
+  Board.modal('No matches available', message, [...actions, ['New board', newBoard]]);
+}
+
 function hint() {
   if (over || menuPaused || Board.paused()) return;
-  if (hintLeft <= 0) { setStatus('No hints left on this board.'); return; }
   const list = availablePairs();
-  if (!list.length) { setStatus('No legal pair — shuffle to reopen the board.'); return; }
+  if (!list.length) { recoverBoard(); return; }
+  if (hintLeft <= 0) { setStatus('No hints left on this board.'); return; }
   const pick = list[Board.rand(list.length)];
   hintLeft--; hintsUsed++;
   hinted = [pick[0].id, pick[1].id];
@@ -517,23 +565,18 @@ function shuffleBoard() {
   if (shuffleLeft <= 0) { setStatus('No shuffles left on this board.'); return; }
   const rem = tiles.filter((t) => !t.removed);
   if (rem.length < 2) return;
-  const faces = rem.map((t) => t.face);
-  for (let attempt = 0; attempt < 40; attempt++) {
-    Board.shuffle(faces);
-    rem.forEach((t, i) => { t.face = faces[i]; });
-    if (availablePairs().length) break;
-  }
+  arrangePairs(rem);
   shuffleLeft--; shufflesUsed++;
   history = []; selected = null; hinted = [];
   Board.sfx('dice');
   render(); paint();
-  setStatus('Remaining tiles reshuffled.');
+  setStatus('Remaining tiles rearranged into a solvable layout.');
 }
 
-function finish(won) {
+function finish(won, reason = 'time') {
   if (over) return;
   over = true;
-  overReason = won ? 'cleared' : 'time';
+  overReason = won ? 'cleared' : reason;
   Board.cancel(tickId); tickId = null;
   Board.cancel(hintTimer); hintTimer = 0;
   selected = null; hinted = [];
@@ -569,7 +612,7 @@ function finish(won) {
   gameUI.record({
     score: score,
     seconds: seconds,
-    result: won ? 'Cleared' : 'Out of time',
+    result: won ? 'Cleared' : reason === 'blocked' ? 'No matches left' : 'Out of time',
     records: { ['bestScore' + cap]: score, bestPairs: pairs },
     mins: { ['bestTime' + cap]: won ? seconds : 0, ['bestMoves' + cap]: won ? moves : 0 },
     counters: {
@@ -587,9 +630,9 @@ function finish(won) {
   recorded = true;
 
   render(); paint();
-  const title = won ? 'Board cleared' : 'Out of time';
+  const title = won ? 'Board cleared' : reason === 'blocked' ? 'No matches left' : 'Out of time';
   const body = pairs + ' of ' + boardPairs + ' pairs · ' + fmt(seconds) + ' · ' + moves + ' moves<br><strong>' + score.toLocaleString() + ' points</strong>';
-  setStatus(won ? 'Board cleared — beautiful work.' : 'Time up. The clock beat the table.');
+  setStatus(won ? 'Board cleared — beautiful work.' : reason === 'blocked' ? 'No matches or assists remain. Start a new board to try again.' : 'Time up. The clock beat the table.');
   Board.modal(title, body, [['New board', newBoard], ['Close']]);
 }
 
@@ -646,6 +689,7 @@ function modalOpen() {
 if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
   window.MahjongTest = {
     state: state,
+    solution: () => solution.map((pair) => pair.slice()),
     modes: () => MODES.map((m) => m.id),
     setMode: (id) => gameUI.setMode(id),
     getMode: () => gm,
@@ -662,25 +706,11 @@ if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
       bulk = true;
       selected = null; hinted = [];
       try {
-        let guard = 0;
-        while (!over && guard++ < 400) {
-          const rem = tiles.filter((t) => !t.removed);
-          if (rem.length < 2) break;
-          let maxZ = 0;
-          rem.forEach((t) => { if (t.z > maxZ) maxZ = t.z; });
-          const rows = new Map();
-          rem.filter((t) => t.z === maxZ).forEach((t) => {
-            const row = rows.get(t.y) || [];
-            row.push(t);
-            rows.set(t.y, row);
-          });
-          let best = null;
-          rows.forEach((row) => { if (!best || row.length > best.length) best = row; });
-          best.sort((a, b) => a.x - b.x);
-          const a = best[0], b = best[best.length - 1];
-          b.face = a.face;
-          choose(a.id);
-          if (!over) choose(b.id);
+        for (const [a, b] of solution) {
+          if (tiles[a].removed && tiles[b].removed) continue;
+          if (over || !isFree(tiles[a]) || !isFree(tiles[b]) || tiles[a].face !== tiles[b].face) break;
+          choose(a);
+          if (!over) choose(b);
         }
       } finally { bulk = false; }
       render(); paint();

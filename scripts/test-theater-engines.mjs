@@ -18,6 +18,27 @@ const games = [
   'chrono-trigger', 'castlevania-sotn', 'super-metroid', 'hollow-knight', 'celeste',
   'cuphead', 'dead-cells', 'ori-and-the-blind-forest', 'rayman-legends',
 ];
+const startLabels = {
+  pong: 'START CIRCUIT',
+  snake: 'START RUN',
+  'space-invaders': 'START DEFENSE',
+  tetris: 'START MATRIX',
+  'pac-man': 'START MAZE',
+  asteroids: 'LAUNCH STARFALL',
+  'super-mario-bros': 'START ROUTE',
+  'super-mario-world': 'START ISLE',
+  'sonic-the-hedgehog': 'START RUSH',
+  'street-fighter-ii': 'START RUSH',
+  'chrono-trigger': 'ENTER THE WILDS',
+  'castlevania-sotn': 'ENTER THE CRYPT',
+  'super-metroid': 'LAND ON ZEBES',
+  'hollow-knight': 'ENTER HALLOWNEST',
+  celeste: 'START STAGE',
+  cuphead: 'TAKE THE STAGE',
+  'dead-cells': 'DESCEND',
+  'ori-and-the-blind-forest': 'START STAGE',
+  'rayman-legends': 'START STAGE',
+};
 
 try {
   page.on('pageerror', (error) => errors.push(error.message));
@@ -35,6 +56,13 @@ try {
       const element = document.querySelector('#playable-theater-modal canvas');
       return element instanceof HTMLCanvasElement && element.width > 0 && element.height > 0;
     });
+    const actionStart = page.getByTestId('action-start');
+    const startLabel = startLabels[gameId];
+    if (startLabel) {
+      const startButton = page.getByRole('button', { name: startLabel, exact: true });
+      if (await startButton.isVisible()) await startButton.click();
+      else if (await actionStart.isVisible()) await actionStart.click();
+    } else if (await actionStart.isVisible()) await actionStart.click();
     await page.waitForTimeout(250);
 
     const signature = () => canvas.evaluate((element) => {
@@ -51,7 +79,7 @@ try {
     await page.waitForTimeout(220);
     let dynamic = await signature() !== first;
     if (!dynamic) {
-      await canvas.click({ position: { x: 20, y: 20 } }).catch(() => {});
+      await canvas.click({ position: { x: 20, y: 20 } });
       await page.keyboard.press('Space');
       await page.waitForTimeout(220);
       const afterInput = await signature();
@@ -59,28 +87,25 @@ try {
       dynamic = await signature() !== afterInput;
     }
 
+    assert.ok(dynamic, `${gameId} is running before pause is tested`);
     await page.keyboard.press('Escape');
     const pauseDialog = page.getByRole('dialog', { name: 'Game paused' });
     await pauseDialog.waitFor();
     assert.equal(await page.locator('#playable-theater-modal [role="dialog"][aria-label="Game paused"]').count(), 1, `${gameId} exposes exactly one host pause screen`);
-    if (dynamic) {
-      const frozen = await signature();
-      await page.waitForTimeout(400);
-      assert.equal(await signature(), frozen, `${gameId} engine canvas is frozen while paused`);
-    }
+    const frozen = await signature();
+    await page.waitForTimeout(400);
+    assert.equal(await signature(), frozen, `${gameId} engine canvas is frozen while paused`);
 
     await page.keyboard.press('Escape');
     await pauseDialog.waitFor({ state: 'detached' });
     await page.waitForTimeout(150);
-    if (dynamic) {
-      const resumed = await signature();
-      await page.waitForTimeout(300);
-      assert.notEqual(await signature(), resumed, `${gameId} engine resumes animation after Escape`);
-    }
+    const resumed = await signature();
+    await page.waitForTimeout(300);
+    assert.notEqual(await signature(), resumed, `${gameId} engine resumes animation after Escape`);
 
     await page.getByRole('button', { name: 'Close Theater' }).click();
     await page.locator('#playable-theater-modal').waitFor({ state: 'detached' });
-    console.log(`PASS ${gameId} React engine pauses on Escape with one frozen frame${dynamic ? ' and resumes animating' : ''}`);
+    console.log(`PASS ${gameId} React engine pauses on Escape with one frozen frame and resumes animating`);
   }
 
   if (errors.length) throw new Error(`Browser errors: ${errors.join(' | ')}`);

@@ -170,6 +170,70 @@ try {
   await page.locator('#playable-theater-modal').waitFor({ state: 'detached' });
   console.log('PASS menu Exit closes its same-origin theater');
 
+  const mahjong = await openGame('mahjong', 'Jade Table');
+  await mahjong.locator('[data-menu-action="play"]').click();
+  for (const pair of await mahjong.evaluate(() => solution.map((ids) => ids.slice()))) {
+    for (const id of pair) await mahjong.locator(`.mj-tile[data-id="${id}"]`).click();
+  }
+  await mahjong.locator('#bk-dlg').waitFor({ state: 'visible' });
+  await mahjong.locator('#bk-dlg').press('Escape');
+  await mahjong.locator('#bk-dlg').waitFor({ state: 'hidden' });
+  assert.equal(await page.getByRole('dialog', { name: 'Game paused', exact: true }).count(), 0, 'Escape in a game result does not open the theater pause layer');
+  assert.equal(await mahjong.evaluate(() => Board.paused()), false);
+  await mahjong.locator('#mj-new').click();
+  const freshPair = await mahjong.evaluate(() => availablePairs()[0].map((t) => t.id));
+  for (const id of freshPair) await mahjong.locator(`.mj-tile[data-id="${id}"]`).click();
+  assert.equal(await mahjong.evaluate(() => pairs), 1);
+  await page.getByRole('button', { name: 'Close Theater' }).click();
+  console.log('PASS Escape dismisses the game result without trapping theater pause');
+
+  for (const mobile of [false, true]) {
+    const standalone = await browser.newContext({ viewport: mobile ? { width: 390, height: 844 } : { width: 1280, height: 800 }, hasTouch: mobile });
+    try {
+      const game = await standalone.newPage();
+      game.on('pageerror', (error) => errors.push(error.message));
+      const activate = async (locator, options = {}) => mobile ? locator.tap(options) : locator.click(options);
+      for (const folder of ['46-nuts-bolts', '47-colour-sort', '48-fruit-merge', '49-table-tennis', '50-mahjong']) {
+        await game.goto(`${origin}${server.config.base}assets/games/${folder}/index.html`);
+        await activate(game.locator('[data-menu-action="play"]'));
+        for (let cycle = 0; cycle < 2; cycle++) {
+          await game.locator('body').press('Escape');
+          assert.equal(await game.evaluate(() => Board.paused()), true, folder + ' pauses the native engine');
+          await activate(game.getByRole('button', { name: 'Restart game', exact: true }));
+          await game.locator('.apex-menu-root').waitFor({ state: 'hidden' });
+          assert.equal(await game.evaluate(() => Board.paused()), false, folder + ' Restart unpauses the native engine');
+          assert.notEqual(await game.locator('#bk-main').evaluate((el) => getComputedStyle(el).pointerEvents), 'none', folder + ' accepts pointer input');
+          if (folder.startsWith('46')) {
+            const point = await game.evaluate(() => planks.flatMap((p, i) => p.h.filter((h) => h.on && !p.gone && !blocked(i, h)).map((h) => sp(p, h)))[0]);
+            const position = await game.locator('#cv').evaluate((el, p) => ({ x: p.x * el.clientWidth / 480, y: p.y * el.clientHeight / 640 }), point);
+            await activate(game.locator('#cv'), { position });
+            assert.equal(await game.evaluate(() => runBolts), 1, 'a real click removes a bolt after Restart');
+          } else if (folder.startsWith('47')) {
+            const pair = await game.evaluate(() => {
+              for (let a = 0; a < tubes.length; a++) {
+                if (!tubes[a].length) continue;
+                for (let b = 0; b < tubes.length; b++) if (a !== b && tubes[b].length < cap && (!tubes[b].length || tubes[b].at(-1) === tubes[a].at(-1))) return [a, b];
+              }
+            });
+            for (const id of pair) await activate(game.locator(`.tb[data-i="${id}"]`));
+            assert.equal(await game.evaluate(() => moves), 1, 'a real pour works after Restart');
+          } else if (folder.startsWith('48')) {
+            await activate(game.locator('#cv'));
+            assert.equal(await game.evaluate(() => fr.length), 1, 'a real fruit drop works after Restart');
+          } else if (folder.startsWith('49')) {
+            await activate(game.locator('#cv'));
+            assert.equal(await game.evaluate(() => state), 'rally', 'a real serve works after Restart');
+          } else {
+            const pair = await game.evaluate(() => availablePairs()[0].map((t) => t.id));
+            for (const id of pair) await activate(game.locator(`.mj-tile[data-id="${id}"]`));
+            assert.equal(await game.evaluate(() => pairs), 1, 'a real tile match works after Restart');
+          }
+        }
+      }
+      console.log(`PASS ${mobile ? 'touch' : 'mouse'} pause/Restart twice and real gameplay in games 46–50`);
+    } finally { await standalone.close(); }
+  }
+
   assert.deepEqual(errors, [], `browser errors: ${errors.join('; ')}`);
   console.log('PASS menu pilot gate checks completed with zero browser errors');
 } finally {

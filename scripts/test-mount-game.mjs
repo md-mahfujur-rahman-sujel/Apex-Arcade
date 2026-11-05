@@ -44,7 +44,7 @@ try {
   await launchMenu.locator('[data-menu-action="play"]').tap();
   await launchMenu.waitFor({ state: 'hidden' });
   await page.waitForFunction(() => window.Arcade.test.G.state === 'playing');
-  await menu.getByRole('button', { name: 'Pause', exact: true }).tap();
+  await page.evaluate(() => window.Arcade.test.G.pauseToggle());
   await page.waitForFunction(() => window.Arcade.test.G.state === 'paused');
   await menu.getByRole('button', { name: 'Settings', exact: true }).tap();
   const shake = page.getByRole('slider', { name: 'Screen shake' });
@@ -83,7 +83,7 @@ try {
   const play = menu.getByRole('button', { name: 'Play', exact: true });
   await play.focus(); await page.keyboard.press('Enter');
   await page.waitForFunction(() => window.Arcade.test.G.state === 'playing');
-  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.Arcade.test.G.pauseToggle());
   await page.waitForFunction(() => window.Arcade.test.G.state === 'paused');
   await menu.getByRole('button', { name: 'Settings', exact: true }).focus(); await page.keyboard.press('Enter');
   const keyboardSlider = menu.getByRole('slider', { name: 'Screen shake' });

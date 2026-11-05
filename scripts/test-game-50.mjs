@@ -288,6 +288,131 @@ try {
   assert.ok(chrome.free > 0, 'free tiles are selectable');
   assert.equal(chrome.selected, 1, 'clicking a free tile selects it');
 
+  const generated = await page.evaluate(() => {
+    function validateSolution() {
+      const board = tiles.map((t) => ({ ...t }));
+      const path = MahjongTest.solution();
+      for (const [a, b] of path) {
+        if (board[a].removed && board[b].removed) continue;
+        if (!isFree(board[a], board) || !isFree(board[b], board) || board[a].face !== board[b].face) return false;
+        board[a].removed = true; board[b].removed = true;
+      }
+      return board.every((t) => t.removed);
+    }
+    const out = [];
+    const nativeRandom = Math.random;
+    try {
+      for (const mode of ['classic', 'swift']) {
+        MahjongTest.setMode(mode);
+        for (let seed = 1; seed <= 30; seed++) {
+          let rng = seed;
+          Math.random = () => ((rng = (Math.imul(rng, 1664525) + 1013904223) >>> 0) / 4294967296);
+          MahjongTest.restart();
+          const dealt = validateSolution();
+          const fullCounts = Array.from({ length: 36 }, (_, face) => tiles.filter((t) => t.face === face).length);
+          const path = MahjongTest.solution();
+          bulk = true;
+          for (const [a, b] of path.slice(0, seed * 7 % path.length)) { choose(a); choose(b); }
+          const facesBefore = tiles.filter((t) => !t.removed).map((t) => t.face).sort((a, b) => a - b);
+          const before = MahjongTest.state();
+          MahjongTest.shuffle();
+          const shuffled = validateSolution();
+          const facesAfter = tiles.filter((t) => !t.removed).map((t) => t.face).sort((a, b) => a - b);
+          out.push({ mode, seed, dealt, shuffled, fullCounts, facesBefore, facesAfter, before, after: MahjongTest.state() });
+          bulk = false;
+        }
+      }
+    } finally { Math.random = nativeRandom; bulk = false; }
+    return out;
+  });
+  for (const sample of generated) {
+    const label = `${sample.mode} seed ${sample.seed}`;
+    assert.ok(sample.dealt, label + ' has a complete legal solution');
+    assert.ok(sample.shuffled, label + ' shuffle has a complete legal solution');
+    assert.ok(sample.fullCounts.every((n) => n === (sample.mode === 'classic' ? 4 : 2)), label + ' preserves the face set');
+    assert.deepEqual(sample.facesAfter, sample.facesBefore, label + ' shuffle preserves every remaining face');
+    assert.equal(sample.after.left, sample.before.left);
+    assert.equal(sample.after.pairs, sample.before.pairs);
+    assert.equal(sample.after.score, sample.before.score);
+    assert.equal(sample.after.shuffles, sample.before.shuffles - 1);
+  }
+  console.log('PASS 60 seeded deals and partial-board shuffles have legal full solutions');
+
+  for (const mobile of [false, true]) {
+    const inputContext = await browser.newContext({ viewport: mobile ? { width: 390, height: 844 } : { width: 1200, height: 950 }, hasTouch: mobile });
+    try {
+      const input = await inputContext.newPage();
+      input.on('pageerror', (e) => errors.push(e.message));
+      await input.goto(`${origin}/assets/games/50-mahjong/index.html?test=1`);
+      const activate = async (locator) => mobile ? locator.tap({ timeout: 4000 }) : locator.click({ timeout: 4000 });
+      await activate(input.locator('[data-menu-action="play"]'));
+      async function playPair(pair) {
+        const before = await input.evaluate(() => MahjongTest.state().pairs);
+        assert.ok(await input.evaluate(([a, b]) => isFree(tiles[a]) && isFree(tiles[b]) && tiles[a].face === tiles[b].face, pair), 'both matching tiles are free before input');
+        for (const id of pair) await activate(input.locator(`.mj-tile[data-id="${id}"]`));
+        assert.equal(await input.evaluate(() => MahjongTest.state().pairs), before + 1, 'real input clears one pair');
+      }
+      for (const mode of ['classic', 'swift']) {
+        await input.evaluate((id) => { MahjongTest.setMode(id); MahjongTest.restart(); }, mode);
+        const path = await input.evaluate(() => MahjongTest.solution());
+        for (const pair of path) await playPair(pair);
+        assert.equal(await input.evaluate(() => MahjongTest.state().won), true, 'generated board clears without changing any faces');
+        await input.locator('#bk-dlg').press('p');
+        assert.equal(await input.locator('.apex-menu-root').isHidden(), true, 'P does not open an inert pause menu behind a dialog');
+        await input.locator('#bk-dlg').press('Escape');
+        await input.locator('#bk-dlg').waitFor({ state: 'hidden' });
+        assert.equal(await input.locator('.apex-menu-root').isHidden(), true, 'Escape dismisses the result instead of trapping the pause menu');
+        assert.equal(await input.evaluate(() => Board.paused()), false);
+        await activate(input.locator('#mj-new'));
+        const fresh = await input.evaluate(() => MahjongTest.solution());
+        for (const pair of fresh.slice(0, 5)) await playPair(pair);
+        await activate(input.locator('#mj-shuffle'));
+        const rearranged = await input.evaluate(() => MahjongTest.solution());
+        for (const pair of rearranged) await playPair(pair);
+        assert.equal(await input.evaluate(() => MahjongTest.state().won), true);
+        await activate(input.locator('#bk-dlg').getByRole('button', { name: 'New board', exact: true }));
+      }
+      console.log(`PASS ${mobile ? 'touch' : 'mouse'} clears Classic, Swift, and shuffled boards through real tiles`);
+
+      async function deadEndFixture(undos, shuffles) {
+        await input.evaluate(({ undos, shuffles }) => {
+          MahjongTest.restart();
+          tiles = [0, 1, 2, 0, 1, 2, 3, 3].map((face, id) => ({ id, face, x: id < 6 ? id : id - 6, y: id < 6 ? 0 : 2, z: 0, removed: false }));
+          boardPairs = 4; solution = []; undoLeft = undos; shuffleLeft = shuffles;
+          render(); paint();
+        }, { undos, shuffles });
+        await playPair([6, 7]);
+      }
+      await deadEndFixture(1, 1);
+      let dialog = input.locator('#bk-dlg');
+      assert.equal(await dialog.locator('h2').innerText(), 'No matches available');
+      assert.equal(await input.evaluate(() => MahjongTest.state().over), false, 'a recoverable board is not recorded as a loss');
+      await activate(dialog.getByRole('button', { name: 'Undo last match', exact: true }));
+      assert.equal(await input.evaluate(() => MahjongTest.state().pairs), 0);
+      await playPair([6, 7]);
+      assert.equal(await dialog.getByRole('button', { name: 'Undo last match', exact: true }).count(), 0, 'spent Undo is not offered');
+      await activate(dialog.getByRole('button', { name: 'Shuffle tiles', exact: true }));
+      for (const pair of await input.evaluate(() => MahjongTest.solution())) await playPair(pair);
+      assert.equal(await input.evaluate(() => MahjongTest.state().won), true);
+      await activate(dialog.getByRole('button', { name: 'New board', exact: true }));
+
+      await deadEndFixture(1, 0);
+      assert.equal(await dialog.getByRole('button', { name: 'Shuffle tiles', exact: true }).count(), 0, 'spent Shuffle is not offered');
+      await activate(dialog.getByRole('button', { name: 'Undo last match', exact: true }));
+      await playPair([6, 7]);
+      assert.equal(await dialog.locator('h2').innerText(), 'No matches left');
+      const blocked = await input.evaluate(() => ({ state: MahjongTest.state(), stats: MahjongTest.stats() }));
+      assert.equal(blocked.state.over, true);
+      assert.equal(blocked.state.won, false);
+      assert.equal(blocked.state.overReason, 'blocked');
+      assert.equal(blocked.stats.lastResult, 'No matches left');
+      assert.match(await input.locator('#mj-status').innerText(), /No matches or assists remain/);
+      await activate(dialog.getByRole('button', { name: 'New board', exact: true }));
+      await playPair((await input.evaluate(() => MahjongTest.solution()))[0]);
+      console.log(`PASS ${mobile ? 'touch' : 'mouse'} dead-end Undo, Shuffle, exhausted-assist result, and New board recovery`);
+    } finally { await inputContext.close(); }
+  }
+
   assert.equal(errors.length, 0, 'no browser errors: ' + errors.join(' | '));
   console.log('SMOKE_OK');
 } finally {

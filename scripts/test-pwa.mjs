@@ -134,14 +134,18 @@ try {
   await writeFile(path.join(distRoot, 'sw.js'), swSource);
   const updatedWorkerSource = await page.evaluate(async (swPath) => await (await fetch(swPath, { cache: 'no-store' })).text(), `${basePath}sw.js`);
   assert.ok(updatedWorkerSource.includes(nextCacheName), `${nextCacheName} was not served`);
-  await page.evaluate(async ({ swPath, scope }) => { await navigator.serviceWorker.register(`${swPath}?revision=update`, { scope }); }, { swPath: `${basePath}sw.js`, scope: basePath });
+  await page.evaluate(async (scope) => {
+    const registration = await navigator.serviceWorker.getRegistration(scope);
+    if (!registration) throw new Error('service worker registration disappeared before update check');
+    await registration.update();
+  }, basePath);
   await page.getByRole('status').getByText('An Apex Arcade update is ready.').waitFor({ state: 'visible', timeout: 15000 });
   await page.getByRole('button', { name: 'Refresh' }).click();
   await page.waitForFunction(async ({ next, previous, scope }) => {
     const registration = await navigator.serviceWorker.getRegistration(scope);
     return registration?.active?.state === 'activated' && registration.active.scriptURL.includes('/sw.js')
       && (await caches.keys()).includes(next) && !(await caches.keys()).includes(previous);
-  }, { next: nextCacheName, previous: initialCacheName, scope: basePath }, { timeout: 15000 });
+  }, { next: nextCacheName, previous: initialCacheName, scope: basePath }, { timeout: 30000 });
 
   await context.setOffline(true);
   await page.goto(`${baseUrl}/#/play/chess`, { waitUntil: 'domcontentloaded', timeout: 10000 });

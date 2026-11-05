@@ -3,6 +3,134 @@ import { access } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { preview } from 'vite';
 
+// Both the solver and expected pours work only on serialized copies in Node.
+function pourCopy(tubes, cap, source, target) {
+  const copy = tubes.map((tube) => tube.slice()), a = copy[source], b = copy[target];
+  const color = a[a.length - 1];
+  let count = 0;
+  while (count < a.length && a[a.length - 1 - count] === color && b.length + count < cap) count++;
+  b.push(...a.splice(a.length - count, count));
+  return copy;
+}
+
+function solveSort(tubes, cap) {
+  const full = (tube) => tube.length === cap && tube.every((color) => color === tube[0]);
+  const seen = new Set(), path = [];
+  let nodes = 0;
+  function dfs(board) {
+    if (board.every((tube) => !tube.length || full(tube))) return true;
+    if (++nodes > 30000) return false;
+    const key = board.map((tube) => tube.join(',')).sort().join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    for (let source = 0; source < board.length; source++) {
+      const a = board[source];
+      if (!a.length || full(a)) continue;
+      const color = a[a.length - 1];
+      for (let target = 0; target < board.length; target++) {
+        const b = board[target];
+        if (source === target || b.length >= cap || (b.length && b[b.length - 1] !== color)) continue;
+        if (!b.length && a.every((c) => c === color)) continue;
+        path.push([source, target]);
+        if (dfs(pourCopy(board, cap, source, target))) return true;
+        path.pop();
+      }
+    }
+    return false;
+  }
+  return dfs(tubes.map((tube) => tube.slice())) ? path : null;
+}
+
+async function generatedPointerCoverage(browser, origin, errors) {
+  for (const touch of [false, true]) {
+    const label = touch ? 'touch' : 'desktop', seed = touch ? 4702 : 4701;
+    const fresh = await browser.newContext({
+      viewport: touch ? { width: 390, height: 844 } : { width: 1200, height: 950 },
+      hasTouch: touch, isMobile: touch,
+    });
+    try {
+      // Reproducible randomness, not a fixture: the game generates all tubes.
+      await fresh.addInitScript((seed) => {
+        let n = seed;
+        Math.random = () => ((n = (Math.imul(n, 1664525) + 1013904223) >>> 0) / 4294967296);
+      }, seed);
+      const play = await fresh.newPage();
+      play.setDefaultTimeout(10000);
+      play.on('pageerror', (e) => errors.push(`${label}: ${e.message}`));
+      play.on('console', (m) => { if (m.type() === 'error' && !m.location().url.includes('favicon')) errors.push(`${label}: ${m.text()}`); });
+      play.on('response', (r) => { if (r.status() >= 400 && !r.url().includes('favicon')) errors.push(`${label}: ${r.status()} ${r.url()}`); });
+      // Normal URL: no test hooks, fixture injection, or programmatic pours.
+      await play.goto(`${origin}/assets/games/47-colour-sort/index.html`);
+      await play.waitForFunction(() => typeof gameState === 'function' && !!document.querySelector('.apex-menu-root'));
+      assert.equal(await play.evaluate(() => typeof window.SortTest), 'undefined');
+      const press = (locator) => touch ? locator.tap() : locator.click();
+      const read = () => play.evaluate(() => ({ state: gameState(), board: tubes.map((tube) => tube.slice()) }));
+      const initial = await read();
+      assert.equal(initial.state.level, 1, `${label}: isolated progress starts at level 1`);
+      assert.equal(initial.state.menuPaused, true);
+      await press(play.locator('.apex-menu-root [data-menu-action="play"]'));
+      await play.waitForFunction(() => document.querySelector('.apex-menu-root').hidden && !gameState().menuPaused);
+
+      for (let level = 1; level <= 3; level++) {
+        const message = `${label}, seed ${seed}, generated level ${level}`;
+        const before = await read();
+        assert.equal(before.state.level, level, message);
+        assert.equal(before.state.mode, 'classic', message);
+        assert.equal(before.state.done, false, message);
+        assert.equal(before.state.started, false, message);
+        assert.equal(before.state.moves, 0, message);
+        assert.equal(before.state.sel, -1, message);
+        assert.ok(before.board.some((tube) => tube.some((color) => color !== tube[0])), `${message}: genuinely mixed rack`);
+        assert.equal(await play.locator('#lv').textContent(), String(level), message);
+        const path = solveSort(before.board, before.state.cap);
+        assert.ok(path && path.length, `${message}: no solution within DFS budget; tubes=${JSON.stringify(before.board)}`);
+        assert.deepEqual((await read()).board, before.board, `${message}: planning leaves the live rack untouched`);
+        let expected = before.board;
+        for (const [step, [source, target]] of path.entries()) {
+          const move = `${message}, pour ${step + 1} [${source},${target}]`;
+          await press(play.locator(`.tb[data-i="${source}"]`));
+          const lifted = await read();
+          assert.equal(lifted.state.sel, source, `${move}: source lifts`);
+          assert.equal(lifted.state.moves, step, `${move}: selecting does not pour`);
+          assert.deepEqual(lifted.board, expected, move);
+          expected = pourCopy(expected, before.state.cap, source, target);
+          await press(play.locator(`.tb[data-i="${target}"]`));
+          const after = await read();
+          assert.deepEqual(after.board, expected, `${move}: entire top run moves up to capacity`);
+          assert.equal(after.state.moves, step + 1, move);
+          assert.equal(after.state.sel, -1, move);
+          assert.equal(after.state.done, step === path.length - 1, move);
+          assert.equal(after.state.won, step === path.length - 1, move);
+          assert.equal(await play.locator('#mv').textContent(), String(step + 1), move);
+        }
+        const cleared = await read();
+        assert.ok(cleared.board.every((tube) => !tube.length || (tube.length === before.state.cap && tube.every((color) => color === tube[0]))), message);
+        assert.equal(cleared.state.undos, 0, message);
+        assert.equal(cleared.state.spares, 0, message);
+        const dialog = play.locator('#bk-dlg[open]');
+        await dialog.waitFor({ state: 'visible' });
+        assert.equal(await dialog.locator('h2').textContent(), `Level ${level} cleared!`, message);
+        const stats = await play.evaluate(() => Save.load('bubble-sort').stats);
+        assert.equal(stats.wins, level, message);
+        assert.equal(stats.levelsCleared, level, message);
+        await press(dialog.getByRole('button', { name: 'Next level', exact: true }));
+        await play.waitForFunction((n) => gameState().level === n && !gameState().done && !gameState().menuPaused, level + 1);
+        assert.equal(await dialog.count(), 0, `${message}: Next level closes the win dialog`);
+        const next = await read();
+        assert.equal(next.state.started, false, message);
+        assert.equal(next.state.moves, 0, message);
+        assert.equal(next.state.sel, -1, message);
+        assert.ok(next.board.some((tube) => tube.some((color) => color !== tube[0])), message);
+        assert.notDeepEqual(next.board, before.board, `${message}: Next level generates a new rack`);
+        assert.equal(await play.locator('#lv').textContent(), String(level + 1), message);
+      }
+      console.log(`GENERATED_POINTER_OK bubble-sort ${label}: cleared levels 1-3, Next level reached 4 (seed ${seed})`);
+    } finally {
+      await fresh.close();
+    }
+  }
+}
+
 const server = await preview({ preview: { host: '127.0.0.1', port: 0 } });
 const origin = `http://127.0.0.1:${server.httpServer.address().port}${(server.config.base || '/').replace(/\/$/, '')}`;
 const candidates = [process.env.CHROME_BIN, 'C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].filter(Boolean);
@@ -260,6 +388,8 @@ try {
   assert.equal(chrome.shell, false, 'no button bar or help box covers the rack');
   assert.equal(chrome.menuToolbar, 'none', 'the control toolbar is hidden during play');
   assert.equal(chrome.paused, false, 'play unpauses the rack');
+
+  await generatedPointerCoverage(browser, origin, errors);
 
   assert.equal(errors.length, 0, 'no browser errors: ' + errors.join(' | '));
   console.log('SMOKE_OK');

@@ -93,7 +93,7 @@ try {
   for (const [path, signature] of [
     ['/assets/games/43-sudoku/index.html', () => [...document.querySelectorAll('#bd .c')].map((cell) => `${cell.textContent}:${cell.className}`).join('|')],
     ['/assets/games/44-minesweeper/index.html', () => [...document.querySelectorAll('#bd .k')].map((cell) => `${cell.textContent}:${cell.className}`).join('|')],
-    ['/assets/games/50-mahjong/index.html', () => [...document.querySelectorAll('#board .tile')].map((cell) => cell.getAttribute('aria-label')).join('|')],
+    ['/assets/games/50-mahjong/index.html', () => [...document.querySelectorAll('#mj-root .mj-tile')].map((cell) => cell.getAttribute('aria-label')).join('|')],
   ]) {
     const sample = async (seed) => {
       const gameContext = await browser.newContext({ viewport: { width: 1280, height: 1000 }, reducedMotion: 'reduce' });

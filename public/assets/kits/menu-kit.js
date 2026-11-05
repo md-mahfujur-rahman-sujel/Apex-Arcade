@@ -484,7 +484,7 @@
         pauseActions.setAttribute('aria-label', 'Pause menu');
         [
           { label: 'Resume game', run: function () { api.resume(); } },
-          { label: 'Restart game', run: function () { restartNativeGame(); global.ApexGamePaused = false; api.hide(); postHostMessage('MENU_RESUME'); } },
+          { label: 'Restart game', run: function () { pauseNativeGame(false); restartNativeGame(); api.hide(); postHostMessage('MENU_RESUME'); } },
           { label: 'Options', run: function () { api.go('options'); } },
           { label: 'How to play', run: function () { api.go('about'); } },
           { label: 'Exit game', run: function () { postHostMessage('MENU_EXIT'); if (typeof config.onExit === 'function') config.onExit(); } }
@@ -672,6 +672,7 @@
 
     function onGamePauseKeyDown(event) {
       if (destroyed || !root.hidden || event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
+      if (doc.querySelector('dialog[open]')) return;
       if (event.code === 'KeyP' || event.key === 'Escape') {
         event.preventDefault();
         event.stopImmediatePropagation();
