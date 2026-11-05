@@ -8,10 +8,11 @@
 <style>
   .sp { display: grid; grid-template-columns: auto minmax(220px, 1fr); gap: 22px; align-items: start; }
   @media (max-width: 860px) { .sp { grid-template-columns: 1fr; } }
-  #bd { --s: max(280px, min(100vw - 40px, 520px, 100vh - 220px)); width: var(--s); height: var(--s); position: relative; background: #2a2f45; border-radius: 14px; box-shadow: 0 20px 50px -20px #000; user-select: none; touch-action: manipulation; }
-  .t { position: absolute; display: flex; align-items: center; justify-content: center; border-radius: 10px; font: 800 calc(var(--s) / var(--n) * .42) "Segoe UI", sans-serif; color: #0b1220; cursor: pointer; transition: left .13s ease-out, top .13s ease-out; box-shadow: inset 0 -4px 0 rgba(0,0,0,.25); }
-  .t.ok { box-shadow: inset 0 -4px 0 rgba(0,0,0,.25), 0 0 0 3px rgba(74,222,128,.7); }
+  #bd { --s: max(280px, min(100vw - 40px, 520px, 100vh - 220px)); width: var(--s); height: var(--s); position: relative; background: var(--sp-board, #2a2f45); border-radius: 14px; box-shadow: 0 20px 50px -20px #000, 0 0 64px -28px var(--sp-aura, transparent); user-select: none; touch-action: manipulation; }
+  .t { position: absolute; display: flex; align-items: center; justify-content: center; border-radius: 10px; font: 800 calc(var(--s) / var(--n) * .42) "Segoe UI", sans-serif; color: var(--sp-ink, #0b1220); cursor: pointer; transition: left .13s ease-out, top .13s ease-out; box-shadow: inset 0 -4px 0 rgba(0,0,0,.25); background: hsl(calc((var(--v) - 1) / (var(--n) * var(--n) - 1) * 300 + var(--sp-hue, 190)) var(--sp-sat, 75%) var(--sp-light, 68%)); }
+  .t.ok { box-shadow: inset 0 -4px 0 rgba(0,0,0,.25), 0 0 0 3px var(--sp-glow, rgba(74,222,128,.7)); }
   .side { display: grid; gap: 12px; } .stats { display: flex; gap: 18px; color: var(--muted); font: 600 14px ui-monospace, Consolas, monospace; } .stats b { color: var(--text); }
+  @media (prefers-reduced-motion: reduce) { .t { transition: none; } }
 </style>
 <script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
 </head>
@@ -27,47 +28,347 @@
 <script>
 const ui = Board.shell({
   id: 'sliding-puzzle', title: 'Slide Tiles', subtitle: 'Slide the numbered tiles back into order',
-  rules: 'Slide the tiles into the empty space to put the numbers in order from 1, left to right and top to bottom, with the gap in the bottom-right corner. Click a tile to slide it — and any tiles between it and the gap — or use the arrow keys to move the tiles next to the gap. Tiles already in their final place glow green. Every puzzle is solvable.',
-  controls: [['Click a tile', 'Slide it (and the row/column towards the gap)'], ['← ↑ ↓ →', 'Slide the neighbouring tile into the gap'], ['N', 'Shuffle a new puzzle'], ['H / M', 'Toggle help / mute']],
+  rules: 'Slide the tiles into the empty space to put the numbers in order from 1, left to right and top to bottom, with the gap in the bottom-right corner. Click a tile to slide it — and any tiles between it and the gap — or use the arrow keys to move the tiles next to the gap. Tiles already in their final place glow green. Every puzzle is solvable. Classic is a 4×4 grid, Sprint is 3×3 on a 90-second clock, Zen is 5×5 with unlimited undo, Mirror solves 15 down to 1 with the gap in the top-left corner, and Daily gives everyone the same 4×4 shuffle.',
+  controls: [['Click a tile', 'Slide it (and the row/column towards the gap)'], ['← ↑ ↓ →', 'Slide the neighbouring tile into the gap'], ['U', 'Undo a move'], ['N', 'Shuffle a new puzzle'], ['H / M', 'Toggle help / mute']],
 });
 ui.main.innerHTML = `<div class="sp"><div id="bd"></div><div class="side">
   <div class="stats"><span>Moves <b id="mv">0</b></span><span>Time <b id="tm">0:00</b></span><span>Best <b id="bs">–</b></span></div>
   <div class="bk-status" id="st"></div>
-  <div class="bk-row"><label>Size <select class="bk-select" id="size"><option value="3">3 × 3</option><option value="4" selected>4 × 4</option><option value="5">5 × 5</option></select></label><button class="bk-btn bk-primary" id="new">Shuffle</button></div></div></div>`;
+  <div class="bk-status" id="goal"></div>
+  <div class="bk-row"><button class="bk-btn" id="undo">↶ Undo</button><button class="bk-btn bk-primary" id="new">Shuffle</button></div></div></div>`;
 const $ = (s) => ui.main.querySelector(s);
-let N, B, moves, t0, tick, done, started;
+const GAME_ID = 'sliding-puzzle';
+const MODES = [
+  { id: 'classic', name: 'Classic', blurb: '4×4, ascending order', n: 4, order: 'asc' },
+  { id: 'sprint', name: 'Sprint', blurb: '3×3, 90-second clock', n: 3, order: 'asc', limit: 90 },
+  { id: 'zen', name: 'Zen', blurb: '5×5, unlimited undo', n: 5, order: 'asc' },
+  { id: 'mirror', name: 'Mirror', blurb: 'Solve 15 down to 1', n: 4, order: 'desc', requires: { stat: 'classicWins', gte: 1 }, lockedHint: 'Win a Classic puzzle to unlock' },
+  { id: 'daily', name: 'Daily', blurb: 'Same shuffle for everyone', n: 4, order: 'asc', daily: true },
+];
+const ACHIEVEMENTS = [
+  { id: 'first-solve', name: 'First Slide', desc: 'Solve any puzzle.' },
+  { id: 'low-move', name: 'Efficient', desc: 'Solve a puzzle in 100 moves or fewer.' },
+  { id: 'speed-solve', name: 'Quick Hands', desc: 'Solve a puzzle in under 90 seconds.' },
+  { id: 'no-undo', name: 'Clean Run', desc: 'Solve a puzzle without undoing.' },
+  { id: 'sprint-clear', name: 'Sprint Solver', desc: 'Solve a Sprint puzzle.' },
+  { id: 'zen-clear', name: 'Zen Solver', desc: 'Solve a Zen puzzle.' },
+  { id: 'daily-clear', name: 'Daily Tiles', desc: 'Solve the Daily puzzle.' },
+  { id: 'mirror-clear', name: 'Mirror Finish', desc: 'Solve a Mirror puzzle.' },
+  { id: 'five-grid', name: 'Wide Grid', desc: 'Solve a 5×5 puzzle.' },
+  { id: 'triple-crown', name: 'Triple Crown', desc: 'Win in three different modes.' },
+  { id: 'ten-wins', name: 'Ten Solves', desc: 'Solve ten puzzles across your career.' },
+  { id: 'all-modes', name: 'Complete Slider', desc: 'Win in every mode.' },
+];
+const UNDO_LIMIT = { classic: 5, sprint: 2, zen: 99, mirror: 3, daily: 3 };
+const SKINS = {
+  'tiles-classic': ['190', '75%', '68%'],
+  'tiles-ember': ['20', '78%', '62%'],
+  'tiles-jade': ['120', '62%', '60%'],
+  'tiles-ice': ['205', '70%', '70%'],
+  'tiles-violet': ['275', '68%', '70%'],
+};
+const PALETTES = { 'board-slate': '#2a2f45', 'board-night': '#171b2b', 'board-indigo': '#2a2a52', 'board-mono': '#2b2e35' };
+const EFFECTS = { 'glow-green': 'rgba(74,222,128,.7)', 'glow-cyan': 'rgba(34,211,238,.7)', 'glow-amber': 'rgba(251,191,36,.7)', 'glow-rose': 'rgba(251,113,133,.7)' };
+const THEMES = { 'ink-navy': ['#0b1220', ''], 'ink-ember': ['#2a1208', 'rgba(251,146,60,.28)'], 'ink-mint': ['#062a22', 'rgba(52,211,153,.28)'] };
+const look = { skin: 'tiles-classic', palette: 'board-slate', effect: 'glow-green', theme: 'ink-navy' };
+const cosmeticKey = (id) => String(id || '').split(':').pop();
+const rootStyle = document.documentElement.style;
+let gm = 'classic', initialized = false, menuPaused = true;
+function applyCosmetic(slot, id) {
+  const key = cosmeticKey(id);
+  if (slot === 'skin' && SKINS[key]) {
+    look.skin = key;
+    rootStyle.setProperty('--sp-hue', SKINS[key][0]);
+    rootStyle.setProperty('--sp-sat', SKINS[key][1]);
+    rootStyle.setProperty('--sp-light', SKINS[key][2]);
+  } else if (slot === 'palette' && PALETTES[key]) {
+    look.palette = key;
+    rootStyle.setProperty('--sp-board', PALETTES[key]);
+  } else if (slot === 'effect' && EFFECTS[key]) {
+    look.effect = key;
+    rootStyle.setProperty('--sp-glow', EFFECTS[key]);
+  } else if (slot === 'theme' && THEMES[key]) {
+    look.theme = key;
+    rootStyle.setProperty('--sp-ink', THEMES[key][0]);
+    if (THEMES[key][1]) rootStyle.setProperty('--sp-aura', THEMES[key][1]);
+    else rootStyle.removeProperty('--sp-aura');
+  }
+}
+const GameUI = Board.ui({
+  id: GAME_ID, title: 'Slide Tiles', subtitle: 'One open space, one tile at a time.', accent: '#93c5fd',
+  modes: MODES, achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Click a tile in the same row or column as the gap to slide it.' },
+    { text: 'Arrow keys move the tile beside the gap in that direction.' },
+    { text: 'Tiles in their final place glow green.' },
+    { text: 'Sprint races a 90-second clock; Zen adds a 5×5 grid and unlimited undo; Mirror solves in reverse.' },
+  ] },
+  hooks: {
+    applyMode: (next) => { gm = MODES.some((m) => m.id === next) ? next : 'classic'; if (initialized) newGame(); },
+    applyCosmetic,
+    onStart: () => resumeClock(),
+  },
+});
+window.ApexGameMenuActions = {
+  play: () => resumeClock(),
+  pause: (value) => { if (value) pauseClock(); else resumeClock(); },
+  resume: () => resumeClock(),
+  restart: () => { menuPaused = false; newGame(); },
+};
 const bd = $('#bd');
-const hue = (v) => `hsl(${(v - 1) / (N * N - 1) * 300 + 190} 75% 68%)`;
-const fmt = (ms) => { const s = ms / 1000 | 0; return (s / 60 | 0) + ':' + String(s % 60).padStart(2, '0'); };
+let N = 4, B = [], goal = [], moves = 0, undosUsed = 0, history = [], over = null, started = false, loseReason = '', lastScore = 0;
+let clockAccum = 0, clockSince = null;
+const cfg = () => MODES.find((m) => m.id === gm) || MODES[0];
+const elapsedMs = () => clockAccum + (clockSince ? Date.now() - clockSince : 0);
+const timeLeft = () => { const limit = cfg().limit; return limit ? Math.max(0, limit * 1000 - elapsedMs()) : 0; };
+const fmt = (ms) => { const s = Math.max(0, ms / 1000 | 0); return (s / 60 | 0) + ':' + String(s % 60).padStart(2, '0'); };
+const undoLimit = () => UNDO_LIMIT[gm] || 3;
+function pauseClock() { if (clockSince) { clockAccum += Date.now() - clockSince; clockSince = null; } }
+function resumeClock() {
+  menuPaused = false;
+  if (!clockSince && started && !over) clockSince = Date.now();
+  const help = document.getElementById('bk-help'); if (help) help.open = false;
+}
+function goalFor(n, order) {
+  const out = [];
+  for (let i = 0; i < n * n; i++) out.push(order === 'desc' ? (i === 0 ? 0 : n * n - i) : (i + 1) % (n * n));
+  return out;
+}
+function mulberry32(seed) {
+  let state = seed >>> 0;
+  return function () {
+    state = (state + 0x6D2B79F5) >>> 0;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function daySeed() {
+  const d = new Date();
+  return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+}
+function scramble(from, n, seed) {
+  const grid = from.slice(); let z = grid.indexOf(0), last = -1;
+  const steps = n * n * 30 + (seed == null ? 0 : 200 + seed % 160);
+  const rng = seed == null ? null : mulberry32(seed);
+  for (let k = 0; k < steps; k++) {
+    const r = z / n | 0, c = z % n, options = [];
+    if (r > 0) options.push(z - n);
+    if (r < n - 1) options.push(z + n);
+    if (c > 0) options.push(z - 1);
+    if (c < n - 1) options.push(z + 1);
+    const pool = options.filter((x) => x !== last);
+    const pick = pool[rng ? Math.floor(rng() * pool.length) : Board.rand(pool.length)];
+    grid[z] = grid[pick]; grid[pick] = 0; last = z; z = pick;
+  }
+  return grid;
+}
+function renderBoard() {
+  bd.style.setProperty('--n', N);
+  bd.innerHTML = '';
+  for (let v = 1; v < N * N; v++) {
+    const d = document.createElement('div');
+    d.className = 't'; d.dataset.v = v; d.textContent = v;
+    d.style.setProperty('--v', v);
+    d.style.width = d.style.height = `calc(100% / ${N} - 6px)`;
+    bd.appendChild(d);
+  }
+}
+function inPlace() { return B.reduce((n, v, i) => n + (v && v === goal[i] ? 1 : 0), 0); }
 function newGame() {
-  N = +$('#size').value; B = [...Array(N * N).keys()].map((i) => (i + 1) % (N * N)); moves = 0; done = started = false; Board.cancel(tick); $('#tm').textContent = '0:00';
-  let z = N * N - 1, last = -1; for (let k = 0; k < N * N * 40; k++) { const r = z / N | 0, c = z % N, o = []; if (r > 0) o.push(z - N); if (r < N - 1) o.push(z + N); if (c > 0) o.push(z - 1); if (c < N - 1) o.push(z + 1); const f = o.filter((x) => x !== last), n = f[Board.rand(f.length)]; B[z] = B[n]; B[n] = 0; last = z; z = n; }
-  if (solved()) return newGame();
-  bd.style.setProperty('--n', N); bd.innerHTML = '';
-  for (let v = 1; v < N * N; v++) { const d = document.createElement('div'); d.className = 't'; d.dataset.v = v; d.textContent = v; d.style.background = hue(v); d.style.width = d.style.height = `calc(100% / ${N} - 6px)`; bd.appendChild(d); }
-  const b = Board.ls.get('apex:slide:' + N); $('#bs').textContent = b ? b + ' moves' : '–'; $('#mv').textContent = 0; layout();
+  const c = cfg();
+  N = c.n; goal = goalFor(N, c.order);
+  B = scramble(goal, N, c.daily ? daySeed() : null);
+  if (B.every((v, i) => v === goal[i])) B = scramble(goal, N, (c.daily ? daySeed() : 1) + 1);
+  moves = 0; undosUsed = 0; history = []; over = null; started = false; loseReason = ''; lastScore = 0;
+  clockAccum = 0; clockSince = null;
+  renderBoard(); layout();
+  initialized = true;
 }
-const solved = () => B.every((v, i) => v === (i + 1) % (N * N));
+function bestLine() {
+  const perMode = gm.charAt(0).toUpperCase() + gm.slice(1);
+  const best = Number(GameUI.stats()['bestMoves' + perMode]) || 0;
+  return best ? best + ' moves' : '–';
+}
 function layout() {
-  B.forEach((v, i) => { if (!v) return; const d = bd.querySelector(`[data-v="${v}"]`), r = i / N | 0, c = i % N; d.style.left = `calc(${c} * 100% / ${N} + 3px)`; d.style.top = `calc(${r} * 100% / ${N} + 3px)`; d.classList.toggle('ok', v === i + 1); });
+  B.forEach((v, i) => {
+    if (!v) return;
+    const d = bd.querySelector(`[data-v="${v}"]`);
+    if (!d) return;
+    const r = i / N | 0, c = i % N;
+    d.style.left = `calc(${c} * 100% / ${N} + 3px)`;
+    d.style.top = `calc(${r} * 100% / ${N} + 3px)`;
+    d.classList.toggle('ok', v === goal[i]);
+  });
   $('#mv').textContent = moves;
-  $('#st').textContent = done ? 'Solved in ' + moves + ' moves! 🎉' : B.filter((v, i) => v && v === i + 1).length + ' of ' + (N * N - 1) + ' tiles in place';
+  $('#tm').textContent = cfg().limit ? fmt(timeLeft()) : fmt(elapsedMs());
+  $('#bs').textContent = bestLine();
+  const undo = $('#undo');
+  undo.disabled = !!over || !history.length || undosUsed >= undoLimit();
+  $('#st').textContent = over === 'win'
+    ? 'Solved in ' + moves + ' moves! 🎉'
+    : over === 'lose'
+      ? '⏰ Time up — ' + inPlace() + ' of ' + (N * N - 1) + ' tiles in place.'
+      : inPlace() + ' of ' + (N * N - 1) + ' tiles in place · ' + Math.max(0, undoLimit() - undosUsed) + ' undo left';
+  const g = $('#goal');
+  if (gm === 'sprint') g.textContent = 'Sprint · 3×3 · ' + fmt(timeLeft()) + ' left';
+  else if (gm === 'zen') g.textContent = 'Zen · 5×5 · unlimited undo';
+  else if (gm === 'mirror') g.textContent = 'Mirror · 4×4 · 15 → 1, gap top-left';
+  else if (gm === 'daily') g.textContent = 'Daily · 4×4 · seed ' + daySeed();
+  else g.textContent = 'Classic · 4×4 · ascending order';
 }
-function slide(i) { /* slide tile at i toward the gap if they share a line */
-  if (done) return false; const z = B.indexOf(0), r = i / N | 0, c = i % N, zr = z / N | 0, zc = z % N; if (i === z || (r !== zr && c !== zc)) { Board.sfx('error'); return false; }
-  const step = r === zr ? (zc > c ? 1 : -1) : (zr > r ? N : -N); let k = z; while (k !== i) { B[k] = B[k - step]; k -= step; } B[i] = 0; moves++;
-  if (!started) { started = true; t0 = Board.now(); tick = Board.every(500, () => { $('#tm').textContent = fmt(Board.now() - t0); }); }
-  Board.sfx('step'); if (solved()) { done = true; Board.cancel(tick); const b = +Board.ls.get('apex:slide:' + N) || 1e9; if (moves < b) { Board.ls.set('apex:slide:' + N, moves); $('#bs').textContent = moves + ' moves'; } Board.sfx('win'); layout(); Board.after(400, () => Board.modal('Solved!', moves + ' moves in ' + fmt(Board.now() - t0) + '.', [['New puzzle', newGame], ['Close']])); } else layout();
+function slide(i) {
+  if (over) return false;
+  const z = B.indexOf(0), r = i / N | 0, c = i % N, zr = z / N | 0, zc = z % N;
+  if (i === z || (r !== zr && c !== zc)) { if (!over) Board.sfx('error'); return false; }
+  history.push({ b: B.slice(), m: moves }); if (history.length > 240) history.shift();
+  const step = r === zr ? (zc > c ? 1 : -1) : (zr > r ? N : -N);
+  let k = z;
+  while (k !== i) { B[k] = B[k - step]; k -= step; }
+  B[i] = 0; moves++;
+  if (!started) { started = true; clockSince = menuPaused ? null : Date.now(); }
+  Board.sfx('step'); layout();
+  if (B.every((v, idx) => v === goal[idx])) finishRun(true, 'win');
   return true;
 }
-bd.addEventListener('click', (e) => { const d = e.target.closest('.t'); if (d) slide(B.indexOf(+d.dataset.v)); });
+function undo() {
+  if (over || !history.length) return;
+  if (undosUsed >= undoLimit()) { Board.sfx('error'); return; }
+  const snap = history.pop();
+  B = snap.b; moves = snap.m; undosUsed++;
+  Board.sfx('click'); layout();
+}
+function finishRun(win, reason) {
+  if (over) return;
+  over = win ? 'win' : 'lose';
+  loseReason = win ? '' : (reason || 'time');
+  pauseClock();
+  const secs = Math.round(elapsedMs() / 1000);
+  let score = 0;
+  if (win) {
+    if (gm === 'classic') score = 1200 + Math.max(0, 900 - secs * 3) - moves * 4;
+    else if (gm === 'sprint') score = 1000 + Math.max(0, Math.round(timeLeft() / 1000) * 6) - moves * 4;
+    else if (gm === 'zen') score = 800;
+    else if (gm === 'mirror') score = 1800 + Math.max(0, 1200 - secs * 3) - moves * 5;
+    else score = 1000 + Math.max(0, 900 - secs * 3) - moves * 4;
+    score = Math.max(100, Math.round(score - undosUsed * (gm === 'zen' ? 20 : 60)));
+  }
+  lastScore = score;
+  const stats = GameUI.stats(), careerWins = (Number(stats.wins) || 0) + (win ? 1 : 0);
+  const perMode = gm.charAt(0).toUpperCase() + gm.slice(1);
+  const records = { ['bestScore' + perMode]: score };
+  const mins = {};
+  if (win) { mins['bestTime' + perMode] = secs; mins['bestMoves' + perMode] = moves; }
+  const counters = { wins: win ? 1 : 0, losses: win ? 0 : 1, solves: win ? 1 : 0, moves, undos: undosUsed, [gm + 'Wins']: win ? 1 : 0 };
+  const achievements = [];
+  if (win) {
+    achievements.push('first-solve');
+    if (moves <= 100) achievements.push('low-move');
+    if (secs < 90) achievements.push('speed-solve');
+    if (undosUsed === 0) achievements.push('no-undo');
+    if (gm === 'sprint') achievements.push('sprint-clear');
+    if (gm === 'zen') achievements.push('zen-clear');
+    if (gm === 'daily') achievements.push('daily-clear');
+    if (gm === 'mirror') achievements.push('mirror-clear');
+    if (N === 5) achievements.push('five-grid');
+    const modesWon = MODES.filter((m) => (Number(stats[m.id + 'Wins']) || 0) + (m.id === gm ? 1 : 0) > 0);
+    if (modesWon.length >= 3) achievements.push('triple-crown');
+    if (careerWins >= 10) achievements.push('ten-wins');
+    if (modesWon.length === MODES.length) achievements.push('all-modes');
+  }
+  GameUI.record({ score, seconds: secs, result: win ? 'Won' : 'Lost', records, mins, counters, achievements });
+  if (win) Board.sfx('win');
+  layout();
+  const title = win ? 'Solved!' : loseReason === 'time' ? 'Time up' : 'Puzzle ended';
+  const copy = win
+    ? `${moves} moves · ${fmt(secs * 1000)} · ${undosUsed} undo${undosUsed === 1 ? '' : 's'} · ${score} pts`
+    : `The clock ran out with ${inPlace()} of ${N * N - 1} tiles in place.`;
+  Board.modal(title, copy, [['New puzzle', newGame], ['Close']]);
+}
+bd.addEventListener('click', (e) => { if (menuPaused) return; const d = e.target.closest('.t'); if (d) slide(B.indexOf(+d.dataset.v)); });
+$('#undo').onclick = (e) => { e.target.blur(); undo(); };
+$('#new').onclick = (e) => { e.target.blur(); newGame(); };
 document.addEventListener('keydown', (e) => {
-  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || document.getElementById('bk-dlg')?.open) return; const k = e.key.toLowerCase(), z = B.indexOf(0), r = z / N | 0, c = z % N;
+  if (menuPaused || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || document.getElementById('bk-dlg')?.open) return;
+  const k = e.key.toLowerCase(), z = B.indexOf(0), r = z / N | 0, c = z % N;
   const m = { arrowleft: c < N - 1 ? z + 1 : -1, a: c < N - 1 ? z + 1 : -1, arrowright: c > 0 ? z - 1 : -1, d: c > 0 ? z - 1 : -1, arrowup: r < N - 1 ? z + N : -1, w: r < N - 1 ? z + N : -1, arrowdown: r > 0 ? z - N : -1, s: r > 0 ? z - N : -1 };
-  if (k in m) { e.preventDefault(); if (m[k] >= 0) slide(m[k]); } else if (k === 'n') newGame();
+  if (k in m) { e.preventDefault(); if (m[k] >= 0) slide(m[k]); }
+  else if (k === 'u') undo();
+  else if (k === 'n') newGame();
 });
-$('#new').onclick = newGame; $('#size').onchange = (e) => { e.target.blur(); newGame(); };
+window.addEventListener('apex:board-pause', (e) => { if (e.detail?.paused) pauseClock(); else resumeClock(); });
+setInterval(() => {
+  if (over) return;
+  if (cfg().limit) {
+    const left = timeLeft();
+    $('#tm').textContent = fmt(left);
+    if (started && left <= 0) finishRun(false, 'time');
+  } else if (started) $('#tm').textContent = fmt(elapsedMs());
+}, 250);
 newGame();
+
+/* ---------- deterministic test hooks ---------- */
+function gameState() {
+  return {
+    mode: gm, n: N, order: cfg().order, moves, undos: undosUsed, history: history.length,
+    started, done: !!over, won: over === 'win', time: Math.round(elapsedMs() / 1000),
+    clock: Math.round(timeLeft() / 1000), score: lastScore, inPlace: inPlace(), tiles: N * N - 1,
+    dailySeed: cfg().daily ? daySeed() : 0, overReason: loseReason, menuPaused,
+    achievements: typeof Save !== 'undefined' && Save.load ? (Save.load(GAME_ID).achievements || []) : [],
+  };
+}
+function setRun(o) {
+  const src = o || {};
+  if (src.elapsed != null) { clockAccum = Math.max(0, Number(src.elapsed) || 0); clockSince = null; }
+  if (src.moves != null) moves = Math.max(0, Number(src.moves) || 0);
+  if (src.undos != null) undosUsed = Math.max(0, Number(src.undos) || 0);
+  layout(); return gameState();
+}
+function setBoard(o) {
+  const src = o || {};
+  N = Number(src.n) || N;
+  goal = goalFor(N, cfg().order);
+  B = Array.isArray(src.values) && src.values.length === N * N ? src.values.slice() : goal.slice();
+  moves = Number(src.moves) || 0; undosUsed = 0; history = []; over = null; started = true; loseReason = ''; lastScore = 0;
+  clockAccum = Number(src.elapsed) || 0; clockSince = null;
+  renderBoard(); layout(); return gameState();
+}
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  window.SlideTest = {
+    state: gameState,
+    board: () => B.slice(),
+    goal: () => goal.slice(),
+    modes: () => MODES.map((m) => m.id),
+    setMode: (id) => GameUI.setMode(id),
+    getMode: () => gm,
+    restart: () => { ApexGameMenuActions.restart(); return gameState(); },
+    newGame: () => { newGame(); return gameState(); },
+    setBoard,
+    setRun,
+    slide: (i) => { slide(Math.max(0, Math.min(N * N - 1, Number(i) || 0))); return gameState(); },
+    undo: () => { undo(); return gameState(); },
+    complete: () => { B = goal.slice(); if (!started) started = true; clockSince = null; finishRun(true, 'win'); return gameState(); },
+    tick: (ms) => { clockAccum = Math.max(0, clockAccum + (Number(ms) || 0)); clockSince = null; if (!over && cfg().limit && timeLeft() <= 0) finishRun(false, 'time'); else layout(); return gameState(); },
+    close: () => { const d = document.getElementById('bk-dlg'); if (d && d.open) d.close(); return true; },
+    modalOpen: () => { const d = document.getElementById('bk-dlg'); return !!(d && d.open); },
+    cosmetic: (slot, id) => { applyCosmetic(slot, id); return { slot, id: cosmeticKey(id) }; },
+    cosmeticList: () => (window.Meta && Meta.getCosmetics ? Meta.getCosmetics(GAME_ID) : []),
+    colors: () => {
+      const css = (name) => rootStyle.getPropertyValue(name).trim();
+      return {
+        skin: look.skin, hue: css('--sp-hue') || SKINS[look.skin][0], sat: css('--sp-sat') || SKINS[look.skin][1], light: css('--sp-light') || SKINS[look.skin][2],
+        palette: look.palette, board: css('--sp-board') || PALETTES[look.palette],
+        effect: look.effect, glow: css('--sp-glow') || EFFECTS[look.effect],
+        theme: look.theme, ink: css('--sp-ink') || THEMES[look.theme][0], aura: css('--sp-aura') || THEMES[look.theme][1],
+      };
+    },
+    stats: () => GameUI.stats(),
+    achievements: () => (Save.load(GAME_ID).achievements || []),
+    menuPaused: (value) => { menuPaused = !!value; return menuPaused; },
+    start: () => { resumeClock(); return gameState(); },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

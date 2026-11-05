@@ -2,66 +2,97 @@
 
 ## Pitch
 
-Turn-based table soccer duel: pull back and flick cyan discs to knock the ball into the amber goal; first to 5 goals wins. Keep the source game’s recognizable rhythm and make each run readable, quick to restart, and rewarding to master.
+Flick-and-score table football on a floodlit pitch. Drag back from one of four cyan discs and release to flick it at the ball; discs and ball bank off the cushions, and the ball must cross the amber goal mouth on the right. The rival answers with its own discs and attacks the left goal. Five modes change the target, the clock, the power and the rival's accuracy, and every finished match banks a score, records and achievements.
 
 ## Art direction
 
-Preserve the current artwork, silhouettes, animation, and sound on the canonical page. Use the game’s existing #38BDF8 accent as a guide for new menu and reward states. Keep gameplay objects distinct from the background; never rely on colour alone for hazards or legal moves. Lite and reduced-motion settings must reduce effects without removing gameplay feedback.
+A dark stadium sky over a striped pitch with white markings, two goals and the four-disc formation mirrored on each half. The ball palette comes from `soccer:ball-*`, the pitch from `soccer:pitch-*`, the aim guide from `soccer:aim-*` and the sky from `soccer:sky-*`. Goals trigger confetti, a ring, a net flash and a screen flash. Discs and ball leave short trails while moving; Lite and reduced-motion settings keep the playfield and drop decorative shake.
 
 ## Modes and match structure
 
-1. **Classic:** preserve the canonical rules and scoring.
-2. **Daily challenge:** a deterministic seeded puzzle or short target run with a saved local best.
+| Mode | First to | Clock | Score multiplier | Flick power | Cushion bounce | Rival noise | Aim guide |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Classic Match | 5 | none | 1× | 1.0 | 1.0 | 0.045 | shown |
+| Blitz | 3 | 75 s | 1.25× | 1.0 | 1.0 | 0.045 | shown |
+| Power Play | 5 | none | 1.3× | 1.25 | 1.1 | 0.045 | shown |
+| Derby Night | 5 | none | 1.4× | 1.0 | 1.0 | 0.018 | shown |
+| Masterclass | 5 | none | 1.6× | 1.0 | 1.0 | 0.008 | hidden |
 
-A mode change must reset only the state named by that mode. Pause and resume preserve the complete in-progress state. Daily seeds use the local date and produce the same starting state for every retry that day.
+1. **Classic Match:** the baseline five-goal duel and the unlock gate.
+2. **Blitz:** a 75-second match that ends on the clock; whoever leads at full time wins.
+3. **Power Play:** heavier flicks and livelier cushions make every rebound travel further.
+4. **Derby Night:** the rival's aim noise drops from 0.045 to 0.018.
+5. **Masterclass:** locked until a Classic win (`classicWins ≥ 1`); no aim guide and near-perfect rival aim.
 
-## Settings and difficulty
+A mode change starts a fresh match. Pause freezes the simulation and the match clock.
 
-| Setting | Behavior |
-| --- | --- |
-| Easy | 0.8× simulation speed or a wider timing/mistake allowance; 1.0× score. |
-| Normal | Preserve the source page’s baseline rules at 1.0× speed and score. |
-| Hard | 1.35× simulation speed or a stricter opponent/puzzle target; 1.25× score. |
-| Performance | Respect Lite, Standard, and Ultra budgets; preserve essential playfield feedback. |
-| Reduced motion | Remove decorative movement, shake, and nonessential flashes; preserve input and game-state motion. |
-| Audio and palette | Inherit global settings, allow per-game overrides, and keep objects legible in colour-blind palettes. |
+## Core rules
+
+- You flick one disc per turn; the rival replies after the table settles.
+- Pulling further from the disc produces a harder flick, with a minimum power and a capped maximum.
+- The ball scores when it crosses a goal mouth between the posts; the ball is repositioned after every goal.
+- Rebounds off cushions and other discs are legal.
+- If the ball settles, the turn passes; a goal restarts the formation with the conceding side kicking off.
+- Blitz ends immediately when the clock reaches zero, even mid-roll.
+
+## Scoring
+
+Every player goal pays 100 and the winning side earns a 300 bonus, both multiplied by the mode's score multiplier (Blitz 1.25×, Power Play 1.3×, Derby Night 1.4×, Masterclass 1.6×). At 1× a 5–0 Classic win is 800 points; a 2–1 Blitz win is 625. A timed-out lead counts as a win; a draw at full time is recorded as an over, not a win.
+
+## Records and persistence
+
+Saved under `soccer-pool`:
+
+- `matches`, `goals`, `conceded`
+- `wins`, `losses`, `cleanSheets`
+- `bestMatch`, `bestMargin`, `bestScore`
+- `classicBest` (best Classic score)
+- `classicMatches`, `classicWins`, `blitzMatches`, `blitzWins`, `powerMatches`, `powerWins`, `derbyMatches`, `derbyWins`, `masterMatches`, `masterWins`
+
+`bestMargin` and `bestMatch` use the maximum merge, so a short Blitz match cannot erase a full Classic result.
 
 ## Cosmetics
 
-Plan 3 cosmetics across palette, board/craft/object skin, effects, and scene/theme slots as applicable to this game. Keep all interactive objects distinguishable and do not change game physics. Purchases use the shared Sparks registry, charge once, and persist ownership and equip state after reload.
+Sixteen registered cosmetics using the `soccer:` prefix:
+
+| Slot | Items |
+| --- | --- |
+| Skin (ball) | Classic, Solar, Ember, Ice, Mono |
+| Palette (pitch) | Stadium, Clay, Neon, Mono |
+| Effect (aim line) | White, Cyan, Amber, Lime |
+| Theme (sky) | Floodlit, Sunset, Midnight |
 
 ## Achievements
 
 | Achievement | Trigger | Rarity |
 | --- | --- | --- |
-| First Run | complete one session | Common |
-| Steady Hand | reach the first score milestone | Common |
-| Quick Clear | finish within the target time | Common |
-| Personal Best | set a new personal best | Rare |
-| Daily Player | complete a seeded daily run | Rare |
-
-Unlock each once under the host game id and send one achievement event and one toast. Score targets must respect the selected mode’s documented multiplier.
+| Opening Goal | score your first goal | Common |
+| Hat-Trick Hero | score three goals in one match | Rare |
+| Clean Sheet | win without conceding | Rare |
+| Five-Star | win 5–0 | Epic |
+| Comeback Kid | win after trailing by two | Epic |
+| Thunderbolt | score from inside your own half | Rare |
+| Season Striker | score 20 career goals | Epic |
+| Fortress | keep three clean sheets | Rare |
+| Blitz Champion | win a Blitz match | Rare |
+| Power Player | win a Power Play match | Epic |
+| Derby Winner | win a Derby Night match | Epic |
+| Table Master | win a Masterclass match | Legendary |
 
 ## Tutorial and controls
 
-Use a short illustrated tutorial. Teach the primary objective, legal input, one recovery or strategy tip, and the end condition. Controls shown in the menu and during play: Drag back from one of your cyan discs and release to flick.
-
-Support keyboard and touch. Board games must offer clear selected/active state and tap targets; action games must keep virtual controls away from hazards and the theatre launch controls. Shared menus must support gamepad focus and activation.
-
-## Current baseline and scope
-
-Canonical page: `41-soccer-pool/index.html`. Current family: Arcade Core (Yes). Catalog description: “Turn-based table soccer duel: pull back and flick cyan discs to knock the ball into the amber goal; first to 5 goals wins.” Controls: Drag back from one of your cyan discs and release to flick. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+The interactive tutorial teaches the drag-back flick, the two goal mouths, cushion rebounds and the five mode modifiers. Controls: drag back from a cyan disc and release to flick. The HUD shows the score, the target and the Blitz clock. The aim guide can be disabled in settings or by Masterclass.
 
 ## Menu Identity Card
 
-- **Archetype:** scoreboard.
-- **Mood:** Clear your balls, then finish with the eight.
-- **Palette:** `#080d15` background, `color-mix(in srgb, #38bdf8 8%, rgba(15,22,35,.94))` panel, `#38bdf8` accent, `color-mix(in srgb, #38bdf8 76%, white)` button, `#10151e` button text, `#f6f7fb` body text.
+- **Archetype:** floodlit table-football pitch.
+- **Mood:** read the angles and finish the move.
+- **Palette:** `#050813` stadium sky, `#38bdf8` accent, cyan player discs, amber rival discs.
 - **Type:** System UI title and body fonts.
-- **Frame and buttons:** Per-title `soccer-frame` frame and `soccer-banner` button identity, using the shared scoreboard treatment.
-- **Scene recipe:** Original procedural soccer mark with an accent-lit background, restrained depth bands, and a static Lite/reduced-motion frame.
-- **Music and UI sounds:** Per-title procedural motif; shared tick, select, and back cues.
-- **Menu items:** Play, Options, About, Exit. No proposed modes or cosmetics are shown as available.
-- **Settings:** Shared audio, display, controls, accessibility, and difficulty options.
-- **Controls:** Drag back and release to shoot; click to place after a foul.
-- **Lite fallback:** Static soccer composition with the title accent and scene silhouette.
+- **Frame and buttons:** Per-title stadium identity with the shared menu toolbar.
+- **Scene recipe:** Striped pitch, goals, mirrored disc formation and a moving aim guide; static in Lite and reduced-motion modes.
+- **Music and UI sounds:** Per-title procedural motif; kick, hit, goal and whistle cues.
+- **Menu items:** Play, Modes, Customize, Options, More, Exit.
+- **Settings:** Difficulty (0.8× / 1.0× / 1.35× simulation), aim guide toggle, shared audio/display/accessibility options.
+- **Controls:** Drag back and release; pause with P or Esc.
+- **Lite fallback:** Static pitch and disc formation with the title accent.

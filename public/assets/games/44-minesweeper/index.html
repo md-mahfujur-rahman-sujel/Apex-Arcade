@@ -8,13 +8,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Minefield</title>
 <style>
-  .ms { display: grid; gap: 14px; justify-items: start; }
-  .top { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-  .lcd { font: 800 22px ui-monospace, Consolas, monospace; color: #fb7185; background: #0b0d16; border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; min-width: 76px; text-align: center; }
-  #bd { display: grid; gap: 2px; padding: 8px; background: #2a2f45; border-radius: 12px; user-select: none; touch-action: manipulation; box-shadow: 0 20px 50px -20px #000; max-width: 100%; overflow: auto; }
-  .k { width: var(--z); height: var(--z); border-radius: 4px; display: flex; align-items: center; justify-content: center; font: 800 calc(var(--z) * .58) "Segoe UI", sans-serif; background: linear-gradient(#5b6490, #454d75); cursor: pointer; box-shadow: inset 0 -3px 0 rgba(0,0,0,.28); }
-  .k:hover { filter: brightness(1.15); } .k.o { background: #181c2e; box-shadow: none; cursor: default; } .k.cur { outline: 3px solid #fde047; outline-offset: -2px; }
+  .ms { display: grid; gap: 12px; justify-items: start; }
+  .hud { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .lcd { font: 800 22px ui-monospace, Consolas, monospace; color: var(--ms-lcd, #fb7185); background: #080b13; border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; min-width: 76px; text-align: center; }
+  .hm { color: var(--muted); font: 700 13px ui-monospace, Consolas, monospace; letter-spacing: .08em; text-transform: uppercase; }
+  .ms-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  #bd { display: grid; gap: 2px; padding: 8px; background: var(--ms-frame, #2a2f45); border-radius: 12px; user-select: none; touch-action: manipulation; box-shadow: 0 20px 50px -20px #000, 0 0 64px -28px var(--ms-aura, transparent); max-width: 100%; overflow: auto; }
+  .k { width: var(--z); height: var(--z); border-radius: 4px; display: flex; align-items: center; justify-content: center; font: 800 calc(var(--z) * .58) "Segoe UI", sans-serif; background: linear-gradient(var(--ms-tile-a, #5b6490), var(--ms-tile-b, #454d75)); cursor: pointer; box-shadow: inset 0 -3px 0 rgba(0,0,0,.28); }
+  .k:hover { filter: brightness(1.15); } .k.o { background: var(--ms-open, #181c2e); box-shadow: none; cursor: default; } .k.cur { outline: 3px solid var(--ms-focus, #fde047); outline-offset: -2px; }
   .k.m { background: #7f1d1d; } .k.x { background: #ef4444; } .k.w { background: #3b1d28; }
+  .k.f { background: linear-gradient(var(--ms-tile-a, #5b6490), var(--ms-tile-b, #454d75)); }
   .n1 { color: #60a5fa; } .n2 { color: #4ade80; } .n3 { color: #f87171; } .n4 { color: #a78bfa; } .n5 { color: #fb923c; } .n6 { color: #22d3ee; } .n7 { color: #e2e8f0; } .n8 { color: #94a3b8; }
 </style>
 <script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
@@ -31,67 +34,369 @@
 <script>
 const ui = Board.shell({
   id: 'minesweeper', title: 'Minefield', subtitle: 'Clear the field without touching a mine',
-  rules: 'Reveal every safe square. A number tells you how many of the eight surrounding squares hide a mine. Use the numbers to work out where the mines are and flag them. Your first click is always safe. Clicking a revealed number whose flags match its count opens all its remaining neighbours (a "chord"). Reveal a mine and it is game over.',
-  controls: [['Click', 'Reveal a square (or chord on a number)'], ['Right-click / long-press / F', 'Flag a square'], ['Flag mode button', 'Tap to flag on touch screens'], ['Arrows + Space', 'Move the cursor and reveal'], ['N', 'New game'], ['H / M', 'Toggle help / mute']],
+  rules: 'Reveal every safe square. A number tells you how many of the eight surrounding squares hide a mine. Flag mines to keep track, and click a revealed number whose flags match its count to open the rest of its neighbours (a chord). Your first click is always safe. Classic is 16×16 with 40 mines; Sprint is a 9×9 field on a 90-second clock; Zen has no clock and defuses one mine for you; No Flag disables flagging; Evil packs 55 mines into 16×16. Every cleared field banks a score and a record.',
+  controls: [['Click', 'Reveal a square (or chord on a number)'], ['Right-click / long-press / F', 'Flag a square'], ['Flag mode button', 'Tap to flag on touch screens'], ['Arrows + Space', 'Move the cursor and reveal'], ['N', 'New field'], ['H / M', 'Toggle help / mute']],
 });
 ui.main.innerHTML = `<div class="ms">
-  <div class="top"><span class="lcd" id="mn">000</span><span class="lcd" id="tm">000</span>
-    <label class="bk-row" style="color:var(--muted)">Field <select class="bk-select" id="lvl"><option value="9,9,10">Easy 9×9 · 10</option><option value="16,16,40" selected>Medium 16×16 · 40</option><option value="22,14,55">Hard 22×14 · 55</option></select></label>
-    <button class="bk-btn" id="fl">🚩 Flag mode: off</button><button class="bk-btn bk-primary" id="new">New game</button></div>
-  <div class="bk-status" id="st" style="min-width:260px"></div>
-  <div id="bd"></div></div>`;
+  <div class="hud"><span class="lcd" id="mn">040</span><span class="lcd" id="tm">0:00</span><span class="hm" id="hm">Classic</span></div>
+  <div class="bk-status" id="st" style="min-width:280px"></div>
+  <div id="bd"></div>
+  <div class="ms-actions"><button class="bk-btn" id="fl">Flag mode: off</button><button class="bk-btn bk-primary" id="new">New field</button></div>
+</div>`;
 const $ = (s) => ui.main.querySelector(s);
-let W, H, M, mines, rev, flag, over, started, t0, tick, cur, flagMode, left;
-const bd = $('#bd');
-const nb = (i) => { const r = i / W | 0, c = i % W, o = []; for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) { if (!dr && !dc) continue; const rr = r + dr, cc = c + dc; if (rr >= 0 && rr < H && cc >= 0 && cc < W) o.push(rr * W + cc); } return o; };
-function newGame() {
-  [W, H, M] = $('#lvl').value.split(',').map(Number); mines = Array(W * H).fill(0); rev = Array(W * H).fill(0); flag = Array(W * H).fill(0); over = null; started = false; left = W * H - M; cur = (H >> 1) * W + (W >> 1);
-  Board.cancel(tick); $('#tm').textContent = '000';
-  const z = Math.max(22, Math.min(36, Math.floor((Math.min(innerWidth - 56, 980)) / W))); bd.style.setProperty('--z', z + 'px'); bd.style.gridTemplateColumns = `repeat(${W}, var(--z))`;
-  bd.innerHTML = ''; for (let i = 0; i < W * H; i++) { const d = document.createElement('div'); d.dataset.i = i; bd.appendChild(d); }
-  render();
+const GAME_ID = 'minesweeper';
+const MODES = [
+  { id: 'classic', name: 'Classic', blurb: '16×16, 40 mines', w: 16, h: 16, m: 40, limit: 0 },
+  { id: 'sprint', name: 'Sprint', blurb: '9×9, 12 mines, 90-second clock', w: 9, h: 9, m: 12, limit: 90 },
+  { id: 'zen', name: 'Zen', blurb: 'No clock, one free defuse', w: 9, h: 9, m: 10, limit: 0, defuses: 1 },
+  { id: 'noflags', name: 'No Flag', blurb: 'Flagging disabled', w: 16, h: 16, m: 40, limit: 0, noFlags: true, requires: { stat: 'classicWins', gte: 1 }, lockedHint: 'Clear a Classic field to unlock' },
+  { id: 'evil', name: 'Evil', blurb: '16×16, 55 mines', w: 16, h: 16, m: 55, limit: 0, requires: { stat: 'classicWins', gte: 1 }, lockedHint: 'Clear a Classic field to unlock' },
+];
+const ACHIEVEMENTS = [
+  { id: 'first-clear', name: 'First Field', desc: 'Clear any field.' },
+  { id: 'clean-sweep', name: 'Clean Sweep', desc: 'Clear a field without placing a flag.' },
+  { id: 'speed-clear', name: 'Quick Sweep', desc: 'Clear a field in under 90 seconds.' },
+  { id: 'sprint-clear', name: 'Sprint Sweeper', desc: 'Clear a Sprint field.' },
+  { id: 'zen-clear', name: 'Zen Sweeper', desc: 'Clear a Zen field.' },
+  { id: 'noflag-clear', name: 'Bare Hands', desc: 'Clear a No Flag field.' },
+  { id: 'evil-clear', name: 'Evil Genius', desc: 'Clear an Evil field.' },
+  { id: 'defused', name: 'Defused', desc: 'Survive a mine in Zen.' },
+  { id: 'career-five', name: 'Five Fields', desc: 'Clear five fields across your career.' },
+  { id: 'triple-crown', name: 'Triple Crown', desc: 'Win in three different modes.' },
+  { id: 'ten-wins', name: 'Ten Fields', desc: 'Clear ten fields across your career.' },
+  { id: 'all-modes', name: 'Complete Sweeper', desc: 'Win in every mode.' },
+];
+const SKINS = {
+  'tile-graphite': ['#5b6490', '#454d75', '#181c2e'],
+  'tile-ember': ['#a1583a', '#7c3f28', '#2a1712'],
+  'tile-jade': ['#3f8f6b', '#2c6b4f', '#12241c'],
+  'tile-ice': ['#5b8fb0', '#43708f', '#13212b'],
+  'tile-violet': ['#7c6bb0', '#5c4d8f', '#1d1830'],
+};
+const PALETTES = {
+  'board-slate': ['#2a2f45', '#0b0d16'],
+  'board-night': ['#1b2033', '#070911'],
+  'board-indigo': ['#2b2d52', '#0e1024'],
+  'board-mono': ['#2c2f36', '#101216'],
+};
+const EFFECTS = { 'focus-amber': '#fde047', 'focus-cyan': '#67e8f9', 'focus-lime': '#a3e635', 'focus-rose': '#fb7185' };
+const THEMES = {
+  'hud-ruby': ['#fb7185', 'rgba(251,113,133,.28)'],
+  'hud-amber': ['#fbbf24', 'rgba(251,191,36,.28)'],
+  'hud-mint': ['#34d399', 'rgba(52,211,153,.28)'],
+};
+const look = { skin: 'tile-graphite', palette: 'board-slate', effect: 'focus-amber', theme: 'hud-ruby' };
+const cosmeticKey = (id) => String(id || '').split(':').pop();
+const rootStyle = document.documentElement.style;
+let gm = 'classic', initialized = false, menuPaused = true;
+function applyCosmetic(slot, id) {
+  const key = cosmeticKey(id);
+  if (slot === 'skin' && SKINS[key]) {
+    look.skin = key;
+    rootStyle.setProperty('--ms-tile-a', SKINS[key][0]);
+    rootStyle.setProperty('--ms-tile-b', SKINS[key][1]);
+    rootStyle.setProperty('--ms-open', SKINS[key][2]);
+  } else if (slot === 'palette' && PALETTES[key]) {
+    look.palette = key;
+    rootStyle.setProperty('--ms-frame', PALETTES[key][0]);
+    rootStyle.setProperty('--ms-board', PALETTES[key][1]);
+  } else if (slot === 'effect' && EFFECTS[key]) {
+    look.effect = key;
+    rootStyle.setProperty('--ms-focus', EFFECTS[key]);
+  } else if (slot === 'theme' && THEMES[key]) {
+    look.theme = key;
+    rootStyle.setProperty('--ms-lcd', THEMES[key][0]);
+    rootStyle.setProperty('--ms-aura', THEMES[key][1]);
+  }
 }
-function seed(safe) { const ban = new Set([safe, ...nb(safe)]); const c = []; for (let i = 0; i < W * H; i++) if (!ban.has(i)) c.push(i); Board.shuffle(c).slice(0, M).forEach((i) => { mines[i] = 1; }); started = true; t0 = Board.now(); tick = Board.every(500, () => { $('#tm').textContent = String(Math.min(999, (Board.now() - t0) / 1000 | 0)).padStart(3, '0'); }); }
+const GameUI = Board.ui({
+  id: GAME_ID, title: 'Minefield', subtitle: 'Read the numbers, clear the field.', accent: '#fbbf24',
+  modes: MODES, achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Click any square to start — the first click is always safe.' },
+    { text: 'Numbers count the mines in the eight surrounding squares.' },
+    { text: 'Flag a mine with right-click, a long press, or Flag mode.' },
+    { text: 'Sprint adds a 90-second clock, Zen defuses one mine, and No Flag removes flags entirely.' },
+  ] },
+  hooks: {
+    applyMode: (next) => { gm = MODES.some((m) => m.id === next) ? next : 'classic'; if (initialized) newGame(); },
+    applyCosmetic,
+    onStart: () => resumeClock(),
+  },
+});
+window.ApexGameMenuActions = {
+  play: () => resumeClock(),
+  pause: (value) => { if (value) pauseClock(); else resumeClock(); },
+  resume: () => resumeClock(),
+  restart: () => { menuPaused = false; newGame(); },
+};
+const bd = $('#bd');
+let W = 16, H = 16, M = 40, mines = [], rev = [], flag = [], left = 0, over = null, started = false, cur = 0, flagMode = false;
+let clockAccum = 0, clockSince = null, defuses = 0, defusesUsed = 0, minesHit = 0, flagsPlaced = 0, chords = 0;
+let boomIndex = -1, loseReason = '', lastScore = 0;
+const cfg = () => MODES.find((m) => m.id === gm) || MODES[0];
+const nb = (i) => { const r = i / W | 0, c = i % W, o = []; for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) { if (!dr && !dc) continue; const rr = r + dr, cc = c + dc; if (rr >= 0 && rr < H && cc >= 0 && cc < W) o.push(rr * W + cc); } return o; };
 const cnt = (i) => nb(i).filter((j) => mines[j]).length;
+const elapsedMs = () => clockAccum + (clockSince ? Date.now() - clockSince : 0);
+const timeLeft = () => { const limit = cfg().limit; return limit ? Math.max(0, limit * 1000 - elapsedMs()) : 0; };
+const fmt = (ms) => { const s = Math.max(0, ms / 1000 | 0); return (s / 60 | 0) + ':' + String(s % 60).padStart(2, '0'); };
+function pauseClock() { if (clockSince) { clockAccum += Date.now() - clockSince; clockSince = null; } }
+function resumeClock() {
+  menuPaused = false;
+  if (!clockSince && started && !over) clockSince = Date.now();
+  const help = document.getElementById('bk-help'); if (help) help.open = false;
+}
+function buildBoard() {
+  const z = Math.max(20, Math.min(36, Math.floor((Math.min(innerWidth - 56, 980)) / W)));
+  bd.style.setProperty('--z', z + 'px');
+  bd.style.gridTemplateColumns = `repeat(${W}, var(--z))`;
+  bd.innerHTML = '';
+  for (let i = 0; i < W * H; i++) { const d = document.createElement('div'); d.className = 'k'; d.dataset.i = i; bd.appendChild(d); }
+}
+function newGame() {
+  const c = cfg();
+  W = c.w; H = c.h; M = c.m;
+  mines = Array(W * H).fill(0); rev = Array(W * H).fill(0); flag = Array(W * H).fill(0);
+  left = W * H - M; over = null; started = false; cur = (H >> 1) * W + (W >> 1);
+  defuses = c.defuses || 0; defusesUsed = 0; minesHit = 0; flagsPlaced = 0; chords = 0; boomIndex = -1; loseReason = ''; lastScore = 0;
+  clockAccum = 0; clockSince = null; flagMode = false;
+  const flagButton = $('#fl');
+  flagButton.hidden = !!c.noFlags;
+  flagButton.textContent = 'Flag mode: off';
+  flagButton.classList.remove('bk-primary');
+  buildBoard(); render();
+  initialized = true;
+}
+function seed(safe) {
+  const ban = new Set([safe, ...nb(safe)]); const pool = [];
+  for (let i = 0; i < W * H; i++) if (!ban.has(i)) pool.push(i);
+  Board.shuffle(pool).slice(0, M).forEach((i) => { mines[i] = 1; });
+  started = true;
+  clockSince = menuPaused ? null : Date.now();
+}
+function finishRun(win, reason) {
+  if (over) return;
+  over = win ? 'win' : 'lose';
+  loseReason = win ? '' : (reason || 'mine');
+  pauseClock();
+  const secs = Math.round(elapsedMs() / 1000);
+  let score = 0;
+  if (win) {
+    if (gm === 'classic') score = 600 + Math.max(0, 600 - secs * 2);
+    else if (gm === 'sprint') score = 800 + Math.max(0, 300 - secs * 4);
+    else if (gm === 'zen') score = 500;
+    else if (gm === 'noflags') score = 900 + Math.max(0, 900 - secs * 2);
+    else score = 1500 + Math.max(0, 1200 - secs * 2);
+    score = Math.max(100, Math.round(score));
+  }
+  lastScore = score;
+  const stats = GameUI.stats(), careerWins = (Number(stats.wins) || 0) + (win ? 1 : 0);
+  const perMode = gm.charAt(0).toUpperCase() + gm.slice(1);
+  const records = { ['bestScore' + perMode]: score };
+  const mins = {}; if (win) mins['bestTime' + perMode] = secs;
+  const counters = {
+    wins: win ? 1 : 0, losses: win ? 0 : 1, fieldsCleared: win ? 1 : 0,
+    mines: minesHit, flagsPlaced, chords, defuses: defusesUsed,
+    [gm + 'Wins']: win ? 1 : 0,
+  };
+  const achievements = [];
+  if (win) {
+    achievements.push('first-clear');
+    if (flagsPlaced === 0) achievements.push('clean-sweep');
+    if (secs < 90) achievements.push('speed-clear');
+    if (gm === 'sprint') achievements.push('sprint-clear');
+    if (gm === 'zen') achievements.push('zen-clear');
+    if (gm === 'noflags') achievements.push('noflag-clear');
+    if (gm === 'evil') achievements.push('evil-clear');
+    if (careerWins >= 5) achievements.push('career-five');
+    const modesWon = MODES.filter((m) => (Number(stats[m.id + 'Wins']) || 0) + (m.id === gm ? 1 : 0) > 0);
+    if (modesWon.length >= 3) achievements.push('triple-crown');
+    if (careerWins >= 10) achievements.push('ten-wins');
+    if (modesWon.length === MODES.length) achievements.push('all-modes');
+  }
+  GameUI.record({ score, seconds: secs, result: win ? 'Won' : 'Lost', records, mins, counters, achievements });
+  if (win) Board.sfx('win');
+  render();
+  const title = win ? 'Field cleared!' : loseReason === 'time' ? 'Time up' : 'Boom!';
+  const copy = win
+    ? `${secs} s · ${flagsPlaced} flag${flagsPlaced === 1 ? '' : 's'} · ${chords} chord${chords === 1 ? '' : 's'} · ${score} pts`
+    : loseReason === 'time' ? `The clock ran out with ${left} safe square${left === 1 ? '' : 's'} left.` : 'You hit a mine.';
+  Board.modal(title, copy, [['New field', newGame], ['Close']]);
+}
+function lose(i, reason) { minesHit++; boomIndex = i; Board.sfx('lose'); finishRun(false, reason); }
+function explode(i) {
+  if (defuses > 0) {
+    defuses--; defusesUsed++; minesHit++;
+    flag[i] = 1;
+    Board.sfx('error');
+    GameUI.unlock('defused');
+    render();
+    return;
+  }
+  lose(i, 'mine');
+}
 function open(i) {
   if (over || rev[i] || flag[i]) return;
   if (!started) seed(i);
-  if (mines[i]) return lose(i);
-  const st = [i]; while (st.length) { const k = st.pop(); if (rev[k] || flag[k]) continue; rev[k] = 1; left--; if (!cnt(k)) for (const j of nb(k)) if (!rev[j] && !mines[j]) st.push(j); }
-  Board.sfx('step'); if (left === 0) win(); render();
+  if (mines[i]) return explode(i);
+  const st = [i];
+  while (st.length) {
+    const k = st.pop();
+    if (rev[k] || flag[k]) continue;
+    rev[k] = 1; left--;
+    if (!cnt(k)) for (const j of nb(k)) if (!rev[j] && !mines[j]) st.push(j);
+  }
+  Board.sfx('step');
+  render();
+  if (left === 0) finishRun(true, 'win');
 }
-function chord(i) { if (!rev[i]) return; const n = nb(i), f = n.filter((j) => flag[j]).length; if (f !== cnt(i)) return; for (const j of n) if (!flag[j] && !rev[j]) { open(j); if (over) return; } }
-function lose(i) { over = 'lose'; Board.cancel(tick); window.boom = i; Board.sfx('lose'); render(); $('#st').textContent = '💥 Boom! You hit a mine.'; Board.after(500, () => Board.modal('Boom!', 'You hit a mine.', [['New game', newGame], ['Close']])); }
-function win() { over = 'win'; Board.cancel(tick); const t = Math.floor((Board.now() - t0) / 1000), k = 'apex:ms:' + $('#lvl').value, b = +Board.ls.get(k) || 1e9; if (t < b) Board.ls.set(k, t); Board.sfx('win'); Board.after(400, () => Board.modal('Field cleared!', 'Time ' + t + ' s' + (t < b ? ' — new best!' : ' (best ' + b + ' s)') + '.', [['New game', newGame], ['Close']])); }
+function chord(i) {
+  if (over || !rev[i]) return;
+  const n = nb(i), f = n.filter((j) => flag[j]).length;
+  if (f !== cnt(i)) return;
+  chords++;
+  for (const j of n) if (!flag[j] && !rev[j]) { open(j); if (over) break; }
+  render();
+}
+function toggleFlag(i) {
+  if (over || rev[i] || cfg().noFlags) return;
+  flag[i] ^= 1; if (flag[i]) flagsPlaced++;
+  Board.sfx('click'); render();
+}
 function render() {
-  const fc = flag.reduce((a, b) => a + b, 0);
+  const flagCount = flag.reduce((a, b) => a + b, 0);
   [...bd.children].forEach((d, i) => {
     let c = 'k', t = '';
     if (rev[i]) { c += ' o'; const n = cnt(i); if (n) { c += ' n' + n; t = n; } }
-    else if (over && mines[i] && !flag[i]) { c += ' m'; t = '💣'; if (i === window.boom) c += ' x'; }
+    else if (over && mines[i] && !flag[i]) { c += ' m'; t = '💣'; if (i === boomIndex) c += ' x'; }
     else if (flag[i]) { t = '🚩'; if (over === 'lose' && !mines[i]) { c += ' w'; t = '❌'; } }
     else if (over === 'win' && mines[i]) t = '🚩';
-    if (i === cur && !over) c += ' cur'; d.className = c; d.textContent = t;
+    if (i === cur && !over) c += ' cur';
+    d.className = c; d.textContent = t;
   });
-  $('#mn').textContent = String(Math.max(-99, M - fc)).padStart(3, '0'); if (!over) $('#st').textContent = left + ' safe squares to go'; if (over === 'win') $('#st').textContent = '🎉 Field cleared!';
+  $('#mn').textContent = String(Math.max(-99, M - flagCount)).padStart(3, '0');
+  $('#tm').textContent = cfg().limit ? fmt(timeLeft()) : fmt(elapsedMs());
+  $('#hm').textContent = cfg().name;
+  const st = $('#st');
+  if (over === 'win') st.textContent = '🎉 Field cleared!';
+  else if (over === 'lose') st.textContent = loseReason === 'time' ? '⏰ Time up.' : '💥 Boom! You hit a mine.';
+  else if (!started) st.textContent = 'Click any square to start — the first click is safe.';
+  else if (defuses > 0) st.textContent = `${left} safe squares left · ${defuses} defuse ready.`;
+  else st.textContent = `${left} safe square${left === 1 ? '' : 's'} left.`;
 }
-function toggleFlag(i) { if (over || rev[i]) return; flag[i] ^= 1; Board.sfx('click'); render(); }
 let lp = null;
 bd.addEventListener('contextmenu', (e) => e.preventDefault());
-bd.addEventListener('pointerdown', (e) => { const d = e.target.closest('.k'); if (!d) return; const i = +d.dataset.i; cur = i; lp = { i, long: false, t: Board.after(450, () => { lp.long = true; toggleFlag(i); }), btn: e.button }; });
+bd.addEventListener('pointerdown', (e) => {
+  if (menuPaused) return;
+  const d = e.target.closest('.k'); if (!d) return;
+  const i = +d.dataset.i; cur = i;
+  lp = { i, long: false, t: Board.after(450, () => { lp.long = true; toggleFlag(i); }), btn: e.button };
+});
 bd.addEventListener('pointerup', (e) => {
-  if (!lp) return; Board.cancel(lp.t); const { i, long, btn } = lp; lp = null; if (long) return;
+  if (!lp) return;
+  Board.cancel(lp.t); const { i, long, btn } = lp; lp = null; if (long) return;
   if (btn === 2 || flagMode) toggleFlag(i); else if (rev[i]) chord(i); else open(i);
 });
 bd.addEventListener('pointerleave', () => { if (lp) { Board.cancel(lp.t); lp = null; } });
-$('#fl').onclick = () => { flagMode = !flagMode; $('#fl').textContent = '🚩 Flag mode: ' + (flagMode ? 'on' : 'off'); $('#fl').classList.toggle('bk-primary', flagMode); };
-$('#new').onclick = (e) => { e.target.blur(); newGame(); }; $('#lvl').onchange = (e) => { e.target.blur(); newGame(); };
+$('#fl').onclick = (e) => {
+  e.target.blur();
+  if (cfg().noFlags) return;
+  flagMode = !flagMode;
+  e.target.textContent = 'Flag mode: ' + (flagMode ? 'on' : 'off');
+  e.target.classList.toggle('bk-primary', flagMode);
+};
+$('#new').onclick = (e) => { e.target.blur(); newGame(); };
 document.addEventListener('keydown', (e) => {
-  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || document.getElementById('bk-dlg')?.open) return; const k = e.key.toLowerCase();
-  if (k === 'n') newGame(); else if (k === 'f') toggleFlag(cur); else if (k === ' ' || k === 'enter') { e.preventDefault(); rev[cur] ? chord(cur) : open(cur); }
+  if (menuPaused || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey || document.getElementById('bk-dlg')?.open) return;
+  const k = e.key.toLowerCase();
+  if (k === 'n') newGame(); else if (k === 'f') toggleFlag(cur);
+  else if (k === ' ' || k === 'enter') { e.preventDefault(); rev[cur] ? chord(cur) : open(cur); }
   else if (k.startsWith('arrow')) { e.preventDefault(); const r = Math.max(0, Math.min(H - 1, (cur / W | 0) + (k === 'arrowdown') - (k === 'arrowup'))), c = Math.max(0, Math.min(W - 1, cur % W + (k === 'arrowright') - (k === 'arrowleft'))); cur = r * W + c; render(); }
 });
+window.addEventListener('apex:board-pause', (e) => { if (e.detail?.paused) pauseClock(); else resumeClock(); });
+setInterval(() => {
+  if (over) return;
+  if (started && cfg().limit) {
+    $('#tm').textContent = fmt(timeLeft());
+    if (timeLeft() <= 0) finishRun(false, 'time');
+  } else $('#tm').textContent = cfg().limit ? fmt(timeLeft()) : fmt(elapsedMs());
+}, 250);
 newGame();
+
+/* ---------- deterministic test hooks ---------- */
+function gameState() {
+  return {
+    mode: gm, w: W, h: H, mines: M, started, revealed: rev.reduce((a, b) => a + b, 0),
+    flags: flag.reduce((a, b) => a + b, 0), left, done: !!over, won: over === 'win',
+    time: Math.round(elapsedMs() / 1000), clock: Math.round(timeLeft() / 1000),
+    defuses, flagMode, score: lastScore, menuPaused,
+    achievements: typeof Save !== 'undefined' && Save.load ? (Save.load(GAME_ID).achievements || []) : [],
+  };
+}
+function setBoard(o) {
+  const src = o || {};
+  W = Number(src.w) || 5; H = Number(src.h) || 5;
+  mines = Array(W * H).fill(0);
+  const list = Array.isArray(src.mines) ? src.mines : [];
+  list.forEach((i) => { if (i >= 0 && i < W * H) mines[i] = 1; });
+  M = src.m != null ? Number(src.m) : list.length;
+  rev = Array(W * H).fill(0); flag = Array(W * H).fill(0);
+  left = W * H - M; over = null; started = true; cur = 0;
+  defuses = 0; defusesUsed = 0; minesHit = 0; flagsPlaced = 0; chords = 0; boomIndex = -1; loseReason = ''; lastScore = 0;
+  clockAccum = 0; clockSince = null;
+  buildBoard(); render(); return gameState();
+}
+function setRun(o) {
+  const src = o || {};
+  if (src.elapsed != null) { clockAccum = Math.max(0, Number(src.elapsed) || 0); clockSince = null; }
+  if (src.defuses != null) defuses = Math.max(0, Number(src.defuses) || 0);
+  if (src.flagMode != null) flagMode = !!src.flagMode;
+  render(); return gameState();
+}
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  window.MineTest = {
+    state: gameState,
+    modes: () => MODES.map((m) => m.id),
+    setMode: (id) => GameUI.setMode(id),
+    getMode: () => gm,
+    restart: () => { ApexGameMenuActions.restart(); return gameState(); },
+    newGame: () => { newGame(); return gameState(); },
+    setBoard,
+    setRun,
+    seed: (safe) => { if (!started) seed(Math.max(0, Math.min(W * H - 1, Number(safe) || 0))); return gameState(); },
+    mineList: () => mines.map((v, i) => v ? i : -1).filter((i) => i >= 0),
+    reveal: (i) => { open(Math.max(0, Math.min(W * H - 1, Number(i) || 0))); return gameState(); },
+    flag: (i) => { toggleFlag(Math.max(0, Math.min(W * H - 1, Number(i) || 0))); return gameState(); },
+    chord: (i) => { chord(Math.max(0, Math.min(W * H - 1, Number(i) || 0))); return gameState(); },
+    boom: () => { if (!started) seed((H >> 1) * W + (W >> 1)); clockSince = null; const i = mines.indexOf(1); if (i >= 0) open(i); return gameState(); },
+    complete: () => {
+      if (!started) seed((H >> 1) * W + (W >> 1));
+      clockSince = null;
+      for (let i = 0; i < W * H; i++) if (!mines[i]) rev[i] = 1;
+      left = 0;
+      finishRun(true, 'win');
+      return gameState();
+    },
+    tick: (ms) => { clockAccum = Math.max(0, clockAccum + (Number(ms) || 0)); clockSince = null; if (!over && cfg().limit && timeLeft() <= 0) finishRun(false, 'time'); else render(); return gameState(); },
+    close: () => { const d = document.getElementById('bk-dlg'); if (d && d.open) d.close(); return true; },
+    modalOpen: () => { const d = document.getElementById('bk-dlg'); return !!(d && d.open); },
+    cosmetic: (slot, id) => { applyCosmetic(slot, id); return { slot, id: cosmeticKey(id) }; },
+    cosmeticList: () => (window.Meta && Meta.getCosmetics ? Meta.getCosmetics(GAME_ID) : []),
+    colors: () => {
+      const css = (name) => rootStyle.getPropertyValue(name).trim();
+      return {
+        skin: look.skin, tileA: css('--ms-tile-a') || SKINS[look.skin][0], open: css('--ms-open') || SKINS[look.skin][2],
+        palette: look.palette, frame: css('--ms-frame') || PALETTES[look.palette][0],
+        effect: look.effect, focus: css('--ms-focus') || EFFECTS[look.effect],
+        theme: look.theme, lcd: css('--ms-lcd') || THEMES[look.theme][0], aura: css('--ms-aura') || THEMES[look.theme][1],
+      };
+    },
+    stats: () => GameUI.stats(),
+    achievements: () => (Save.load(GAME_ID).achievements || []),
+    menuPaused: (value) => { menuPaused = !!value; return menuPaused; },
+    start: () => { resumeClock(); return gameState(); },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>

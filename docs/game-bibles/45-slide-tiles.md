@@ -2,66 +2,98 @@
 
 ## Pitch
 
-Classic 15-puzzle sliding block grid: slide numbered tiles into the empty space to arrange them from 1 to 15. Keep the source game’s recognizable rhythm and make each run readable, quick to restart, and rewarding to master.
+A classic sliding puzzle with a gap. Tiles in the same row or column slide toward the gap, a click slides the whole run of tiles between the clicked tile and the gap, and arrow keys move the tile beside the gap. Classic is 4×4 in ascending order, Sprint is 3×3 on a 90-second clock, Zen is 5×5 with unlimited undo, Mirror solves 15 down to 1 with the gap in the top-left, and Daily gives everyone the same 4×4 shuffle.
 
 ## Art direction
 
-Preserve the current artwork, silhouettes, animation, and sound on the canonical page. Use the game’s existing #A78BFA accent as a guide for new menu and reward states. Keep gameplay objects distinct from the background; never rely on colour alone for hazards or legal moves. Lite and reduced-motion settings must reduce effects without removing gameplay feedback.
+A dark board with rounded numbered tiles whose colour ramps across the sequence. The tile ramp comes from `sliding-puzzle:tiles-*` (hue, saturation and lightness), the board from `sliding-puzzle:board-*`, the placed-tile ring from `sliding-puzzle:glow-*` and the digits/aura from `sliding-puzzle:ink-*`. Tiles animate their left/top moves with a short ease; a tile in its final place keeps a coloured ring. Reduced-motion settings remove the slide transition while keeping position updates.
 
 ## Modes and match structure
 
-1. **Classic:** preserve the canonical rules and scoring.
-2. **Daily challenge:** a deterministic seeded puzzle or short target run with a saved local best.
+| Mode | Grid | Goal order | Clock | Undo limit | Unlock |
+| --- | --- | --- | --- | --- | --- |
+| Classic | 4×4 | 1 → gap | none | 5 | open |
+| Sprint | 3×3 | 1 → gap | 90 s | 2 | open |
+| Zen | 5×5 | 1 → gap | none | unlimited (99) | open |
+| Mirror | 4×4 | gap top-left, 15 → 1 | none | 3 | Classic win |
+| Daily | 4×4 | 1 → gap, date seed | none | 3 | open |
 
-A mode change must reset only the state named by that mode. Pause and resume preserve the complete in-progress state. Daily seeds use the local date and produce the same starting state for every retry that day.
+1. **Classic:** the baseline 4×4 grid and the unlock gate.
+2. **Sprint:** a 3×3 grid with a 90-second clock; the run ends when time reaches zero.
+3. **Zen:** a 5×5 grid and effectively unlimited undo.
+4. **Mirror:** locked until a Classic win (`classicWins ≥ 1`); the solved board runs 15 down to 1 with the gap at the top-left.
+5. **Daily:** the shuffle is seeded from the local date, so every player gets the same 4×4 board that day.
 
-## Settings and difficulty
+A mode change starts a fresh puzzle. Pause freezes the Sprint clock.
 
-| Setting | Behavior |
-| --- | --- |
-| Easy | 0.8× simulation speed or a wider timing/mistake allowance; 1.0× score. |
-| Normal | Preserve the source page’s baseline rules at 1.0× speed and score. |
-| Hard | 1.35× simulation speed or a stricter opponent/puzzle target; 1.25× score. |
-| Performance | Respect Lite, Standard, and Ultra budgets; preserve essential playfield feedback. |
-| Reduced motion | Remove decorative movement, shake, and nonessential flashes; preserve input and game-state motion. |
-| Audio and palette | Inherit global settings, allow per-game overrides, and keep objects legible in colour-blind palettes. |
+## Core rules
+
+- Clicking a tile in the gap's row or column moves that tile and every tile between it and the gap one step.
+- Arrow keys slide the tile adjacent to the gap in the pressed direction.
+- A click on a tile that shares neither row nor column with the gap is refused.
+- Every slide can be undone up to the mode's limit; undoing rewinds the move counter too.
+- A puzzle is solved when every tile matches the mode's goal order.
+- Every shuffle is generated from the solved board with legal moves, so every puzzle is solvable.
+
+## Scoring
+
+Classic pays `1200 + max(0, 900 − 3 × seconds) − 4 × moves`; Sprint `1000 + 6 × remaining seconds − 4 × moves`; Zen a flat 800; Mirror `1800 + max(0, 1200 − 3 × seconds) − 5 × moves`; Daily `1000 + max(0, 900 − 3 × seconds) − 4 × moves`. Every mode then subtracts 60 per undo (20 in Zen) and floors at 100. A loss scores zero.
+
+## Records and persistence
+
+Saved under `sliding-puzzle`:
+
+- `bestScore`, `bestScoreClassic`, `bestScoreSprint`, `bestScoreZen`, `bestScoreMirror`, `bestScoreDaily`
+- `bestTimeClassic`, `bestTimeSprint`, `bestTimeZen`, `bestTimeMirror`, `bestTimeDaily`
+- `bestMovesClassic`, `bestMovesSprint`, `bestMovesZen`, `bestMovesMirror`, `bestMovesDaily`
+- `wins`, `losses`, `solves`, `moves`, `undos`
+- `classicWins`, `sprintWins`, `zenWins`, `mirrorWins`, `dailyWins`
+- `plays`, `secondsPlayed`, `lastResult`, `lastMode`
+
+`bestTime*` and `bestMoves*` use the minimum merge and only record wins.
 
 ## Cosmetics
 
-Plan 3 cosmetics across palette, board/craft/object skin, effects, and scene/theme slots as applicable to this game. Keep all interactive objects distinguishable and do not change game physics. Purchases use the shared Sparks registry, charge once, and persist ownership and equip state after reload.
+Sixteen registered cosmetics using the `sliding-puzzle:` prefix:
+
+| Slot | Items |
+| --- | --- |
+| Skin (tiles) | Classic, Ember, Jade, Ice, Violet |
+| Palette (board) | Slate, Night, Indigo, Mono |
+| Effect (placed ring) | Green, Cyan, Amber, Rose |
+| Theme (digits/aura) | Navy, Ember, Mint |
 
 ## Achievements
 
 | Achievement | Trigger | Rarity |
 | --- | --- | --- |
-| First Run | complete one session | Common |
-| Steady Hand | reach the first score milestone | Common |
-| Quick Clear | finish within the target time | Common |
-| Personal Best | set a new personal best | Rare |
-| Daily Player | complete a seeded daily run | Rare |
-
-Unlock each once under the host game id and send one achievement event and one toast. Score targets must respect the selected mode’s documented multiplier.
+| First Slide | solve any puzzle | Common |
+| Efficient | solve in 100 moves or fewer | Rare |
+| Quick Hands | solve in under 90 seconds | Rare |
+| Clean Run | solve without undo | Common |
+| Sprint Solver | solve Sprint | Rare |
+| Zen Solver | solve Zen | Common |
+| Daily Tiles | solve the Daily puzzle | Rare |
+| Mirror Finish | solve Mirror | Epic |
+| Wide Grid | solve a 5×5 puzzle | Rare |
+| Triple Crown | win in three modes | Rare |
+| Ten Solves | solve ten puzzles | Epic |
+| Complete Slider | win in every mode | Legendary |
 
 ## Tutorial and controls
 
-Use a short illustrated tutorial. Teach the primary objective, legal input, one recovery or strategy tip, and the end condition. Controls shown in the menu and during play: Click tile to slide it, or use arrow keys. N to shuffle new solvable board.
-
-Support keyboard and touch. Board games must offer clear selected/active state and tap targets; action games must keep virtual controls away from hazards and the theatre launch controls. Shared menus must support gamepad focus and activation.
-
-## Current baseline and scope
-
-Canonical page: `45-sliding-puzzle/index.html`. Current family: Board Kit (No). Catalog description: “Classic 15-puzzle sliding block grid: slide numbered tiles into the empty space to arrange them from 1 to 15.” Controls: Click tile to slide it, or use arrow keys. N to shuffle new solvable board. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+The interactive tutorial covers same-row/column clicks, arrow-key slides, the placed-tile ring and the mode modifiers. Controls: click a tile to slide it and any tiles behind it; arrows slide the neighbour into the gap; U undoes; N shuffles a new puzzle; H/M toggle help and mute. The HUD shows moves, elapsed or remaining time, the mode's undo allowance, tiles in place and the per-mode best move count.
 
 ## Menu Identity Card
 
-- **Archetype:** glass.
-- **Mood:** Put the picture back together one open space at a time.
-- **Palette:** `#080d15` background, `color-mix(in srgb, #93c5fd 8%, rgba(15,22,35,.94))` panel, `#93c5fd` accent, `color-mix(in srgb, #93c5fd 76%, white)` button, `#10151e` button text, `#f6f7fb` body text.
+- **Archetype:** sliding-tile board.
+- **Mood:** one open space, one tile at a time.
+- **Palette:** `#2a2f45` board, `#93c5fd` accent, hue-ramped tiles.
 - **Type:** System UI title and body fonts.
-- **Frame and buttons:** Per-title `tiles-frame` frame and `tiles-banner` button identity, using the shared glass treatment.
-- **Scene recipe:** Original procedural tiles mark with an accent-lit background, restrained depth bands, and a static Lite/reduced-motion frame.
-- **Music and UI sounds:** Per-title procedural motif; shared tick, select, and back cues.
-- **Menu items:** Play, Options, About, Exit. No proposed modes or cosmetics are shown as available.
-- **Settings:** Shared audio, display, controls, accessibility, and difficulty options.
-- **Controls:** Click or tap a tile next to the empty space.
-- **Lite fallback:** Static tiles composition with the title accent and scene silhouette.
+- **Frame and buttons:** Per-title `tiles-*`, `board-*` and `ink-*` identity.
+- **Scene recipe:** Rounded numbered tiles positioned on a shadowed board; static in reduced-motion mode.
+- **Music and UI sounds:** Per-title procedural motif; slide, click, error and win cues.
+- **Menu items:** Play, Modes, Customize, Options, More, Exit.
+- **Settings:** Shared audio, display, controls, accessibility and difficulty options.
+- **Controls:** Click or arrows; U undo; N shuffle.
+- **Lite fallback:** Static tile layout with the title accent.

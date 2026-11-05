@@ -8,11 +8,11 @@
 <style>
   .g48 { display: grid; grid-template-columns: auto minmax(220px, 1fr); gap: 22px; align-items: start; }
   @media (max-width: 860px) { .g48 { grid-template-columns: 1fr; } }
-  #bd { --s: max(280px, min(100vw - 40px, 520px, 100vh - 220px)); width: var(--s); height: var(--s); position: relative; isolation: isolate; overflow: hidden; background: radial-gradient(ellipse at 18% 8%,rgba(34,211,238,.13),transparent 43%), radial-gradient(ellipse at 88% 92%,rgba(245,158,11,.1),transparent 48%), linear-gradient(145deg,#202a43,#111625 68%,#171627); border: 1px solid rgba(170,190,255,.22); border-radius: 18px; padding: 10px; box-shadow: inset 0 1px 0 rgba(255,255,255,.13), inset 0 -18px 36px rgba(0,0,0,.22), 0 24px 60px -26px #000; touch-action: none; user-select: none; }
+  #bd { --s: max(280px, min(100vw - 40px, 520px, 100vh - 220px)); width: var(--s); height: var(--s); position: relative; isolation: isolate; overflow: hidden; background: radial-gradient(ellipse at 18% 8%,rgba(34,211,238,.13),transparent 43%), radial-gradient(ellipse at 88% 92%,rgba(245,158,11,.1),transparent 48%), linear-gradient(145deg,#202a43,#111625 68%,#171627); border: 1px solid var(--core-ring, rgba(170,190,255,.22)); border-radius: 18px; padding: 10px; box-shadow: inset 0 1px 0 rgba(255,255,255,.13), inset 0 -18px 36px rgba(0,0,0,.22), 0 24px 60px -26px #000, 0 0 72px -30px var(--core-aura, transparent); touch-action: none; user-select: none; }
   #bd::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: .24; background-image: radial-gradient(rgba(210,224,255,.28) .7px,transparent .8px); background-size: 17px 17px; mask-image: linear-gradient(135deg,#000,transparent 75%); }
   .bg, .tl { position: absolute; width: calc((100% - 20px - 30px) / 4); height: calc((100% - 20px - 30px) / 4); border-radius: 10px; }
   .bg { background: linear-gradient(145deg,rgba(8,13,24,.34),rgba(4,8,17,.58)); border: 1px solid rgba(207,220,255,.045); box-shadow: inset 0 2px 8px rgba(0,0,0,.12); }
-  .tl { --tile: #eee4da; position: absolute; z-index: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid rgba(255,255,255,.3); background: linear-gradient(145deg,rgba(255,255,255,.27),transparent 42%),linear-gradient(155deg,var(--tile),color-mix(in srgb,var(--tile) 70%,#151c2b)); font: 850 calc(var(--s) / 4 * .36) / 1 "Segoe UI", system-ui, sans-serif; letter-spacing: -.045em; color: #1b1320; text-shadow: 0 1px 0 rgba(255,255,255,.22); transition: left .13s cubic-bezier(.2,.75,.2,1), top .13s cubic-bezier(.2,.75,.2,1), filter .18s ease, box-shadow .18s ease; box-shadow: inset 0 1px 0 rgba(255,255,255,.4), inset 0 -3px 0 rgba(0,0,0,.1), 0 7px 12px -7px rgba(0,0,0,.8), 0 0 18px color-mix(in srgb,var(--tile) 27%,transparent); }
+  .tl { --tile: #eee4da; position: absolute; z-index: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid rgba(255,255,255,.3); background: linear-gradient(145deg,rgba(255,255,255,.27),transparent 42%),linear-gradient(155deg,var(--tile),color-mix(in srgb,var(--tile) 70%,#151c2b)); font: 850 calc(var(--s) / 4 * .36) / 1 "Segoe UI", system-ui, sans-serif; letter-spacing: -.045em; color: #1b1320; text-shadow: 0 1px 0 rgba(255,255,255,.22); transition: left .13s cubic-bezier(.2,.75,.2,1), top .13s cubic-bezier(.2,.75,.2,1), filter .18s ease, box-shadow .18s ease; box-shadow: inset 0 1px 0 rgba(255,255,255,.4), inset 0 -3px 0 rgba(0,0,0,.1), 0 7px 12px -7px rgba(0,0,0,.8), 0 0 18px var(--core-glow, color-mix(in srgb,var(--tile) 27%,transparent)); }
   .tl.big { font-size: calc(var(--s) / 4 * .3); } .tl.huge { font-size: calc(var(--s) / 4 * .24); }
   .tl.new { animation: core-arrive .24s cubic-bezier(.18,1.35,.42,1) both; } .tl.mrg { animation: core-merge .24s cubic-bezier(.18,1.45,.42,1); z-index: 2; }
   @keyframes core-arrive { from { transform: scale(.5) rotate(-5deg); opacity: 0; filter: brightness(1.7); } to { transform: scale(1) rotate(0); opacity: 1; filter: brightness(1); } }
@@ -44,7 +44,7 @@
 <script>
 const ui = Board.shell({
   id: '2048', title: 'Merge 2048', subtitle: 'The Elemental Foundry — shape the Prime Core',
-  rules: 'Every move slides tiles as far as they will go. Matching tiles merge into their sum; a new 2 or 4 appears after a valid move. Classic runs reach 2048 and may continue. Foundry Trials ask you to reach a target tile before the move limit; Daily Core is seeded by date. Your board resumes from this browser.',
+  rules: 'Every move slides tiles as far as they will go. Matching tiles merge into their sum; a new 2 or 4 appears after a valid move. Classic runs reach 2048 and may continue. Foundry Trials ask you to reach a target tile before the move limit; Daily Core is seeded by date; Zen only spawns 2s and never runs out of undo; Blitz is a 90-second score rush. Your board resumes from this browser.',
   controls: [['← ↑ ↓ → / WASD', 'Slide the tiles'], ['Swipe', 'Slide on touch screens'], ['U', 'Undo within the selected limit'], ['N', 'Start a new run'], ['H / M', 'Toggle help / mute']],
 });
 if (window.matchMedia('(max-width: 520px)').matches) document.getElementById('bk-help')?.removeAttribute('open');
@@ -56,7 +56,7 @@ ui.main.innerHTML = `
     <div class="sc"><div>Score<b id="sc">0</b></div><div>Best<b id="best">0</b></div></div>
     <div class="bk-status" id="st"></div>
     <div class="bk-status" id="goal"></div>
-    <div class="bk-row"><label>Mode <select class="bk-select" id="mode"><option value="classic">Classic run</option><option value="trial">Foundry trials</option><option value="daily">Daily Core</option></select></label>
+    <div class="bk-row"><label>Mode <select class="bk-select" id="mode"><option value="classic">Classic run</option><option value="trial">Foundry trials</option><option value="daily">Daily Core</option><option value="zen">Zen board</option><option value="blitz">Blitz</option></select></label>
       <label id="stage-wrap">Trial <select class="bk-select" id="stage"></select></label>
       <label>Difficulty <select class="bk-select" id="difficulty"><option value="easy">Easy</option><option value="normal">Normal</option><option value="hard">Hard</option></select></label>
       <label>Grid <select class="bk-select" id="size"><option value="4" selected>4 × 4</option><option value="5">5 × 5</option><option value="6">6 × 6</option><option value="3">3 × 3</option></select></label>
@@ -64,28 +64,86 @@ ui.main.innerHTML = `
   </div>
 </div>`;
 const $ = (s) => ui.main.querySelector(s);
-const COL = { 2: '#eee4da', 4: '#ede0c8', 8: '#f2b179', 16: '#f59563', 32: '#f67c5f', 64: '#f65e3b', 128: '#edcf72', 256: '#edcc61', 512: '#edc850', 1024: '#edc53f', 2048: '#edc22e' };
-const GAME_ID = '2048', SESSION_START = Date.now();
+const GAME_ID = '2048', SESSION_START = Date.now(), BLITZ_MS = 90000;
+const TRIALS = Array.from({ length: 30 }, (_, i) => ({ tile: [16, 32, 32, 64, 64, 64, 128, 128, 128, 256, 256, 256, 512, 512, 512, 512, 1024, 1024, 1024, 1024, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048][i], moves: 24 + i * 4 }));
+const SKINS = {
+  'core-classic': { 2: '#eee4da', 4: '#ede0c8', 8: '#f2b179', 16: '#f59563', 32: '#f67c5f', 64: '#f65e3b', 128: '#edcf72', 256: '#edcc61', 512: '#edc850', 1024: '#edc53f', 2048: '#edc22e', 4096: '#26c6b7' },
+  'core-ember': { 2: '#f5d0b0', 4: '#f0b27a', 8: '#ef8b52', 16: '#e4673a', 32: '#d9482c', 64: '#bf3326', 128: '#f4a259', 256: '#f2b84b', 512: '#e9a227', 1024: '#e08d16', 2048: '#d97706', 4096: '#b45309' },
+  'core-jade': { 2: '#d7f2e3', 4: '#b7e6cc', 8: '#8dd6ae', 16: '#5fc38d', 32: '#3fae74', 64: '#2f9a62', 128: '#9be7c4', 256: '#6fd8a8', 512: '#45c78d', 1024: '#2fb377', 2048: '#1f9a63', 4096: '#0f7a4d' },
+  'core-ice': { 2: '#e2f0ff', 4: '#c6e4ff', 8: '#a3d4ff', 16: '#7fc2fb', 32: '#5aaff5', 64: '#3a97ea', 128: '#9ad4ff', 256: '#77c4ff', 512: '#54b3fb', 1024: '#319ff0', 2048: '#1a89dd', 4096: '#0f6fb8' },
+  'core-violet': { 2: '#eee4f7', 4: '#e0d0f0', 8: '#cdb0e8', 16: '#b88edd', 32: '#a36cd2', 64: '#8f52c4', 128: '#c9a6ee', 256: '#b98ce8', 512: '#a874e0', 1024: '#955cd8', 2048: '#8145c9', 4096: '#6a34ad' },
+};
+const PAINTS = {
+  'foundry-dusk': '',
+  'foundry-moss': 'radial-gradient(ellipse at 18% 8%,rgba(74,222,128,.14),transparent 43%),radial-gradient(ellipse at 88% 92%,rgba(250,204,21,.09),transparent 48%),linear-gradient(145deg,#1b2a24,#111a16 68%,#152019)',
+  'foundry-neon': 'radial-gradient(ellipse at 18% 8%,rgba(236,72,153,.15),transparent 43%),radial-gradient(ellipse at 88% 92%,rgba(34,211,238,.12),transparent 48%),linear-gradient(145deg,#201a34,#10131f 68%,#1a1224)',
+  'foundry-mono': 'radial-gradient(ellipse at 18% 8%,rgba(226,232,240,.1),transparent 43%),radial-gradient(ellipse at 88% 92%,rgba(148,163,184,.09),transparent 48%),linear-gradient(145deg,#232833,#12151b 68%,#1a1d24)',
+};
+const GLOWS = { 'glow-amethyst': '', 'glow-cyan': 'rgba(34,211,238,.5)', 'glow-amber': 'rgba(245,158,11,.5)', 'glow-lime': 'rgba(163,230,53,.5)' };
+const THEMES = {
+  'sky-indigo': { ring: '', aura: '' },
+  'sky-rose': { ring: 'rgba(244,114,182,.36)', aura: 'rgba(244,114,182,.24)' },
+  'sky-mint': { ring: 'rgba(45,212,191,.36)', aura: 'rgba(45,212,191,.24)' },
+};
+const ACHIEVEMENTS = [
+  { id: 'first-merge', name: 'First Merge', desc: 'Merge two cores for the first time.' },
+  { id: 'eightfold', name: 'Eightfold', desc: 'Forge an 8 tile.' },
+  { id: 'century-core', name: 'Century Core', desc: 'Forge a 128 tile.' },
+  { id: 'prime-core', name: 'Prime Core', desc: 'Forge a 2048 tile.' },
+  { id: 'overdrive', name: 'Overdrive', desc: 'Forge a 4096 tile.' },
+  { id: 'beyond-core', name: 'Beyond the Core', desc: 'Keep going after the Prime Core.' },
+  { id: 'chain-reaction', name: 'Chain Reaction', desc: 'Merge two or more pairs in one move.' },
+  { id: 'clean-foundry', name: 'Clean Foundry', desc: 'Win a run without using undo.' },
+  { id: 'daily-spark', name: 'Daily Spark', desc: 'Clear a Daily Core run.' },
+  { id: 'blitz-rush', name: 'Blitz Rush', desc: 'Score 3000 in a single Blitz run.' },
+  { id: 'zen-core', name: 'Zen Core', desc: 'Reach 1024 on a Zen board.' },
+  { id: 'trial-veteran', name: 'Trial Veteran', desc: 'Clear ten Foundry Trials.' },
+];
+const ACH_LABEL = ACHIEVEMENTS.reduce((map, item) => { map[item.id] = item.name; return map; }, {});
+const look = { skin: 'core-classic', palette: 'foundry-dusk', effect: 'glow-amethyst', theme: 'sky-indigo' };
+let COL = SKINS['core-classic'];
+const cosmeticKey = (id) => String(id || '').split(':').pop();
+let N, G, score, best, hist, won, keep, over, id = 0, runId = 0, animating = false, paused = false, initialized = false;
+let runMode = 'classic', trialIndex = 0, moves = 0, seedState = 0, difficulty = Board.difficulty(), undoUsed = 0, runDate = '', lastReportedScore = 0, recorded = false, recordedResult = '';
+let clockLeft = 0, clockTimer = null, testSync = false;
+const bd = $('#bd');
 const readSave = () => window.Save && Save.load ? Save.load(GAME_ID) : { achievements: [], stats: {} };
 window.addEventListener('pagehide', () => {
   const durationSec = Math.max(0, Math.floor((Date.now() - SESSION_START) / 1000)), saved = readSave();
   if (window.Save && Save.update) Save.update(GAME_ID, { stats: { secondsPlayed: (saved.stats.secondsPlayed || 0) + durationSec } });
   if (window.Apex && Apex.report) Apex.report({ gameId: GAME_ID, type: 'session_end', score: typeof score === 'number' ? score : 0, durationSec });
 });
-const TRIALS = Array.from({ length: 30 }, (_, i) => ({ tile: [16, 32, 32, 64, 64, 64, 128, 128, 128, 256, 256, 256, 512, 512, 512, 512, 1024, 1024, 1024, 1024, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048][i], moves: 24 + i * 4 }));
-let N, G, score, best, hist, won, keep, over, id = 0, runId = 0, animating = false, paused = false, initialized = false;
-let runMode = 'classic', trialIndex = 0, moves = 0, seedState = 0, difficulty = Board.difficulty(), undoUsed = 0, runDate = '', lastReportedScore = 0, recorded = false, recordedResult = '';
-const bd = $('#bd');
 const bk = () => 'apex:2048:best' + N;
 const hashSeed = (text) => { let h = 2166136261; for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0 || 1; };
-function random() { if (runMode === 'classic') return Math.random(); seedState = (Math.imul(seedState, 1664525) + 1013904223) >>> 0; return seedState / 4294967296; }
+function random() { if (runMode === 'classic' || runMode === 'zen' || runMode === 'blitz') return Math.random(); seedState = (Math.imul(seedState, 1664525) + 1013904223) >>> 0; return seedState / 4294967296; }
 function rand(n) { return Math.floor(random() * n); }
 function makeGrid() { bd.innerHTML = ''; for (let i = 0; i < N * N; i++) { const d = document.createElement('div'); d.className = 'bg'; place(d, i / N | 0, i % N); bd.appendChild(d); } }
+function applyCosmetic(slot, id) {
+  const key = cosmeticKey(id);
+  if (slot === 'skin' && SKINS[key]) {
+    look.skin = key; COL = SKINS[key];
+    if (Array.isArray(G)) { bd.querySelectorAll('.tl').forEach((e) => e.remove()); draw(); }
+  } else if (slot === 'palette' && key in PAINTS) { look.palette = key; bd.style.background = PAINTS[key] || ''; }
+  else if (slot === 'effect' && key in GLOWS) {
+    look.effect = key;
+    if (GLOWS[key]) bd.style.setProperty('--core-glow', GLOWS[key]); else bd.style.removeProperty('--core-glow');
+  } else if (slot === 'theme' && THEMES[key]) {
+    look.theme = key;
+    if (THEMES[key].ring) bd.style.setProperty('--core-ring', THEMES[key].ring); else bd.style.removeProperty('--core-ring');
+    if (THEMES[key].aura) bd.style.setProperty('--core-aura', THEMES[key].aura); else bd.style.removeProperty('--core-aura');
+  }
+}
+function applyEquipped() {
+  try {
+    if (!window.Meta || !Meta.getCosmetics) return;
+    Meta.getCosmetics(GAME_ID).filter((item) => item.equipped).forEach((item) => applyCosmetic(item.slot, item.id));
+  } catch (e) {}
+}
 function saveRun() {
   if (!window.Save || !Save.update || !G) return;
   const saved = readSave(), game = saved.stats.merge2048 || {}, perSize = Object.assign({}, game.bestBySize || {});
   perSize[N] = Math.max(perSize[N] || 0, best || 0);
-  const snapshot = JSON.stringify({ N, G, score, best, hist, won, keep, over, id, runMode, trialIndex, moves, seedState, difficulty, undoUsed, runDate, lastReportedScore, recorded, recordedResult });
+  const snapshot = JSON.stringify({ N, G, score, best, hist, won, keep, over, id, runMode, trialIndex, moves, seedState, difficulty, undoUsed, runDate, lastReportedScore, recorded, recordedResult, clockLeft });
   Save.update(GAME_ID, { stats: { bestScore: Math.max(saved.stats.bestScore || 0, score || 0), merge2048: { bestBySize: perSize, bestTile: Math.max(game.bestTile || 0, ...G.map((t) => t.v)), activeRun: snapshot } } });
 }
 function announceAchievement(id, label) {
@@ -98,43 +156,93 @@ function announceAchievement(id, label) {
   toast.innerHTML = `Achievement unlocked: ${label}<small>${id.replace(/-/g, ' ')}</small>`;
   if (toast._timer) Board.cancel(toast._timer); toast._timer = Board.after(3200, () => toast.remove());
 }
+function tileAchievements(maxTile) {
+  if (maxTile >= 8) announceAchievement('eightfold', 'Eightfold');
+  if (maxTile >= 128) announceAchievement('century-core', 'Century Core');
+  if (maxTile >= 2048) announceAchievement('prime-core', 'Prime Core');
+  if (maxTile >= 4096) announceAchievement('overdrive', 'Overdrive');
+  if (runMode === 'zen' && maxTile >= 1024) announceAchievement('zen-core', 'Zen Core');
+}
+function stopClock() { if (clockTimer) { clearInterval(clockTimer); clockTimer = null; } }
+function startClock() {
+  stopClock();
+  if (runMode !== 'blitz') { clockLeft = 0; return; }
+  if (clockLeft <= 0) clockLeft = BLITZ_MS;
+  if (!testSync) clockTimer = setInterval(() => tickClock(250), 250);
+}
+function tickClock(ms) {
+  if (runMode !== 'blitz' || over || paused) return clockLeft;
+  clockLeft = Math.max(0, clockLeft - (Number(ms) || 0));
+  if (clockLeft <= 0) finishBlitz();
+  else if (initialized) { const goal = $('#goal'); if (goal) goal.textContent = blitzLine(); }
+  return clockLeft;
+}
+function blitzLine() { return `Blitz · ${Math.max(0, Math.ceil(clockLeft / 1000))}s left · 3000 pts for Blitz Rush`; }
+function finishBlitz() {
+  if (over) return;
+  over = true; stopClock(); draw(); Board.sfx('lose'); Music.setIntensity(.2);
+  if (score >= 3000) announceAchievement('blitz-rush', 'Blitz Rush');
+  recordRun('blitz-end');
+  Board.modal('Time!', `Blitz over — ${score} points. Best tile ${Math.max(0, ...G.map((t) => t.v))}.`, [['New run', newGame], ['Close']]);
+}
 function recordRun(result) {
-  if (recorded) { if (window.Save && Save.update) Save.update(GAME_ID, { stats: { merge2048: { activeRun: null } } }); return; } recorded = true; recordedResult = result;
+  if (recorded) { if (window.Save && Save.update) Save.update(GAME_ID, { stats: { merge2048: { activeRun: null } } }); return; }
+  recorded = true; recordedResult = result;
   const saved = readSave(), old = saved.stats.merge2048 || {}, bestTile = Math.max(0, ...G.map((t) => t.v));
   const completedTrials = result === 'trial-win' ? [trialIndex + 1] : [];
   const dailyCompletions = (old.dailyCompletions || 0) + (result === 'daily-win' ? 1 : 0), dailyScores = Object.assign({}, old.dailyBest || {});
   if (runMode === 'daily') dailyScores[runDate] = Math.max(dailyScores[runDate] || 0, score || 0);
   const trialWins = (old.trialWins || 0) + (result === 'trial-win' ? 1 : 0);
-  const patch = { stats: { bestScore: Math.max(saved.stats.bestScore || 0, score || 0), merge2048: { runsCompleted: (old.runsCompleted || 0) + 1, wins: (old.wins || 0) + (result === 'classic-win' || result === 'trial-win' || result === 'daily-win' ? 1 : 0), gameOvers: (old.gameOvers || 0) + (result === 'game-over' ? 1 : 0), totalScore: (old.totalScore || 0) + (score || 0), bestTile: Math.max(old.bestTile || 0, bestTile), bestBySize: { [N]: Math.max((old.bestBySize || {})[N] || 0, best || 0) }, completedTrials, trialWins, dailyCompletions, dailyBest: dailyScores, lastResult: result, lastMode: runMode, lastPlayed: new Date().toISOString(), activeRun: null } } };
+  const blitzRuns = (old.blitzRuns || 0) + (runMode === 'blitz' ? 1 : 0);
+  const zenRuns = (old.zenRuns || 0) + (runMode === 'zen' ? 1 : 0);
+  const isWin = result === 'classic-win' || result === 'trial-win' || result === 'daily-win';
+  const patch = { stats: { bestScore: Math.max(saved.stats.bestScore || 0, score || 0), merge2048: {
+    runsCompleted: (old.runsCompleted || 0) + 1,
+    wins: (old.wins || 0) + (isWin ? 1 : 0),
+    gameOvers: (old.gameOvers || 0) + (result === 'game-over' ? 1 : 0),
+    totalScore: (old.totalScore || 0) + (score || 0),
+    bestTile: Math.max(old.bestTile || 0, bestTile),
+    bestBySize: { [N]: Math.max((old.bestBySize || {})[N] || 0, best || 0, score || 0) },
+    completedTrials, trialWins, dailyCompletions, dailyBest: dailyScores,
+    blitzRuns, blitzBest: Math.max(old.blitzBest || 0, runMode === 'blitz' ? (score || 0) : 0),
+    zenRuns, zenBest: Math.max(old.zenBest || 0, runMode === 'zen' ? (score || 0) : 0),
+    lastResult: result, lastMode: runMode, lastPlayed: new Date().toISOString(), activeRun: null } } };
   if (result === 'trial-win') { const unlocked = Math.min(TRIALS.length, trialIndex + 2), left = TRIALS[trialIndex].moves - moves, stars = left >= TRIALS[trialIndex].moves * .45 ? 3 : left >= TRIALS[trialIndex].moves * .2 ? 2 : 1; patch.level = Math.max(saved.level || 1, unlocked); patch.unlocks = Array.from({ length: unlocked }, (_, i) => i + 1); patch.stars = { [trialIndex + 1]: stars }; }
   if (window.Save && Save.update) Save.update(GAME_ID, patch);
   if (window.Apex && Apex.report) Apex.report({ gameId: GAME_ID, type: 'score', score: score || 0 });
   if (result === 'trial-win' && window.Apex && Apex.report) Apex.report({ gameId: GAME_ID, type: 'level_complete', level: trialIndex + 1, score: score || 0 });
   if (result === 'daily-win') announceAchievement('daily-spark', 'Daily Spark');
-  if ((result === 'classic-win' || result === 'trial-win' || result === 'daily-win') && undoUsed === 0) announceAchievement('clean-foundry', 'Clean Foundry');
+  if (isWin && undoUsed === 0) announceAchievement('clean-foundry', 'Clean Foundry');
+  if (trialWins >= 10) announceAchievement('trial-veteran', 'Trial Veteran');
 }
 TRIALS.forEach((_, i) => { const o = document.createElement('option'); o.value = i; o.textContent = `Trial ${String(i + 1).padStart(2, '0')}`; $('#stage').appendChild(o); });
 function newGame() {
   if (initialized) Board.sfx('start'); initialized = true;
-  runId++; animating = false; paused = false; $('#pause').textContent = 'Pause'; runMode = $('#mode').value; trialIndex = +$('#stage').value || 0; N = runMode === 'classic' ? +$('#size').value : 4;
+  runId++; animating = false; paused = false; $('#pause').textContent = 'Pause'; stopClock();
+  runMode = $('#mode').value; trialIndex = +$('#stage').value || 0;
+  const freeSize = runMode === 'classic' || runMode === 'zen';
+  N = freeSize ? (parseInt($('#size').value, 10) || 4) : 4;
   difficulty = $('#difficulty').value; undoUsed = 0;
-  $('#size').disabled = runMode !== 'classic'; $('#stage-wrap').hidden = runMode !== 'trial';
-  if (runMode !== 'classic') $('#size').value = '4';
+  $('#size').disabled = !freeSize; $('#stage-wrap').hidden = runMode !== 'trial';
+  if (!freeSize) $('#size').value = '4';
   moves = 0; G = []; score = 0; hist = []; won = keep = over = false; runDate = new Date().toISOString().slice(0, 10); recorded = false; recordedResult = ''; lastReportedScore = 0;
   seedState = hashSeed(runMode === 'daily' ? `apex-daily-${runDate}` : `apex-trial-${trialIndex + 1}`);
   const saved = readSave(), prior = saved.stats.merge2048 || {};
   best = Math.max(+(Board.ls.get(bk()) || 0), (prior.bestBySize || {})[N] || 0); Music.setIntensity(.2);
+  clockLeft = runMode === 'blitz' ? BLITZ_MS : 0;
   makeGrid(); add(); add(); draw();
+  startClock();
   if (window.Save && Save.update) Save.update(GAME_ID, { stats: { plays: (saved.stats.plays || 0) + 1, merge2048: { runsStarted: (prior.runsStarted || 0) + 1 } } });
   saveRun(); }
 function restoreRun(r) {
-  runId++; animating = false; runMode = r.runMode || 'classic'; N = [3, 4, 5, 6].includes(+r.N) ? +r.N : 4; trialIndex = Math.max(0, Math.min(29, +r.trialIndex || 0));
+  runId++; animating = false; paused = false; stopClock(); runMode = r.runMode || 'classic'; N = [3, 4, 5, 6].includes(+r.N) ? +r.N : 4; trialIndex = Math.max(0, Math.min(29, +r.trialIndex || 0));
   $('#mode').value = runMode; $('#stage').value = String(trialIndex); $('#size').value = String(N); $('#difficulty').value = r.difficulty || 'normal';
-  difficulty = $('#difficulty').value; $('#size').disabled = runMode !== 'classic'; $('#stage-wrap').hidden = runMode !== 'trial';
+  difficulty = $('#difficulty').value; const freeSize = runMode === 'classic' || runMode === 'zen'; $('#size').disabled = !freeSize; $('#stage-wrap').hidden = runMode !== 'trial';
   G = Array.isArray(r.G) ? r.G : []; score = +r.score || 0; hist = Array.isArray(r.hist) ? r.hist : []; moves = +r.moves || 0; seedState = +r.seedState || 1;
   best = Math.max(+r.best || 0, +(Board.ls.get(bk()) || 0)); won = !!r.won; keep = !!r.keep; over = !!r.over; id = +r.id || G.reduce((m, t) => Math.max(m, +t.id || 0), 0); undoUsed = +r.undoUsed || 0;
   runDate = r.runDate || new Date().toISOString().slice(0, 10); lastReportedScore = +r.lastReportedScore || score; recorded = !!r.recorded; recordedResult = r.recordedResult || '';
-  makeGrid(); draw(); Music.setIntensity(.42);
+  clockLeft = runMode === 'blitz' ? Math.max(0, +r.clockLeft || 0) : 0;
+  makeGrid(); draw(); Music.setIntensity(.42); if (!over) startClock();
   if (won && !keep) Board.modal('Prime Core awakened', 'Your saved run reached 2048. Continue toward a higher score or start fresh.', [['Keep going', () => { keep = true; announceAchievement('beyond-core', 'Beyond the Core'); saveRun(); Music.setIntensity(.7); }], ['New game', newGame]]);
   else if (over) Board.modal('Saved run ended', 'This saved board has no more moves.', [['New game', newGame], ['Close']]);
   else saveRun();
@@ -142,16 +250,15 @@ function restoreRun(r) {
 function showStats() {
   const s = readSave(), g = s.stats.merge2048 || {}, trials = (g.completedTrials || []).length;
   const stars = Object.values(s.stars || {}).reduce((sum, n) => sum + (+n || 0), 0);
-  const labels = { 'first-merge': 'First Merge', eightfold: 'Eightfold', 'century-core': 'Century Core', 'prime-core': 'Prime Core', 'beyond-core': 'Beyond the Core', 'chain-reaction': 'Chain Reaction', 'clean-foundry': 'Clean Foundry', 'daily-spark': 'Daily Spark' };
-  const unlocked = (s.achievements || []).filter((id) => labels[id]).map((id) => labels[id]);
-  Board.modal('Foundry statistics', `Runs started: ${g.runsStarted || 0}<br>Runs completed: ${g.runsCompleted || 0} · Wins: ${g.wins || 0}<br>Best tile: ${g.bestTile || 0} · Best score: ${s.stats.bestScore || 0}<br>Trials cleared: ${trials} / 30 · Trial stars: ${stars} / 90<br>Daily completions: ${g.dailyCompletions || 0} · Today's daily best: ${(g.dailyBest || {})[runDate] || 0}<br>Achievements: ${unlocked.length ? unlocked.join(', ') : 'None yet'}<br>Best scores by board: 3×3 ${g.bestBySize?.['3'] || 0} · 4×4 ${g.bestBySize?.['4'] || 0} · 5×5 ${g.bestBySize?.['5'] || 0} · 6×6 ${g.bestBySize?.['6'] || 0}`, [['Close']]);
+  const unlocked = (s.achievements || []).filter((id) => ACH_LABEL[id]).map((id) => ACH_LABEL[id]);
+  Board.modal('Foundry statistics', `Runs started: ${g.runsStarted || 0}<br>Runs completed: ${g.runsCompleted || 0} · Wins: ${g.wins || 0}<br>Best tile: ${g.bestTile || 0} · Best score: ${s.stats.bestScore || 0}<br>Trials cleared: ${trials} / 30 · Trial stars: ${stars} / 90<br>Daily completions: ${g.dailyCompletions || 0} · Blitz best: ${g.blitzBest || 0} · Zen best: ${g.zenBest || 0}<br>Achievements: ${unlocked.length} / ${ACHIEVEMENTS.length} — ${unlocked.length ? unlocked.join(', ') : 'None yet'}<br>Best scores by board: 3×3 ${g.bestBySize?.['3'] || 0} · 4×4 ${g.bestBySize?.['4'] || 0} · 5×5 ${g.bestBySize?.['5'] || 0} · 6×6 ${g.bestBySize?.['6'] || 0}`, [['Close']]);
 }
 const gap = 10;
 function place(d, r, c) {
   const cell = `((100% - ${gap * 2}px - ${gap * (N - 1)}px) / ${N})`; d.style.width = d.style.height = `calc${cell}`;
   d.style.left = `calc(${gap}px + ${c} * (${cell} + ${gap}px))`; d.style.top = `calc(${gap}px + ${r} * (${cell} + ${gap}px))`;
 }
-function add() { const e = []; for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (!G.find((t) => t.r === r && t.c === c)) e.push([r, c]); if (!e.length) return; const [r, c] = e[rand(e.length)], twoChance = difficulty === 'easy' ? .82 : difficulty === 'hard' ? .97 : .9; G.push({ id: ++id, v: random() < twoChance ? 2 : 4, r, c, n: 1 }); }
+function add() { const e = []; for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (!G.find((t) => t.r === r && t.c === c)) e.push([r, c]); if (!e.length) return; const [r, c] = e[rand(e.length)], twoChance = runMode === 'zen' ? 1 : difficulty === 'easy' ? .82 : difficulty === 'hard' ? .97 : .9; G.push({ id: ++id, v: random() < twoChance ? 2 : 4, r, c, n: 1 }); }
 function move(dir) { /* 0 left 1 up 2 right 3 down; returns true if anything moved */
   if (paused || animating || over) return false;
   const snap = JSON.stringify({ G, score, moves, seedState }); let gain = 0, mergeCount = 0;
@@ -171,13 +278,17 @@ function move(dir) { /* 0 left 1 up 2 right 3 down; returns true if anything mov
   if (gain) { Board.sfx(gain >= 128 ? 'ladder' : 'capture'); Music.setIntensity(Math.min(.96, .3 + Math.log2(gain + 1) * .075)); }
   else { Board.sfx('step'); Music.setIntensity(Math.min(.72, .24 + Math.log2(Math.max(2, score + 1)) * .025)); }
   if (gain) announceAchievement('first-merge', 'First Merge');
-  const maxTile = Math.max(0, ...G.map((t) => t.v));
-  if (maxTile >= 8) announceAchievement('eightfold', 'Eightfold');
-  if (maxTile >= 128) announceAchievement('century-core', 'Century Core');
-  if (maxTile >= 2048) announceAchievement('prime-core', 'Prime Core');
+  tileAchievements(Math.max(0, ...G.map((t) => t.v)));
   if (mergeCount >= 2) announceAchievement('chain-reaction', 'Chain Reaction');
   if (score > lastReportedScore && window.Apex && Apex.report) { lastReportedScore = score; Apex.report({ gameId: GAME_ID, type: 'score', score }); }
-  Board.after(125, () => { if (thisRun !== runId) return; add(); Board.sfx('place'); draw(); check(); animating = false; $('#undo').disabled = !hist.length || undoUsed >= undoLimit() || recorded && recordedResult !== 'game-over'; $('#pause').disabled = over; if (!over && !(won && !keep)) saveRun(); });
+  const settle = () => {
+    if (thisRun !== runId) return;
+    add(); Board.sfx('place'); draw(); check(); animating = false;
+    $('#undo').disabled = !hist.length || undoUsed >= undoLimit() || recorded && recordedResult !== 'game-over';
+    $('#pause').disabled = over;
+    if (!over && !(won && !keep)) saveRun();
+  };
+  if (testSync) settle(); else Board.after(125, settle);
   return true;
 }
 function draw(dead) {
@@ -197,15 +308,24 @@ function draw(dead) {
   $('#st').textContent = over ? (won ? 'Goal complete!' : 'No moves left — run over') : won && !keep ? 'You made 2048!' : 'Biggest tile: ' + biggest;
   if (runMode === 'trial') { const q = TRIALS[trialIndex]; $('#goal').textContent = `Foundry trial ${trialIndex + 1} / 30 · Reach ${q.tile} · ${Math.max(0, q.moves - moves)} moves left`; }
   else if (runMode === 'daily') $('#goal').textContent = `Daily Core · Reach ${dailyGoal()} · ${Math.max(0, 80 - moves)} moves left`;
+  else if (runMode === 'zen') $('#goal').textContent = `${N} × ${N} Zen · Only 2s spawn · unlimited undo`;
+  else if (runMode === 'blitz') $('#goal').textContent = blitzLine();
   else $('#goal').textContent = `${N} × ${N} Classic · Merge tiles and reach 2048`;
   $('#goal').textContent += ` · ${difficulty[0].toUpperCase() + difficulty.slice(1)} · undo ${Math.max(0, undoLimit() - undoUsed)} left`;
   $('#undo').disabled = !hist.length || animating || undoUsed >= undoLimit() || recorded && recordedResult !== 'game-over';
   $('#pause').disabled = animating || over;
 }
-function undoLimit() { return difficulty === 'easy' ? 8 : difficulty === 'hard' ? 1 : 4; }
+function undoLimit() { if (runMode === 'zen') return 99; if (runMode === 'blitz') return 2; return difficulty === 'easy' ? 8 : difficulty === 'hard' ? 1 : 4; }
 function dailyGoal() { return [128, 256, 256, 512, 512][hashSeed(runDate || new Date().toISOString().slice(0, 10)) % 5]; }
 function canMove() { if (G.length < N * N) return true; for (const t of G) for (const [dr, dc] of [[0, 1], [1, 0]]) { const o = G.find((q) => q.r === t.r + dr && q.c === t.c + dc); if (o && o.v === t.v) return true; } return false; }
 function check() {
+  if (!Array.isArray(G) || !G.length) return;
+  tileAchievements(Math.max(0, ...G.map((t) => t.v)));
+  if (runMode === 'zen') {
+    if (!canMove()) { over = true; draw(); Board.sfx('lose'); Music.setIntensity(.18); recordRun('game-over'); Board.modal('Zen board complete', `No moves left. Final score ${score}.`, [['New game', newGame], ['Close']]); }
+    return;
+  }
+  if (runMode === 'blitz') { if (!canMove()) finishBlitz(); return; }
   if (runMode === 'trial' || runMode === 'daily') {
     const goal = runMode === 'trial' ? TRIALS[trialIndex].tile : dailyGoal(), limit = runMode === 'trial' ? TRIALS[trialIndex].moves : 80;
     if (G.some((t) => t.v >= goal)) {
@@ -258,6 +378,7 @@ $('#stage').value = String(requestedLevel - 1);
 const savedSettings = readSave().settings || {};
 if (['easy', 'normal', 'hard'].includes(savedSettings.difficulty)) { difficulty = savedSettings.difficulty; $('#difficulty').value = difficulty; Board.setDifficulty(difficulty); }
 Board.setSfxVolume(savedSettings.sfxVol);
+applyEquipped();
 window.ApexMenuActive = true;
 
 function merge2048MenuScene(c, frame) {
@@ -309,7 +430,7 @@ function menuChoice(doc, label, controlId, value) {
 
 const mergeMenu = Menu.mount({
   gameId: GAME_ID, title: 'Merge 2048', tagline: 'Shape the Prime Core in a quiet, luminous foundry.',
-  archetype: 'glass', items: pendingRun ? [{ id: 'continue', label: 'Continue Run' }, 'play', 'modes', 'options', 'about', 'stats', 'exit'] : ['play', 'modes', 'options', 'about', 'stats', 'exit'],
+  archetype: 'glass', items: pendingRun ? [{ id: 'continue', label: 'Continue Run' }, 'play', 'modes', 'customize', 'options', 'about', 'exit'] : ['play', 'modes', 'customize', 'options', 'about', 'stats', 'exit'],
   theme: {
     frame: 'minimal-glass', button: 'raised-glass',
     palette: { bg: '#101421', panel: 'rgba(24,30,48,0.84)', accent: '#a78bfa', button: '#b8f4ef', buttonText: '#17222b', text: '#f7f4ed' },
@@ -337,28 +458,112 @@ const mergeMenu = Menu.mount({
     modes: function (view) {
       const doc = view.panel.ownerDocument, heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Choose your run'; view.panel.appendChild(heading);
       const note = doc.createElement('p'); note.className = 'apex-menu-tagline'; note.textContent = 'Select a foundry path and board size. Your choices take effect when you Play.'; view.panel.appendChild(note);
-      [['RUN TYPE','mode',[['Classic Run','classic'],['Foundry Trials','trial'],['Daily Core','daily']]],['BOARD SIZE · CLASSIC','size',[['Compact · 3×3','3'],['Classic · 4×4','4'],['Spacious · 5×5','5'],['Expansive · 6×6','6']]],['DIFFICULTY','difficulty',[['Easy','easy'],['Normal','normal'],['Hard','hard']]]].forEach(function (group) {
+      [['RUN TYPE','mode',[['Classic Run','classic'],['Foundry Trials','trial'],['Daily Core','daily'],['Zen Board','zen'],['Blitz · 90s','blitz']]],['BOARD SIZE · CLASSIC / ZEN','size',[['Compact · 3×3','3'],['Classic · 4×4','4'],['Spacious · 5×5','5'],['Expansive · 6×6','6']]],['DIFFICULTY','difficulty',[['Easy','easy'],['Normal','normal'],['Hard','hard']]]].forEach(function (group) {
         const label = doc.createElement('p'); label.className = 'apex-menu-caption'; label.textContent = group[0]; view.panel.appendChild(label);
         const choices = doc.createElement('div'); choices.className = 'apex-menu-choice-list'; view.panel.appendChild(choices);
         group[2].forEach(function (item) { choices.appendChild(menuChoice(doc, item[0], group[1], item[1])); });
       });
-      const stageNote = doc.createElement('p'); stageNote.className = 'apex-menu-caption'; stageNote.textContent = 'Foundry Trials include 30 target-and-move challenges. Daily Core uses today’s seeded board.'; view.panel.appendChild(stageNote);
+      const stageNote = doc.createElement('p'); stageNote.className = 'apex-menu-caption'; stageNote.textContent = 'Foundry Trials include 30 target-and-move challenges. Daily Core uses today’s seeded board. Zen only spawns 2s and allows unlimited undo; Blitz is a 90-second score rush.'; view.panel.appendChild(stageNote);
+      const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back','true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
+    },
+    customize: function (view) {
+      const doc = view.panel.ownerDocument, heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Customize'; view.panel.appendChild(heading);
+      const items = window.Meta && Meta.getCosmetics ? Meta.getCosmetics(GAME_ID) : [];
+      const wallet = window.Meta && Meta.read ? Meta.read().sparks : 0;
+      const balance = doc.createElement('p'); balance.className = 'apex-menu-tagline'; balance.textContent = 'Sparks: ' + wallet + ' · Owned items are saved on this device.'; view.panel.appendChild(balance);
+      items.forEach(function (item) {
+        const button = doc.createElement('button'); button.type = 'button'; button.className = 'apex-menu-action';
+        button.textContent = item.name + ' · ' + (item.equipped ? 'Equipped' : item.owned ? 'Equip' : item.cost + ' Sparks');
+        button.disabled = item.equipped || (!item.owned && wallet < item.cost);
+        button.addEventListener('click', function () {
+          const result = item.owned ? Meta.equipCosmetic(GAME_ID, item.id) : Meta.purchaseCosmetic(GAME_ID, item.id);
+          if (result && result.ok && item.owned) applyCosmetic(item.slot, item.id);
+          view.refresh();
+        });
+        view.panel.appendChild(button);
+      });
       const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back','true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
     },
     about: function (view) {
       const doc = view.panel.ownerDocument, heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Shape the Prime Core'; view.panel.appendChild(heading);
-      const rules = doc.createElement('p'); rules.className = 'apex-menu-tagline'; rules.textContent = 'Slide matching cores together. Classic runs build toward 2048; Foundry Trials set a target and move limit; Daily Core gives everyone the same date-seeded board.'; view.panel.appendChild(rules);
+      const rules = doc.createElement('p'); rules.className = 'apex-menu-tagline'; rules.textContent = 'Slide matching cores together. Classic runs build toward 2048; Foundry Trials set a target and move limit; Daily Core gives everyone the same date-seeded board; Zen only spawns 2s with unlimited undo; Blitz is a 90-second score rush.'; view.panel.appendChild(rules);
       const controls = doc.createElement('p'); controls.className = 'apex-menu-tagline'; controls.textContent = 'Arrow keys or WASD to slide · swipe to move · U undo · N new run · H controls · M mute. Difficulty changes spawn odds and undo limits only.'; view.panel.appendChild(controls);
       const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back','true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
     },
     stats: function (view) {
-      const doc = view.panel.ownerDocument, record = readSave().stats.merge2048 || {}, heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Foundry records'; view.panel.appendChild(heading);
-      const summary = doc.createElement('p'); summary.className = 'apex-menu-tagline'; summary.textContent = 'Runs started: ' + (record.runsStarted || 0) + ' · completed: ' + (record.runsCompleted || 0) + ' · wins: ' + (record.wins || 0) + '. Best tile: ' + (record.bestTile || 0) + ' · high score: ' + (readSave().stats.bestScore || 0) + '.'; view.panel.appendChild(summary);
-      const trials = doc.createElement('p'); trials.className = 'apex-menu-tagline'; trials.textContent = 'Trials cleared: ' + ((record.completedTrials || []).length) + ' of 30 · Daily completions: ' + (record.dailyCompletions || 0) + '.'; view.panel.appendChild(trials);
+      const doc = view.panel.ownerDocument, save = readSave(), record = save.stats.merge2048 || {}, heading = doc.createElement('h1'); heading.className = 'apex-menu-title'; heading.textContent = 'Foundry records'; view.panel.appendChild(heading);
+      const summary = doc.createElement('p'); summary.className = 'apex-menu-tagline'; summary.textContent = 'Runs started: ' + (record.runsStarted || 0) + ' · completed: ' + (record.runsCompleted || 0) + ' · wins: ' + (record.wins || 0) + '. Best tile: ' + (record.bestTile || 0) + ' · high score: ' + (save.stats.bestScore || 0) + '.'; view.panel.appendChild(summary);
+      const trials = doc.createElement('p'); trials.className = 'apex-menu-tagline'; trials.textContent = 'Trials cleared: ' + ((record.completedTrials || []).length) + ' of 30 · Daily completions: ' + (record.dailyCompletions || 0) + ' · Blitz best: ' + (record.blitzBest || 0) + ' · Zen best: ' + (record.zenBest || 0) + '.'; view.panel.appendChild(trials);
+      const unlocked = (save.achievements || []).filter((id) => ACH_LABEL[id]).map((id) => ACH_LABEL[id]);
+      const badges = doc.createElement('p'); badges.className = 'apex-menu-tagline'; badges.textContent = 'Achievements: ' + unlocked.length + ' / ' + ACHIEVEMENTS.length + (unlocked.length ? ' — ' + unlocked.join(', ') : ' — none yet') + '.'; view.panel.appendChild(badges);
       const back = doc.createElement('button'); back.type = 'button'; back.className = 'apex-menu-back'; back.setAttribute('data-menu-back','true'); back.textContent = 'Back'; back.addEventListener('click', view.back); view.panel.appendChild(back);
     }
   }
 });
+
+/* ---------- deterministic test hooks ---------- */
+function gameState() {
+  return {
+    mode: runMode, size: N, trialIndex, score, best, moves, undoUsed, clock: clockLeft,
+    biggest: Math.max(0, ...(G || []).map((t) => t.v)), tiles: (G || []).map((t) => ({ v: t.v, r: t.r, c: t.c })),
+    won, keep, over, recorded, result: recordedResult, paused,
+    canMove: Array.isArray(G) ? canMove() : false,
+    achievements: readSave().achievements || [],
+  };
+}
+function setGame(o) {
+  const src = o || {}, allowed = ['classic', 'trial', 'daily', 'zen', 'blitz'];
+  runMode = allowed.includes(src.mode) ? src.mode : runMode;
+  trialIndex = Math.max(0, Math.min(TRIALS.length - 1, src.trialIndex != null ? +src.trialIndex : trialIndex));
+  const freeSize = runMode === 'classic' || runMode === 'zen';
+  N = [3, 4, 5, 6].includes(+src.size) ? +src.size : (freeSize ? (parseInt($('#size').value, 10) || 4) : 4);
+  runId++; animating = false; paused = false; stopClock(); over = won = keep = false; recorded = false; recordedResult = ''; lastReportedScore = 0;
+  hist = []; score = Math.max(0, Number(src.score) || 0); moves = Math.max(0, Number(src.moves) || 0); undoUsed = Math.max(0, Number(src.undoUsed) || 0);
+  seedState = src.seedState != null ? +src.seedState : hashSeed('test-' + runId);
+  runDate = src.runDate || new Date().toISOString().slice(0, 10);
+  const values = Array.isArray(src.values) ? src.values : [], cells = [];
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) cells.push([r, c]);
+  G = values.slice(0, N * N).reduce((acc, v, i) => { const n = Math.max(0, Number(v) || 0); if (n) acc.push({ id: ++id, v: n, r: cells[i][0], c: cells[i][1] }); return acc; }, []);
+  $('#mode').value = runMode; $('#stage').value = String(trialIndex); $('#size').value = String(N);
+  $('#size').disabled = !freeSize; $('#stage-wrap').hidden = runMode !== 'trial'; $('#pause').textContent = 'Pause';
+  best = Math.max(+(Board.ls.get(bk()) || 0), ((readSave().stats.merge2048 || {}).bestBySize || {})[N] || 0);
+  clockLeft = src.clock != null ? Math.max(0, Number(src.clock) || 0) : (runMode === 'blitz' ? BLITZ_MS : 0);
+  makeGrid(); draw();
+  startClock();
+  return gameState();
+}
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  window.MergeTest = {
+    state: gameState,
+    modes: () => ['classic', 'trial', 'daily', 'zen', 'blitz'],
+    setMode: (id) => {
+      if (!['classic', 'trial', 'daily', 'zen', 'blitz'].includes(id)) return false;
+      const select = $('#mode'); select.value = id; select.dispatchEvent(new Event('change', { bubbles: true })); return true;
+    },
+    getMode: () => runMode,
+    restart: () => { newGame(); return gameState(); },
+    setSync: (value) => { testSync = !!value; if (testSync) stopClock(); return testSync; },
+    setGame,
+    move: (dir) => { const before = moves; move(+dir); return Object.assign(gameState(), { moved: moves > before }); },
+    check: () => { check(); return gameState(); },
+    keep: () => { keep = true; announceAchievement('beyond-core', 'Beyond the Core'); draw(); saveRun(); return gameState(); },
+    setScore: (n) => { score = Math.max(0, Number(n) || 0); draw(); return score; },
+    setClock: (ms) => { clockLeft = Math.max(0, Number(ms) || 0); draw(); return clockLeft; },
+    tick: (ms) => { tickClock(Number(ms) || 0); return gameState(); },
+    dailyGoal: () => dailyGoal(),
+    trials: () => TRIALS.map((t) => ({ tile: t.tile, moves: t.moves })),
+    close: () => { const d = document.getElementById('bk-dlg'); if (d && d.open) d.close(); return true; },
+    modalOpen: () => { const d = document.getElementById('bk-dlg'); return !!(d && d.open); },
+    cosmetic: (slot, id) => { applyCosmetic(slot, id); return { slot, id: cosmeticKey(id) }; },
+    cosmeticList: () => (window.Meta && Meta.getCosmetics ? Meta.getCosmetics(GAME_ID) : []),
+    colors: () => ({
+      skin: look.skin, tile: COL[2], palette: look.palette, effect: look.effect, theme: look.theme,
+      glow: bd.style.getPropertyValue('--core-glow').trim(), ring: bd.style.getPropertyValue('--core-ring').trim(),
+    }),
+    stats: () => readSave().stats || {},
+    achievements: () => readSave().achievements || [],
+  };
+}
 </script>
 </body>
 </html>

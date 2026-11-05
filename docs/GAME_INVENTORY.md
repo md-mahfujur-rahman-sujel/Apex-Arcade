@@ -46,11 +46,11 @@ Technical inventory of all 50 canonical HTML games in `public/assets/games/`. Th
 | 38 | Bowling | `38-bowling/index.html` | 36.5 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js, fx-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Responsive Canvas | Yes | Arcade Core |
 | 39 | Basketball Hoops | `39-basketball/index.html` | 20.6 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Responsive Canvas | Yes | Arcade Core |
 | 40 | Mini Golf | `40-mini-golf/index.html` | 25.0 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Responsive Canvas | Yes | Arcade Core |
-| 41 | Soccer Pool | `41-soccer-pool/index.html` | 11.0 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js, fx-kit.js | Responsive Canvas | Yes | Arcade Core |
-| 42 | Merge 2048 | `42-2048/index.html` | 8.2 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js | Board DOM / SVG Grid | No | Board Kit |
-| 43 | Sudoku | `43-sudoku/index.html` | 9.7 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
-| 44 | Minefield | `44-minesweeper/index.html` | 7.8 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
-| 45 | Slide Tiles | `45-sliding-puzzle/index.html` | 5.9 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
+| 41 | Soccer Pool | `41-soccer-pool/index.html` | 31.4 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js, fx-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Responsive Canvas | Yes | Arcade Core |
+| 42 | Merge 2048 | `42-2048/index.html` | 49.9 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, fx-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Board DOM / SVG Grid | Yes | Board Kit |
+| 43 | Sudoku | `43-sudoku/index.html` | 24.0 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Board DOM / SVG Grid | Yes | Board Kit |
+| 44 | Minefield | `44-minesweeper/index.html` | 21.6 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Board DOM / SVG Grid | No | Board Kit |
+| 45 | Slide Tiles | `45-sliding-puzzle/index.html` | 20.0 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Board DOM / Grid | No | Board Kit |
 | 46 | Nuts & Bolts | `46-nuts-bolts/index.html` | 11.9 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Canvas 480×640 | No | Board Kit |
 | 47 | Bubble Sort | `47-colour-sort/index.html` | 8.5 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
 | 48 | Orchard Drop | `48-fruit-merge/index.html` | 9.5 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, fx-kit.js | Canvas 400×600 | No | Board Kit |
@@ -60,7 +60,7 @@ Technical inventory of all 50 canonical HTML games in `public/assets/games/`. Th
 ## Summary Statistics
 
 - **Total Games**: 50
-- **Current canonical HTML total**: 1496545 bytes (~1.43 MiB; 29.2 KB average; remeasured after games 36–40 on 2026-11-05)
+- **Current canonical HTML total**: 1562184 bytes (~1.49 MiB; 31.2 KB average; remeasured after games 41–45 on 2026-11-05)
 
 ### Script Kits Usage
 
@@ -147,9 +147,9 @@ Each line states the gameplay effect selected by Easy, Normal and Hard.
 - 40 Mini Golf — Easy 0.8× simulation; Normal 1.0×; Hard 1.35× simulation and 1.25× score.
 - 41 Soccer Pool — Easy 0.8× simulation; Normal 1.0×; Hard 1.35× simulation and 1.25× score.
 - 42 Merge 2048 — Easy allows 8 undos and favors spawning 2 tiles; Normal allows 4 undos; Hard allows 1 undo and favors spawning 4 tiles.
-- 43 Sudoku — Easy, Normal and Hard select the matching clue-count preset and regenerate the puzzle.
-- 44 Minefield — Easy, Normal and Hard select the matching board-size/mine-count preset.
-- 45 Slide Tiles — Easy selects the smallest board, Normal a middle board and Hard the largest available board.
+- 43 Sudoku — Easy sets the next Classic/Diagonal puzzle to 40 clues, Normal 32 and Hard 26; fixed-clue modes ignore it.
+- 44 Minefield — each mode fixes its field size and mine count; the shared difficulty setting has no gameplay effect.
+- 45 Slide Tiles — each mode fixes its grid size and goal order; the shared difficulty setting has no gameplay effect.
 - 46 Nuts & Bolts — Easy starts at the first unlocked level, Normal at a middle unlocked level and Hard at the highest unlocked level.
 - 47 Bubble Sort — Easy starts at the first unlocked level, Normal at a middle unlocked level and Hard at the highest unlocked level.
 - 48 Orchard Drop — Easy allows 0.75 seconds between drops, Normal 0.55 seconds and Hard 0.35 seconds.

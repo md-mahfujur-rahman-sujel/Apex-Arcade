@@ -2,70 +2,99 @@
 
 ## Pitch
 
-Deduce hidden mines from number clues with guaranteed safe first clicks, chord-clearing satisfied numbers, and flagging. Keep the source game’s recognizable rhythm and make each run readable, quick to restart, and rewarding to master.
+Clear every safe square on a minefield using numeric clues. The first click is always safe and opens a region, flagging marks suspected mines, and clicking a revealed number whose flags match its count chords the rest of its neighbours open. Classic is a 16×16 field with 40 mines, Sprint is 9×9 on a 90-second clock, Zen defuses one mine for you, No Flag disables flagging, and Evil packs 55 mines into 16×16.
 
 ## Art direction
 
-Preserve the current artwork, silhouettes, animation, and sound on the canonical page. Use the game’s existing #F87171 accent as a guide for new menu and reward states. Keep gameplay objects distinct from the background; never rely on colour alone for hazards or legal moves. Lite and reduced-motion settings must reduce effects without removing gameplay feedback.
+A dark field of raised tiles over a recessed slate board. Tiles use `minesweeper:tile-*`, the board `minesweeper:board-*`, the keyboard cursor `minesweeper:focus-*` and the counters `minesweeper:hud-*`. Numbers are colour-coded 1–8, revealed cells sink flat, flags are red, and a hit mine flashes red. Lite and reduced-motion settings keep every state cue but drop the shake.
 
 ## Modes and match structure
 
-1. **Classic:** preserve the canonical rules and scoring.
-2. **Challenge:** a short target-based run with a clear completion condition.
-3. **Daily challenge:** deterministic local-day seed and a saved daily best.
+| Mode | Field | Mines | Clock | Special | Unlock |
+| --- | --- | --- | --- | --- | --- |
+| Classic | 16×16 | 40 | none | none | open |
+| Sprint | 9×9 | 12 | 90 s | none | open |
+| Zen | 9×9 | 10 | none | one free defuse | open |
+| No Flag | 16×16 | 40 | none | flagging disabled | Classic clear |
+| Evil | 16×16 | 55 | none | denser field | Classic clear |
 
-A mode change must reset only the state named by that mode. Pause and resume preserve the complete in-progress state. Daily seeds use the local date and produce the same starting state for every retry that day.
+1. **Classic:** the baseline field and the unlock gate.
+2. **Sprint:** a smaller field with a 90-second clock.
+3. **Zen:** the first mine hit is defused and flagged instead of ending the run.
+4. **No Flag:** the flag button is hidden and every flag input is refused.
+5. **Evil:** 55 mines in the same 16×16 area, leaving far fewer safe squares.
 
-## Settings and difficulty
+A mode change deals a fresh field. Pause freezes the Sprint clock.
 
-| Setting | Behavior |
-| --- | --- |
-| Easy | 0.8× simulation speed or a wider timing/mistake allowance; 1.0× score. |
-| Normal | Preserve the source page’s baseline rules at 1.0× speed and score. |
-| Hard | 1.35× simulation speed or a stricter opponent/puzzle target; 1.25× score. |
-| Performance | Respect Lite, Standard, and Ultra budgets; preserve essential playfield feedback. |
-| Reduced motion | Remove decorative movement, shake, and nonessential flashes; preserve input and game-state motion. |
-| Audio and palette | Inherit global settings, allow per-game overrides, and keep objects legible in colour-blind palettes. |
+## Core rules
+
+- Mines are placed lazily on the first reveal, excluding the clicked cell and its eight neighbours.
+- Revealing a zero cascades open every connected safe cell.
+- A number counts the mines among its eight neighbours.
+- Chording opens all unflagged, unrevealed neighbours when the flag count equals the number.
+- A wrong flag still counts toward the displayed mine counter and prevents chording until corrected.
+- Revealing a mine ends the run; in Zen the first hit is defused, flagged, and the defuse counter drops to zero.
+- The field is cleared when every safe square is revealed.
+
+## Scoring
+
+Classic pays `600 + max(0, 600 − 2 × seconds)`; Sprint `800 + max(0, 300 − 4 × seconds)`; Zen a flat 500; No Flag `900 + max(0, 900 − 2 × seconds)`; Evil `1500 + max(0, 1200 − 2 × seconds)`. All scores round and floor at 100. A loss scores zero.
+
+## Records and persistence
+
+Saved under `minesweeper`:
+
+- `bestScore`, `bestScoreClassic`, `bestScoreSprint`, `bestScoreZen`, `bestScoreNoflags`, `bestScoreEvil`
+- `bestTimeClassic`, `bestTimeSprint`, `bestTimeZen`, `bestTimeNoflags`, `bestTimeEvil`
+- `wins`, `losses`, `fieldsCleared`
+- `mines`, `flagsPlaced`, `chords`, `defuses`
+- `classicWins`, `sprintWins`, `zenWins`, `noflagsWins`, `evilWins`
+- `plays`, `secondsPlayed`, `lastResult`, `lastMode`
+
+`bestTime*` records the fastest clear per mode.
 
 ## Cosmetics
 
-Plan 8 cosmetics across palette, board/craft/object skin, effects, and scene/theme slots as applicable to this game. Keep all interactive objects distinguishable and do not change game physics. Purchases use the shared Sparks registry, charge once, and persist ownership and equip state after reload.
+Sixteen registered cosmetics using the `minesweeper:` prefix:
+
+| Slot | Items |
+| --- | --- |
+| Skin (tiles) | Graphite, Ember, Jade, Ice, Violet |
+| Palette (board) | Slate, Night, Indigo, Mono |
+| Effect (cursor) | Amber, Cyan, Lime, Rose |
+| Theme (HUD) | Ruby, Amber, Mint |
 
 ## Achievements
 
 | Achievement | Trigger | Rarity |
 | --- | --- | --- |
-| First Run | complete one session | Common |
-| Steady Hand | reach the first score milestone | Common |
-| Quick Clear | finish within the target time | Common |
-| Personal Best | set a new personal best | Rare |
-| Daily Player | complete a seeded daily run | Rare |
-| No Mistakes | finish without a mistake or lost life | Rare |
-| Long Run | reach the long-run milestone | Rare |
-| Perfect Round | complete a perfect round | Epic |
-
-Unlock each once under the host game id and send one achievement event and one toast. Score targets must respect the selected mode’s documented multiplier.
+| First Field | clear any field | Common |
+| Clean Sweep | clear without placing a flag | Rare |
+| Quick Sweep | clear in under 90 seconds | Rare |
+| Sprint Sweeper | clear Sprint | Rare |
+| Zen Sweeper | clear Zen | Common |
+| Bare Hands | clear No Flag | Epic |
+| Evil Genius | clear Evil | Legendary |
+| Defused | survive a mine in Zen | Rare |
+| Five Fields | clear five fields | Rare |
+| Triple Crown | win in three modes | Rare |
+| Ten Fields | clear ten fields | Epic |
+| Complete Sapper | clear every mode | Legendary |
 
 ## Tutorial and controls
 
-Use a guided tutorial. Teach the primary objective, legal input, one recovery or strategy tip, and the end condition. Controls shown in the menu and during play: Left-click reveals square, Right-click or F flags a mine.
-
-Support keyboard and touch. Board games must offer clear selected/active state and tap targets; action games must keep virtual controls away from hazards and the theatre launch controls. Shared menus must support gamepad focus and activation.
-
-## Current baseline and scope
-
-Canonical page: `44-minesweeper/index.html`. Current family: Board Kit (No). Catalog description: “Deduce hidden mines from number clues with guaranteed safe first clicks, chord-clearing satisfied numbers, and flagging.” Controls: Left-click reveals square, Right-click or F flags a mine. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+The interactive tutorial covers safe first clicks, number reading, flagging, chording and the mode modifiers. Controls: click reveals (or chords); right-click, long-press or F flags; the Flag mode button supports touch; arrows move the keyboard cursor and Space reveals/chords; N deals a new field; H/M toggle help and mute. The HUD shows remaining mines, the clock and the mode.
 
 ## Menu Identity Card
 
-- **Archetype:** crt.
-- **Mood:** Read the clues and mark every hidden mine.
-- **Palette:** `#080d15` background, `color-mix(in srgb, #fbbf24 8%, rgba(15,22,35,.94))` panel, `#fbbf24` accent, `color-mix(in srgb, #fbbf24 76%, white)` button, `#10151e` button text, `#f6f7fb` body text.
+- **Archetype:** tactile minefield board.
+- **Mood:** careful deduction, one square at a time.
+- **Palette:** `#2a2f45` frame, `#181c2e` open cells, `#fb7185` HUD accent.
 - **Type:** System UI title and body fonts.
-- **Frame and buttons:** Per-title `mine-frame` frame and `mine-banner` button identity, using the shared crt treatment.
-- **Scene recipe:** Original procedural mine mark with an accent-lit background, restrained depth bands, and a static Lite/reduced-motion frame.
-- **Music and UI sounds:** Per-title procedural motif; shared tick, select, and back cues.
-- **Menu items:** Play, Options, About, Exit. No proposed modes or cosmetics are shown as available.
-- **Settings:** Shared audio, display, controls, accessibility, and difficulty options.
-- **Controls:** Click to reveal; right-click or long-press to flag.
-- **Lite fallback:** Static mine composition with the title accent and scene silhouette.
+- **Frame and buttons:** Per-title `tile-*`, `board-*` and `hud-*` identity.
+- **Scene recipe:** Raised tile grid with colour-coded numbers and a focus cursor; static in Lite and reduced-motion modes.
+- **Music and UI sounds:** Per-title procedural motif; reveal, flag, chord, defuse and boom cues.
+- **Menu items:** Play, Modes, Customize, Options, More, Exit.
+- **Settings:** Shared audio, display, controls, accessibility and difficulty options.
+- **Controls:** Click reveal/chord; right-click/F flag; arrows + Space; N new field.
+- **Lite fallback:** Static tile field with the title accent.
