@@ -2,66 +2,103 @@
 
 ## Pitch
 
-Ten frames of authentic bowling with strikes, spares, 10th-frame bonus balls, and 3-click meter timing (position, angle, power). Keep the source game’s recognizable rhythm and make each run readable, quick to restart, and rewarding to master.
+Ten frames of ten-pin bowling with a three-click meter: place the ball, lock the angle, then stop the power sweep and let it roll. Five modes give the lane a different job. Classic is a standard ten-frame game, Blitz runs a twelve-second shot clock, Spare Practice racks ten seven-pin leaves, Triple Header strings three games into one score, and Pro Oil hides the aim guide and nearly doubles the hook. Strikes, spares and the tenth-frame bonus balls follow standard scoring, and the page keeps per-mode runs and a perfect-game counter.
 
 ## Art direction
 
-Preserve the current artwork, silhouettes, animation, and sound on the canonical page. Use the game’s existing #F87171 accent as a guide for new menu and reward states. Keep gameplay objects distinct from the background; never rely on colour alone for hazards or legal moves. Lite and reduced-motion settings must reduce effects without removing gameplay feedback.
+A neon-trimmed night alley. The lane is lacquered wood with a moving sheen and a light pool behind the pin deck; gutters and side trim glow cyan and pink. The ball carries the `bowl:ball-*` skin, the lane uses `bowl:lane-*`, the side neon uses `bowl:trim-*`, and the room uses `bowl:alley-*`. Pins are shaded capsules that spin and tumble when knocked down. Strikes and spares flash the lane, ring the deck and throw confetti; Lite and reduced-motion modes keep the flash and pin motion but shorten the confetti.
 
 ## Modes and match structure
 
-1. **Classic:** preserve the canonical rules and scoring.
-2. **Daily challenge:** a deterministic seeded puzzle or short target run with a saved local best.
+| Mode | Frames | Shot clock | Hook | Aim guide | Raw score source | Multiplier |
+| --- | --- | --- | --- | --- | --- | --- |
+| Classic | 10 | none | 1× | shown | one game | 1× |
+| Blitz | 10 | 12 s | 1× | shown | one game | 1.2× |
+| Spare Practice | 10 leaves | none | 1× | shown | ten leaves | 1.15× |
+| Triple Header | 30 | none | 1× | shown | three games | 1.25× |
+| Pro Oil | 10 | none | 1.9× | hidden | one game | 1.6× |
 
-A mode change must reset only the state named by that mode. Pause and resume preserve the complete in-progress state. Daily seeds use the local date and produce the same starting state for every retry that day.
+1. **Classic:** a standard ten-frame game.
+2. **Blitz:** the shot clock throws for you when it lapses; the ball still counts.
+3. **Spare Practice:** every frame starts with a seven-pin leave; each conversion pays the leftovers plus a spare bonus.
+4. **Triple Header:** three complete games run back to back; the two archived games join the finale in one score.
+5. **Pro Oil:** locked behind a 150-point session; the aim guide is hidden and the hook is much sharper.
 
-## Settings and difficulty
+A mode change starts a fresh rack. Pause freezes the shot clock and the rolling physics.
 
-| Setting | Behavior |
-| --- | --- |
-| Easy | 0.8× simulation speed or a wider timing/mistake allowance; 1.0× score. |
-| Normal | Preserve the source page’s baseline rules at 1.0× speed and score. |
-| Hard | 1.35× simulation speed or a stricter opponent/puzzle target; 1.25× score. |
-| Performance | Respect Lite, Standard, and Ultra budgets; preserve essential playfield feedback. |
-| Reduced motion | Remove decorative movement, shake, and nonessential flashes; preserve input and game-state motion. |
-| Audio and palette | Inherit global settings, allow per-game overrides, and keep objects legible in colour-blind palettes. |
+## Core rules
+
+- Frame 1–9: two balls. A strike moves to the next frame; a spare is converted from the leave.
+- Frame 10: up to three balls; a strike or spare earns the bonus delivery.
+- The ball can be curved by holding Left/Right while it rolls.
+- A gutter ball scores nothing for that delivery.
+- Spare Practice uses the same ten-frame card, but a fresh seven-pin leave is racked each frame.
+- Triple Header records each finished game and keeps 300-scale game scores before the mode multiplier.
+
+## Scoring
+
+Standard ten-pin scoring: a strike is 10 plus the next two balls, a spare is 10 plus the next ball, and an open frame is the pin count. The final score is the raw card multiplied by the mode multiplier and rounded:
+
+- Classic: raw card at 1×.
+- Blitz: raw card at 1.2×.
+- Spare Practice: each cleared leave is `7 + 30`, ten times, at 1.15×; a missed leave scores only the pins felled.
+- Triple Header: the two archived games plus the live card, at 1.25×.
+- Pro Oil: raw card at 1.6×.
+
+## Records and persistence
+
+Saved under `bowling`:
+
+- `bestScore`, `bestGame` (single-game card)
+- `plays`, `games`, `strikes`, `spares`, `gutters`, `pins`
+- `perfectGames`
+- `classicRuns`, `blitzRuns`, `sparesRuns`, `seriesRuns`, `masterRuns`
+- `secondsPlayed`, `lastResult`, `lastMode`
+
+`bestScore` is the page-wide dispatch score, so a Triple Header can hold it while `bestGame` still tracks the best single card.
 
 ## Cosmetics
 
-Plan 3 cosmetics across palette, board/craft/object skin, effects, and scene/theme slots as applicable to this game. Keep all interactive objects distinguishable and do not change game physics. Purchases use the shared Sparks registry, charge once, and persist ownership and equip state after reload.
+Sixteen registered cosmetics using the `bowl:` prefix:
+
+| Slot | Items |
+| --- | --- |
+| Skin (ball) | Cyan Ball, Ember Ball, Jade Ball, Mono Ball, Ruby Ball |
+| Palette (lane) | Classic Lane, Maple Lane, Ash Lane, Midnight Lane |
+| Effect (neon trim) | Cyan Trim, Amber Trim, Rose Trim, Lime Trim |
+| Theme (alley) | Night Alley, Neon Alley, Sunset Alley |
 
 ## Achievements
 
 | Achievement | Trigger | Rarity |
 | --- | --- | --- |
-| First Run | complete one session | Common |
-| Steady Hand | reach the first score milestone | Common |
-| Quick Clear | finish within the target time | Common |
-| Personal Best | set a new personal best | Rare |
-| Daily Player | complete a seeded daily run | Rare |
-
-Unlock each once under the host game id and send one achievement event and one toast. Score targets must respect the selected mode’s documented multiplier.
+| First Strike | roll a strike | Common |
+| Double | strike in two consecutive frames | Rare |
+| Turkey | strike in three consecutive frames | Epic |
+| Spare Artist | convert ten spares across runs | Rare |
+| Clean Sheet | finish a game with no open frames | Rare |
+| League Regular | complete five games | Common |
+| Century Club | score 200 in one game | Rare |
+| Perfect Game | roll twelve strikes in one game | Legendary |
+| Speed Demon | finish a Blitz game | Rare |
+| Spare Master | clear every Spare Practice leave | Epic |
+| Series Champ | finish a Triple Header | Epic |
+| Pro Oil | finish a Pro Oil game | Legendary |
 
 ## Tutorial and controls
 
-Use a short illustrated tutorial. Teach the primary objective, legal input, one recovery or strategy tip, and the end condition. Controls shown in the menu and during play: Left/Right positioning, Space/click 3 times to lock position, angle, and power.
-
-Support keyboard and touch. Board games must offer clear selected/active state and tap targets; action games must keep virtual controls away from hazards and the theatre launch controls. Shared menus must support gamepad focus and activation.
-
-## Current baseline and scope
-
-Canonical page: `38-bowling/index.html`. Current family: Arcade Core (Yes). Catalog description: “Ten frames of authentic bowling with strikes, spares, 10th-frame bonus balls, and 3-click meter timing (position, angle, power).” Controls: Left/Right positioning, Space/click 3 times to lock position, angle, and power. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+The tutorial teaches the three-click meter and the hook. Controls: Left/Right or the pointer to position the ball; Space, Enter or click three times to lock position, aim and power; hold Left/Right while rolling to curve. The scoreboard shows all ten frames, the running total and the current frame highlight.
 
 ## Menu Identity Card
 
-- **Archetype:** scoreboard.
-- **Mood:** Find your line and clear the lane.
-- **Palette:** `#080d15` background, `color-mix(in srgb, #fb7185 8%, rgba(15,22,35,.94))` panel, `#fb7185` accent, `color-mix(in srgb, #fb7185 76%, white)` button, `#10151e` button text, `#f6f7fb` body text.
+- **Archetype:** neon alley.
+- **Mood:** Pick your line, stop the meter clean and let the pins fall.
+- **Palette:** `#060811` background, `rgba(21,25,38,.94)` panel, `#f87171` accent, `#67e8f9` lane light, `#f6f7fb` body text.
 - **Type:** System UI title and body fonts.
-- **Frame and buttons:** Per-title `pins-frame` frame and `pins-banner` button identity, using the shared scoreboard treatment.
-- **Scene recipe:** Original procedural pins mark with an accent-lit background, restrained depth bands, and a static Lite/reduced-motion frame.
-- **Music and UI sounds:** Per-title procedural motif; shared tick, select, and back cues.
-- **Menu items:** Play, Options, About, Exit. No proposed modes or cosmetics are shown as available.
-- **Settings:** Shared audio, display, controls, accessibility, and difficulty options.
-- **Controls:** Drag or use the on-screen controls to set direction and power.
-- **Lite fallback:** Static pins composition with the title accent and scene silhouette.
+- **Frame and buttons:** Per-title `bowl-frame` frame and `bowl-banner` button identity.
+- **Scene recipe:** Lacquered lane, glowing gutters and a lit pin deck rendered procedurally; static in Lite and reduced-motion modes.
+- **Music and UI sounds:** Per-title procedural motif; shared tick, select, roll, pin hit and strike cues.
+- **Menu items:** Play, Modes, Customize, Options, More, Exit.
+- **Settings:** Shared audio, display, controls, accessibility and difficulty options.
+- **Controls:** Left/Right or pointer to position; Space/click three times; Left/Right to hook.
+- **Lite fallback:** Static alley composition with the lane, pin deck and title accent.

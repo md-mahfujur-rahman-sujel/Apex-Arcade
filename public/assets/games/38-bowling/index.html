@@ -8,9 +8,6 @@
 </head>
 <body>
 
-
-
-
 <script src="../../kits/perf-kit.js"></script>
 <script src="../../kits/save-kit.js"></script>
 <script src="../../kits/meta-config.js"></script>
@@ -20,20 +17,109 @@
 <script src="../../kits/ui-kit.js"></script>
 <script src="../../kits/fx-kit.js"></script>
 <script>
-/* Bowling — visual pass: neon-trimmed night alley, lacquered wood lane with moving sheen and light pool behind the pins,
+/* Bowling — neon-trimmed night alley, lacquered wood lane with moving sheen and light pool behind the pins,
    glossy rotating ball with smoke trail, shaded pins that spin and tumble, animated aim chevrons, glowing meters,
-   neon scoreboard and a strike/spare flash with confetti. Physics and scoring are unchanged. */
+   neon scoreboard and a strike/spare flash with confetti. Physics and scoring keep their original shape. */
 (function () {
-  const A = Arcade, W = 800, H = 480, LX0 = 490, LX1 = 670, CX = 580, BR = 11, PR = 8, BY = 425;
+  const A = Arcade, W = 800, H = 480, LX0 = 490, LX1 = 670, CX = 580, BR = 11, PR = 8, BY = 425, GAME_ID = 'bowling';
+  const MODE = {
+    classic: { mult: 1, clock: 0, hook: 1, guide: true, series: 1 },
+    blitz: { mult: 1.2, clock: 720, hook: 1, guide: true, series: 1 },
+    spares: { mult: 1.15, clock: 0, hook: 1, guide: true, series: 1 },
+    series: { mult: 1.25, clock: 0, hook: 1, guide: true, series: 3 },
+    master: { mult: 1.6, clock: 0, hook: 1.9, guide: false, series: 1 },
+  };
+  const ACHIEVEMENTS = [
+    { id: 'first-strike', name: 'First Strike', desc: 'Knock down a full rack with one ball.', rarity: 'common' },
+    { id: 'double', name: 'Double', desc: 'Throw two strikes in a row.', rarity: 'common' },
+    { id: 'turkey', name: 'Turkey', desc: 'Throw three strikes in a row.', rarity: 'rare' },
+    { id: 'spare-artist', name: 'Spare Artist', desc: 'Convert a spare in a standard game.', rarity: 'common' },
+    { id: 'clean-sheet', name: 'Clean Sheet', desc: 'Finish a game without an open frame.', rarity: 'epic' },
+    { id: 'league-regular', name: 'League Regular', desc: 'Score 150 in one session.', rarity: 'common' },
+    { id: 'century-club', name: 'Century Club', desc: 'Score 200 in one session.', rarity: 'rare' },
+    { id: 'perfect-game', name: 'Perfect Game', desc: 'Throw twelve strikes for 300.', rarity: 'legendary' },
+    { id: 'speed-demon', name: 'Speed Demon', desc: 'Finish a Speed Lanes session.', rarity: 'rare' },
+    { id: 'spare-master', name: 'Spare Master', desc: 'Clear eight leaves in Spare Practice.', rarity: 'epic' },
+    { id: 'series-champ', name: 'Series Champ', desc: 'Finish a Triple Header.', rarity: 'epic' },
+    { id: 'pro-oil', name: 'Pro Oil', desc: 'Finish a Pro Oil session.', rarity: 'legendary' },
+  ];
+
+  /* ---------- cosmetics ---------- */
+  const BALLS = {
+    'ball-cyan': { hi: '#a5f3fc', main: '#06b6d4', rim: '#0b3d52', glow: '34,211,238' },
+    'ball-ember': { hi: '#fed7aa', main: '#f97316', rim: '#431407', glow: '251,146,60' },
+    'ball-jade': { hi: '#bbf7d0', main: '#22c55e', rim: '#052e16', glow: '74,222,128' },
+    'ball-mono': { hi: '#f8fafc', main: '#94a3b8', rim: '#0f172a', glow: '148,163,184' },
+    'ball-ruby': { hi: '#fecdd3', main: '#e11d48', rim: '#4c0519', glow: '251,113,133' },
+  };
+  const LANES = {
+    'lane-classic': { wood: ['#b9843f', '#e4b878', '#b9843f'], grain: 'rgba(90,55,20,.32)', speck: 'rgba(90,55,20,.14)', sheen: 0.14 },
+    'lane-maple': { wood: ['#cfa163', '#f2d2a0', '#cfa163'], grain: 'rgba(110,70,25,.28)', speck: 'rgba(110,70,25,.13)', sheen: 0.16 },
+    'lane-ash': { wood: ['#8a8378', '#c9c1b3', '#8a8378'], grain: 'rgba(60,55,48,.3)', speck: 'rgba(60,55,48,.13)', sheen: 0.12 },
+    'lane-midnight': { wood: ['#2e4a63', '#4f7a99', '#2e4a63'], grain: 'rgba(10,25,40,.42)', speck: 'rgba(10,25,40,.2)', sheen: 0.2 },
+  };
+  const TRIMS = {
+    'trim-cyan': ['244,114,182', '34,211,238'],
+    'trim-amber': ['251,191,36', '251,113,133'],
+    'trim-rose': ['244,114,182', '251,113,133'],
+    'trim-lime': ['163,230,53', '34,211,238'],
+  };
+  const ALLEYS = {
+    'alley-night': { bg: ['#060811', '#0d1324', '#070914'], wall: '#0a0d17', lamp: 'rgba(255,230,170,.35)' },
+    'alley-neon': { bg: ['#0b0614', '#171033', '#08040f'], wall: '#120a24', lamp: 'rgba(232,160,255,.32)' },
+    'alley-sunset': { bg: ['#120a08', '#241226', '#0b0508'], wall: '#1a0d12', lamp: 'rgba(255,180,120,.4)' },
+  };
+  const look = { ball: BALLS['ball-cyan'], lane: 'lane-classic', trim: 'trim-cyan', theme: 'alley-night' };
+  const cosmeticKey = (id) => String(id || '').split(':').pop();
+  function applyCosmetic(slot, id) {
+    const key = cosmeticKey(id);
+    if (slot === 'skin' && BALLS[key]) look.ball = BALLS[key];
+    else if (slot === 'palette' && LANES[key]) look.lane = key;
+    else if (slot === 'effect' && TRIMS[key]) look.trim = key;
+    else if (slot === 'theme' && ALLEYS[key]) look.theme = key;
+  }
+
+  /* ---------- records ---------- */
+  function saved() { return (window.Save && Save.load(GAME_ID)) || {}; }
+  function stats() { const s = saved(); return s.stats || {}; }
+  function award(id, label) {
+    const s = saved(), earned = Array.isArray(s.achievements) ? s.achievements : [];
+    if (earned.includes(id) || !window.Save) return;
+    Save.update(GAME_ID, { achievements: [id] });
+    if (A.sfx) A.sfx('blip');
+    if (window.UI && UI.toast) UI.toast(label || id.replace(/-/g, ' '), { color: '#34d399' });
+  }
+
   let G, pins, ball, phase, px, ang, pow, rolls, frame, rif, timer, msg, msgT, steer, lockT, ptrX = null, inited = false, rollT;
   let rollTrail = [], flashB = 0, flashCol = '255,255,255';
+  let activeMode = 'classic', lastInitMode = '', guideOn = true, clockLeft = 0;
+  let gameNo = 0, seriesBase = 0, seriesScores = [], frameMarks = [];
+  let runStrikes = 0, runSpares = 0, runGutters = 0, runPins = 0, gameOpen = 0, gameFrames = 0, strikeChain = 0, maxChain = 0, runEnded = false;
+  let spareFrames = [], spareTotal = 0;
+  const mode = () => MODE[activeMode] || MODE.classic;
+  const guideVisible = () => mode().guide && guideOn;
+  const say = (t, f) => { msg = t; msgT = f || 150; };
   const standing = () => pins.filter((p) => !p.down).length;
-  function rack() {
-    pins = []; let n = 0;
-    for (let r = 0; r < 4; r++) for (let i = 0; i <= r; i++) { const x = CX + (i - r / 2) * 28, y = 130 - r * 24; pins.push({ n: ++n, x, y, hx: x, hy: y, vx: 0, vy: 0, down: false, gone: false, fade: 1, rot: 0 }); }
-  }
+
+  const RACK = [];
+  for (let r = 0; r < 4; r++) for (let i = 0; i <= r; i++) RACK.push({ x: CX + (i - r / 2) * 28, y: 130 - r * 24 });
+  const LEAVES = [
+    [1, 2, 3, 5, 6, 8, 9], [1, 3, 4, 6, 7, 9, 10], [2, 3, 5, 6, 8, 9, 10], [1, 2, 4, 5, 7, 8, 10],
+    [2, 4, 6, 8, 9, 10, 3], [1, 2, 3, 4, 7, 8, 10], [1, 3, 5, 7, 8, 9, 10], [2, 3, 4, 5, 6, 8, 9],
+    [1, 2, 5, 6, 8, 9, 10], [1, 3, 4, 6, 8, 9, 10],
+  ];
+  const mkPin = (n) => { const p = RACK[n - 1]; return { n, x: p.x, y: p.y, hx: p.x, hy: p.y, vx: 0, vy: 0, down: false, gone: false, fade: 1, rot: 0 }; };
+  function rack() { pins = RACK.map((p, i) => mkPin(i + 1)); }
+  function rackLeave() { pins = LEAVES[frame % LEAVES.length].map(mkPin); }
+
   function init(g) {
-    G = g; rack(); ball = null; phase = 'pos'; px = CX; ang = 0; pow = 0; rolls = []; frame = 0; rif = 0; timer = 0; msg = ''; msgT = 0; steer = 0; lockT = 0; rollT = 0; rollTrail = []; flashB = 0;
+    G = g; gameNo = 0; seriesBase = 0; seriesScores = []; frameMarks = [];
+    runStrikes = 0; runSpares = 0; runGutters = 0; runPins = 0; gameOpen = 0; gameFrames = 0; strikeChain = 0; maxChain = 0; runEnded = false;
+    spareFrames = []; spareTotal = 0;
+    rolls = []; frame = 0; rif = 0; ball = null; phase = 'pos'; px = CX; ang = 0; pow = 0; timer = 0; msg = ''; msgT = 0; steer = 0; lockT = 0; rollT = 0; rollTrail = []; flashB = 0;
+    clockLeft = mode().clock || 0;
+    if (activeMode === 'spares') rackLeave(); else rack();
+    lastInitMode = activeMode;
     if (!inited) { inited = true; bind(); }
   }
   const pt = (e) => { const r = G.canvas.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; };
@@ -46,6 +132,13 @@
     if (phase === 'pos') { phase = 'aim'; timer = 0; lockT = 8; A.sfx('select'); }
     else if (phase === 'aim') { phase = 'power'; timer = 0; lockT = 8; A.sfx('select'); }
     else if (phase === 'power') { throwBall(); }
+  }
+  function forceThrow() {
+    if (phase === 'pos') { ang = 0; pow = 0.55; }
+    else if (phase === 'aim') { pow = 0.55; }
+    else if (pow < 0.1) pow = 0.55;
+    say('Time — thrown!', 50);
+    throwBall();
   }
   function throwBall() {
     const sp = 5 + pow * 6.5; ball = { x: px, y: BY, vx: Math.sin(ang) * sp, vy: -Math.cos(ang) * sp, gutter: false, rot: 0 };
@@ -62,8 +155,8 @@
   }
   function physics() {
     if (ball && !ball.gone) {
-      if (!ball.gutter && (ball.x < LX0 - 2 || ball.x > LX1 + 2)) { ball.gutter = true; ball.x = ball.x < CX ? LX0 - 14 : LX1 + 14; ball.vx = 0; A.sfx('thud'); msg = 'Gutter ball'; msgT = 70; }
-      if (!ball.gutter) { const s = A.axisX(); steer = A.clamp(steer + s * 0.012, -0.45, 0.45); ball.vx += steer * 0.012 * (ball.y < 330 ? 1 : 0.4); ball.vx = A.clamp(ball.vx, -4, 4); }
+      if (!ball.gutter && (ball.x < LX0 - 2 || ball.x > LX1 + 2)) { ball.gutter = true; ball.x = ball.x < CX ? LX0 - 14 : LX1 + 14; ball.vx = 0; A.sfx('thud'); runGutters++; msg = 'Gutter ball'; msgT = 70; }
+      if (!ball.gutter) { const s = A.axisX(); steer = A.clamp(steer + s * 0.012 * mode().hook, -0.45, 0.45); ball.vx += steer * 0.012 * (ball.y < 330 ? 1 : 0.4) * mode().hook; ball.vx = A.clamp(ball.vx, -4, 4); }
       ball.x += ball.vx; ball.y += ball.vy; ball.r = BR; ball.rot = (ball.rot || 0) + Math.hypot(ball.vx, ball.vy) * 0.09;
       if (ball.y < 24) ball.gone = true;
     }
@@ -93,38 +186,129 @@
     return res;
   }
   function total() { let t = 0; for (const f of frames()) { if (f.pts == null) break; t += f.pts; } return t; }
-  function afterRoll() {
-    const k = pins.filter((p) => p.before).length - standing(); rolls.push(k); G.score = total(); if (G.score > G.hi) G.hi = G.score;
-    let reset = false, fin = false, text = k === 0 ? 'Miss' : k + ' pin' + (k > 1 ? 's' : '');
-    const stand = standing(), fresh = pins.every((p) => p.before) ;
-    if (frame < 9) {
-      if (rif === 0) { if (k === 10) { text = 'STRIKE!'; reset = true; frame++; rif = 0; } else rif = 1; }
-      else { if (stand === 0) text = 'SPARE!'; reset = true; frame++; rif = 0; }
-    } else {
-      const r = rolls.slice(rolls.length - (rif + 1));
-      if (rif === 0) { rif = 1; if (k === 10) { text = 'STRIKE!'; reset = true; } }
-      else if (rif === 1) { if (r[0] === 10) { rif = 2; if (k === 10) { text = 'STRIKE!'; reset = true; } } else if (r[0] + k === 10) { text = 'SPARE!'; reset = true; rif = 2; } else fin = true; }
-      else { fin = true; if (k === 10 || stand === 0) text = text; }
+  function rawScore() { return activeMode === 'spares' ? spareTotal : seriesBase + total(); }
+  function pushScore() {
+    G.score = Math.round(rawScore() * mode().mult);
+    if (G.score > G.hi) {
+      G.hi = G.score;
+      if (window.Save && Save.update) Save.update(GAME_ID, { stats: { bestScore: G.hi } });
     }
-    if (/STRIKE|SPARE/.test(text)) {
+  }
+
+  function afterRoll() {
+    const before = pins.filter((p) => p.before).length;
+    const k = Math.max(0, before - standing());
+    runPins += k;
+    let reset = false, fin = false, struck = false, spared = false;
+    let text = k === 0 ? 'Miss' : k + ' pin' + (k > 1 ? 's' : '');
+
+    if (activeMode === 'spares') {
+      const cleared = standing() === 0;
+      spareFrames.push({ k, of: before, cleared });
+      spareTotal += k + (cleared ? 30 : 0);
+      gameFrames++;
+      if (cleared) { runSpares++; text = 'CLEAN!'; award('spare-artist', 'Spare Artist'); }
+      else { gameOpen++; text = k + '/' + before; }
+      frame++; reset = frame < 10; fin = frame >= 10;
+    } else {
+      rolls.push(k);
+      if (frame < 9) {
+        if (rif === 0) {
+          if (k === 10) { text = 'STRIKE!'; struck = true; reset = true; frame++; gameFrames++; }
+          else rif = 1;
+        } else {
+          if (standing() === 0) { text = 'SPARE!'; spared = true; } else gameOpen++;
+          reset = true; frame++; rif = 0; gameFrames++;
+        }
+      } else {
+        const r = rolls.slice(rolls.length - (rif + 1));
+        if (rif === 0) {
+          rif = 1;
+          if (k === 10) { text = 'STRIKE!'; struck = true; reset = true; }
+        } else if (rif === 1) {
+          if (r[0] === 10) { rif = 2; if (k === 10) { text = 'STRIKE!'; struck = true; reset = true; } }
+          else if (r[0] + k === 10) { text = 'SPARE!'; spared = true; reset = true; rif = 2; }
+          else { fin = true; gameOpen++; }
+        } else { fin = true; if (k === 10) { text = 'STRIKE!'; struck = true; } else gameOpen++; }
+        if (fin) gameFrames++;
+      }
+    }
+    if (struck) {
+      runStrikes++; strikeChain++; if (strikeChain > maxChain) maxChain = strikeChain;
+      award('first-strike', 'First Strike');
+      if (strikeChain >= 2) award('double', 'Double');
+      if (strikeChain >= 3) award('turkey', 'Turkey');
+    } else {
+      strikeChain = 0;
+      if (spared) runSpares++;
+    }
+    if (/STRIKE|SPARE|CLEAN/.test(text)) {
       A.sfx('clear'); G.burst(CX, 150, 36, { color: ['#06b6d4', '#facc15', '#fff'], speed: 5, glow: true });
       G.burst(CX, 120, 40, { color: ['#22d3ee', '#fbbf24', '#f472b6', '#a3e635', '#fff'], speed: 6, shape: 's', size: 4, life: 60, grav: 0.1 });
       G.ring(CX, 120, /STRIKE/.test(text) ? '#fbbf24' : '#22d3ee', 120, 30);
       flashB = /STRIKE/.test(text) ? 1 : 0.6; flashCol = /STRIKE/.test(text) ? '251,191,36' : '34,211,238';
     }
-    msg = text; msgT = 90; phase = 'between'; timer = 0; G.shake(/STRIKE/.test(text) ? 5 : 0);
+    msg = text; msgT = 90; phase = 'between'; timer = 0; G.shake(/STRIKE|CLEAN/.test(text) ? 5 : 0);
     window.__bowlNext = { reset, fin };
+    pushScore();
+  }
+  function archiveGame() {
+    const t = total();
+    seriesScores.push(t); seriesBase += t; gameNo++;
+    rolls = []; frame = 0; rif = 0; frameMarks = []; gameOpen = 0; gameFrames = 0; strikeChain = 0;
+    rack(); ball = null; phase = 'pos'; ang = 0; pow = 0; px = A.clamp(px, LX0 + 14, LX1 - 14); clockLeft = mode().clock || 0;
+    say('Game ' + gameNo + ' down — ' + seriesBase + ' pins', 140);
+    pushScore();
   }
   function nextTurn() {
-    const n = window.__bowlNext; ball = null;
-    if (n.fin) { const t = total(); G.win('Game complete', 'Final score ' + t + (t >= 200 ? ' — fantastic!' : t >= 120 ? ' — nice game' : '')); return; }
-    if (n.reset) rack(); else pins = pins.filter((p) => !p.gone).map((p) => p).concat([]), pins.forEach((p) => { p.vx = p.vy = 0; if (p.down) p.gone = true; else { p.hx = p.x; p.hy = p.y; } });
-    phase = 'pos'; ang = 0; pow = 0; px = A.clamp(px, LX0 + 14, LX1 - 14);
+    const n = window.__bowlNext || {}; ball = null;
+    if (n.fin) {
+      if (mode().series > 1 && seriesScores.length < mode().series - 1) { archiveGame(); return; }
+      finishGame(); return;
+    }
+    if (activeMode === 'spares') rackLeave();
+    else if (n.reset) rack();
+    else pins = pins.filter((p) => !p.gone).map((p) => p), pins.forEach((p) => { p.vx = p.vy = 0; if (p.down) p.gone = true; else { p.hx = p.x; p.hy = p.y; } });
+    phase = 'pos'; ang = 0; pow = 0; px = A.clamp(px, LX0 + 14, LX1 - 14); clockLeft = mode().clock || 0;
   }
+  function recordGame() {
+    const st = stats();
+    const patch = {
+      games: (st.games || 0) + (activeMode === 'series' ? 3 : 1),
+      strikes: (st.strikes || 0) + runStrikes,
+      spares: (st.spares || 0) + runSpares,
+      gutters: (st.gutters || 0) + runGutters,
+      pins: (st.pins || 0) + runPins,
+      bestGame: Math.max(st.bestGame || 0, G.score),
+      perfectGames: (st.perfectGames || 0) + (activeMode === 'classic' && total() === 300 ? 1 : 0),
+    };
+    patch[activeMode + 'Runs'] = (st[activeMode + 'Runs'] || 0) + 1;
+    Save.update(GAME_ID, { stats: patch });
+  }
+  function finishGame() {
+    if (runEnded) return;
+    runEnded = true;
+    const t = total(), final = Math.round(rawScore() * mode().mult);
+    if (activeMode === 'classic' && t === 300) award('perfect-game', 'Perfect Game');
+    if (final >= 150) award('league-regular', 'League Regular');
+    if (final >= 200) award('century-club', 'Century Club');
+    if (activeMode === 'blitz') award('speed-demon', 'Speed Demon');
+    if (activeMode === 'series') award('series-champ', 'Series Champ');
+    if (activeMode === 'master') award('pro-oil', 'Pro Oil');
+    if (activeMode === 'spares' && spareFrames.filter((f) => f.cleared).length >= 8) award('spare-master', 'Spare Master');
+    if (activeMode !== 'spares' && gameFrames >= 10 && gameOpen === 0 && runGutters === 0) award('clean-sheet', 'Clean Sheet');
+    recordGame();
+    G.win('Game complete', 'Final score ' + final + (final >= 300 ? ' — perfect!' : final >= 200 ? ' — fantastic!' : final >= 150 ? ' — nice game' : ''));
+  }
+
   function update(g) {
     if (g.state !== 'playing' || g.t < 6) return; if (lockT > 0) lockT--; if (msgT > 0) msgT--; timer++;
     Fx.update(1); flashB = Math.max(0, flashB - 0.03);
     if (ball && !ball.gone && phase === 'roll') { rollTrail.push({ x: ball.x, y: ball.y }); if (rollTrail.length > 16) rollTrail.shift(); } else if (rollTrail.length) rollTrail.shift();
+    if ((phase === 'pos' || phase === 'aim' || phase === 'power') && mode().clock) {
+      clockLeft--;
+      if (clockLeft <= 0) { forceThrow(); return; }
+    }
     if (phase === 'pos') { const s = A.axisX(); px = A.clamp(px + s * 3.2, LX0 + 14, LX1 - 14); if (A.hit('Space', 'Enter')) action(); }
     else if (phase === 'aim') { ang = Math.sin(timer * 0.055) * 0.32; if (A.hit('Space', 'Enter')) action(); }
     else if (phase === 'power') { pow = (1 - Math.cos(timer * 0.075)) / 2; if (A.hit('Space', 'Enter')) action(); }
@@ -134,17 +318,20 @@
 
   /* ---------- baked art ---------- */
   function alleySprite() {
-    return Fx.bake('bw-alley', W, H, (c) => {
-      c.fillStyle = A.vgrad(c, 0, H, ['#060811', '#0d1324', '#070914']); c.fillRect(0, 0, W, H);
+    const room = ALLEYS[look.theme] || ALLEYS['alley-night'];
+    const lane = LANES[look.lane] || LANES['lane-classic'];
+    const trim = TRIMS[look.trim] || TRIMS['trim-cyan'];
+    return Fx.bake('bw-alley-' + look.theme + '-' + look.lane + '-' + look.trim, W, H, (c) => {
+      c.fillStyle = A.vgrad(c, 0, H, room.bg); c.fillRect(0, 0, W, H);
       // neon trim down both sides of the lane
-      for (const [x, col] of [[LX0 - 34, '244,114,182'], [LX1 + 34, '34,211,238']]) {
+      for (const [x, col] of [[LX0 - 34, trim[0]], [LX1 + 34, trim[1]]]) {
         const g = c.createLinearGradient(x - 18, 0, x + 18, 0); g.addColorStop(0, 'rgba(' + col + ',0)'); g.addColorStop(0.5, 'rgba(' + col + ',.5)'); g.addColorStop(1, 'rgba(' + col + ',0)');
         c.fillStyle = g; c.fillRect(x - 18, 50, 36, H - 50);
         c.fillStyle = 'rgb(' + col + ')'; c.fillRect(x - 1, 50, 2, H - 50);
       }
       // back wall with soft pin-deck light
-      c.fillStyle = '#0a0d17'; c.fillRect(LX0 - 40, 0, LX1 - LX0 + 80, 50);
-      const bg = c.createRadialGradient(CX, 60, 6, CX, 60, 150); bg.addColorStop(0, 'rgba(255,230,170,.35)'); bg.addColorStop(1, 'rgba(255,230,170,0)');
+      c.fillStyle = room.wall; c.fillRect(LX0 - 40, 0, LX1 - LX0 + 80, 50);
+      const bg = c.createRadialGradient(CX, 60, 6, CX, 60, 150); bg.addColorStop(0, room.lamp); bg.addColorStop(1, 'rgba(255,230,170,0)');
       c.fillStyle = bg; c.fillRect(LX0 - 40, 0, LX1 - LX0 + 80, 200);
       // gutters with depth
       for (const gx of [LX0 - 28, LX1]) {
@@ -152,11 +339,11 @@
         g.addColorStop(0, dark[0]); g.addColorStop(1, dark[1]); c.fillStyle = g; c.fillRect(gx, 50, 28, H - 50);
       }
       // lane wood
-      const lg = c.createLinearGradient(LX0, 0, LX1, 0); lg.addColorStop(0, '#b9843f'); lg.addColorStop(0.5, '#e4b878'); lg.addColorStop(1, '#b9843f'); c.fillStyle = lg; c.fillRect(LX0, 50, LX1 - LX0, H - 50);
-      c.strokeStyle = 'rgba(90,55,20,.32)'; c.lineWidth = 1; for (let x = LX0 + 9; x < LX1; x += 9) { c.beginPath(); c.moveTo(x, 50); c.lineTo(x, H); c.stroke(); }
-      for (let i = 0; i < 160; i++) { const x = LX0 + A.hash(i, 5) * (LX1 - LX0), y = 50 + A.hash(i, 6) * (H - 50); c.fillStyle = 'rgba(90,55,20,.14)'; c.fillRect(x, y, 1, 7 + A.hash(i, 7) * 12); }
+      const lg = c.createLinearGradient(LX0, 0, LX1, 0); lg.addColorStop(0, lane.wood[0]); lg.addColorStop(0.5, lane.wood[1]); lg.addColorStop(1, lane.wood[2]); c.fillStyle = lg; c.fillRect(LX0, 50, LX1 - LX0, H - 50);
+      c.strokeStyle = lane.grain; c.lineWidth = 1; for (let x = LX0 + 9; x < LX1; x += 9) { c.beginPath(); c.moveTo(x, 50); c.lineTo(x, H); c.stroke(); }
+      for (let i = 0; i < 160; i++) { const x = LX0 + A.hash(i, 5) * (LX1 - LX0), y = 50 + A.hash(i, 6) * (H - 50); c.fillStyle = lane.speck; c.fillRect(x, y, 1, 7 + A.hash(i, 7) * 12); }
       // lacquer sheen down the middle
-      const sg = c.createLinearGradient(LX0, 0, LX1, 0); sg.addColorStop(0, 'rgba(255,255,255,0)'); sg.addColorStop(0.42, 'rgba(255,255,255,.14)'); sg.addColorStop(0.5, 'rgba(255,255,255,.04)'); sg.addColorStop(1, 'rgba(255,255,255,0)');
+      const sg = c.createLinearGradient(LX0, 0, LX1, 0); sg.addColorStop(0, 'rgba(255,255,255,0)'); sg.addColorStop(0.42, 'rgba(255,255,255,' + lane.sheen + ')'); sg.addColorStop(0.5, 'rgba(255,255,255,.04)'); sg.addColorStop(1, 'rgba(255,255,255,0)');
       c.fillStyle = sg; c.fillRect(LX0, 50, LX1 - LX0, H - 50);
       // pin deck shading and spot markers
       const pd = c.createLinearGradient(0, 50, 0, 170); pd.addColorStop(0, 'rgba(60,35,10,.4)'); pd.addColorStop(1, 'rgba(60,35,10,0)'); c.fillStyle = pd; c.fillRect(LX0, 50, LX1 - LX0, 120);
@@ -182,7 +369,6 @@
   function drawPin(c, p) {
     if (p.gone) return;
     if (p.down) {
-      // knocked pin: lying capsule, spinning as it tumbles
       c.save(); c.translate(p.x, p.y); c.rotate(p.rot); c.globalAlpha = 0.85;
       A.shadow(c, 2, 3, PR * 1.5, PR * 0.6, 0.25);
       const g = c.createLinearGradient(0, -PR, 0, PR); g.addColorStop(0, '#fff'); g.addColorStop(1, '#94a3b8');
@@ -194,33 +380,38 @@
     const size = (PR + 5) * 2; c.drawImage(pinSprite(), p.x - size / 2, p.y - size / 2, size, size);
   }
   function ballDraw(c, x, y, rot) {
+    const b = look.ball;
     A.shadow(c, x + 3, y + 6, BR, BR * 0.45, 0.35);
-    Fx.glow(c, x, y, 26, 'rgba(34,211,238,.2)');
-    const g = c.createRadialGradient(x - 4, y - 5, 1, x, y, BR); g.addColorStop(0, '#a5f3fc'); g.addColorStop(0.4, '#06b6d4'); g.addColorStop(1, '#0b3d52');
+    Fx.glow(c, x, y, 26, 'rgba(' + b.glow + ',.2)');
+    const g = c.createRadialGradient(x - 4, y - 5, 1, x, y, BR); g.addColorStop(0, b.hi); g.addColorStop(0.4, b.main); g.addColorStop(1, b.rim);
     c.fillStyle = g; c.beginPath(); c.arc(x, y, BR, 0, A.TAU); c.fill();
     c.save(); c.translate(x, y); c.rotate(rot || 0); c.fillStyle = '#03141c';
     for (const [dx, dy] of [[-3, -2.5], [1.5, -4], [-1, 0.5]]) { c.beginPath(); c.arc(dx, dy, 1.5, 0, A.TAU); c.fill(); }
     c.restore();
     c.fillStyle = 'rgba(255,255,255,.55)'; c.beginPath(); c.ellipse(x - 3.6, y - 4.5, 3, 1.8, -0.7, 0, A.TAU); c.fill();
   }
+  function frameBox(c, x, y, isCur, t, still) {
+    const pg = c.createLinearGradient(x, y, x, y + 84); pg.addColorStop(0, 'rgba(26,32,52,.96)'); pg.addColorStop(1, 'rgba(14,18,32,.96)');
+    c.fillStyle = pg; A.roundRect(c, x, y, 76, 84, 8); c.fill();
+    c.save(); if (isCur) { c.shadowColor = '#22d3ee'; c.shadowBlur = 8 + (still ? 0 : 5 * Math.sin(t * 0.1)); }
+    c.strokeStyle = isCur ? '#22d3ee' : 'rgba(255,255,255,.12)'; c.lineWidth = isCur ? 2 : 1; A.roundRect(c, x, y, 76, 84, 8); c.stroke(); c.restore();
+    c.fillStyle = 'rgba(255,255,255,.04)'; c.fillRect(x + 6, y + 24, 64, 1);
+  }
   function draw(g, c) {
     const t = g.clock, still = Fx.reducedMotion('bowling');
     c.drawImage(alleySprite(), 0, 0, W, H);
-    // moving sheen that follows the ball (lane reflections)
     const sy = ball && !ball.gone ? ball.y : (phase === 'pos' || phase === 'aim' || phase === 'power') ? BY : 200;
     c.save(); c.globalCompositeOperation = 'lighter';
     const sg = c.createRadialGradient(ball ? ball.x : px, sy, 4, ball ? ball.x : px, sy, 90); sg.addColorStop(0, 'rgba(255,255,255,.11)'); sg.addColorStop(1, 'rgba(255,255,255,0)');
     c.beginPath(); c.rect(LX0, 50, LX1 - LX0, H - 50); c.clip(); c.fillStyle = sg; c.fillRect(LX0, sy - 90, LX1 - LX0, 180);
     c.restore();
     for (const p of pins) drawPin(c, p);
-    // ball smoke trail
-    if (rollTrail.length) { c.save(); c.globalCompositeOperation = 'lighter'; c.lineCap = 'round'; for (let i = 1; i < rollTrail.length; i++) { const k = i / rollTrail.length; c.strokeStyle = 'rgba(103,232,249,' + (k * 0.28).toFixed(2) + ')'; c.lineWidth = BR * 1.8 * k; c.beginPath(); c.moveTo(rollTrail[i - 1].x, rollTrail[i - 1].y); c.lineTo(rollTrail[i].x, rollTrail[i].y); c.stroke(); } c.restore(); }
+    if (rollTrail.length) { c.save(); c.globalCompositeOperation = 'lighter'; c.lineCap = 'round'; for (let i = 1; i < rollTrail.length; i++) { const k = i / rollTrail.length; c.strokeStyle = 'rgba(' + look.ball.glow + ',' + (k * 0.28).toFixed(2) + ')'; c.lineWidth = BR * 1.8 * k; c.beginPath(); c.moveTo(rollTrail[i - 1].x, rollTrail[i - 1].y); c.lineTo(rollTrail[i].x, rollTrail[i].y); c.stroke(); } c.restore(); }
     if (phase === 'pos' || phase === 'aim' || phase === 'power') {
-      const bx = px, by = BY;
-      if (phase !== 'pos') {
-        // animated chevrons along the aim line
+      const bx = px, by = BY, trim = (TRIMS[look.trim] || TRIMS['trim-cyan'])[1];
+      if (phase !== 'pos' && guideVisible()) {
         c.save(); c.strokeStyle = 'rgba(255,255,255,.7)'; c.lineWidth = 2; c.setLineDash([6, 6]); c.lineDashOffset = still ? 0 : -t * 0.7; c.beginPath(); c.moveTo(bx, by); c.lineTo(bx + Math.sin(ang) * 260, by - Math.cos(ang) * 260); c.stroke(); c.setLineDash([]); c.restore();
-        for (let i = 1; i <= 4; i++) { const d = 40 + i * 48 + (still ? 0 : (t * 0.8) % 48) - 48, a = Math.max(0, 1 - d / 260); if (d < 20 || d > 260) continue; const cxp = bx + Math.sin(ang) * d, cyp = by - Math.cos(ang) * d; c.save(); c.translate(cxp, cyp); c.rotate(ang); c.strokeStyle = 'rgba(165,243,252,' + (a * 0.8).toFixed(2) + ')'; c.lineWidth = 2; c.beginPath(); c.moveTo(-6, 4); c.lineTo(0, -3); c.lineTo(6, 4); c.stroke(); c.restore(); }
+        for (let i = 1; i <= 4; i++) { const d = 40 + i * 48 + (still ? 0 : (t * 0.8) % 48) - 48, a = Math.max(0, 1 - d / 260); if (d < 20 || d > 260) continue; const cxp = bx + Math.sin(ang) * d, cyp = by - Math.cos(ang) * d; c.save(); c.translate(cxp, cyp); c.rotate(ang); c.strokeStyle = 'rgba(' + trim + ',' + (a * 0.8).toFixed(2) + ')'; c.lineWidth = 2; c.beginPath(); c.moveTo(-6, 4); c.lineTo(0, -3); c.lineTo(6, 4); c.stroke(); c.restore(); }
       }
       ballDraw(c, bx, by, 0);
     } else if (ball && !ball.gone) ballDraw(c, ball.x, ball.y, ball.rot);
@@ -228,44 +419,143 @@
     Fx.bloom(c, W, H, 0.4);
     Fx.vignette(c, W, H, 0.34);
     g.drawFX(c);
-    /* meters */
     const meter = (x, y, w, label, v, lo) => {
       c.fillStyle = 'rgba(0,0,0,.55)'; A.roundRect(c, x, y, w, 14, 7); c.fill(); c.strokeStyle = 'rgba(255,255,255,.12)'; c.lineWidth = 1; A.roundRect(c, x, y, w, 14, 7); c.stroke();
       const col = lo ? '#22d3ee' : A.mix('#22c55e', '#ef4444', v);
       c.save(); c.shadowColor = col; c.shadowBlur = 10; c.fillStyle = col; const fw = lo ? 8 : Math.max(6, w * v); A.roundRect(c, lo ? x + (w - 8) * v : x, y, fw, 14, 7); c.fill(); c.restore();
       A.text(c, label, x, y - 6, 12, '#8b93b3', 'left', '700');
     };
-    if (phase === 'pos') A.text(c, '← → or mouse: position   ·   Space / click: lock', 20, 300, 14, '#e6e9f5', 'left', '700');
+    const setup = phase === 'pos' || phase === 'aim' || phase === 'power';
+    if (mode().clock && setup) {
+      const pct = Math.max(0, clockLeft / mode().clock), col = pct > 0.35 ? '#22d3ee' : '#f87171';
+      c.fillStyle = 'rgba(0,0,0,.55)'; A.roundRect(c, 20, 292, 320, 10, 5); c.fill();
+      c.save(); c.shadowColor = col; c.shadowBlur = 8; c.fillStyle = col; A.roundRect(c, 20, 292, Math.max(4, 320 * pct), 10, 5); c.fill(); c.restore();
+      A.text(c, 'SHOT CLOCK ' + Math.max(0, Math.ceil(clockLeft / 60)) + 's', 20, 288, 12, pct > 0.35 ? '#67e8f9' : '#f87171', 'left', '700');
+    }
+    if (phase === 'pos') A.text(c, '← → or mouse: position   ·   Space / click: lock', 20, 322, 14, '#e6e9f5', 'left', '700');
     if (phase === 'aim') { meter(20, 330, 320, 'ANGLE — press Space / click to lock', (ang / 0.32 + 1) / 2, true); }
     if (phase === 'power') { meter(20, 330, 320, 'POWER — press Space / click to throw', pow, false); A.text(c, 'Hold ← → while rolling to curve the ball', 20, 372, 13, '#8b93b3', 'left', '600'); }
-    if (phase === 'roll') A.text(c, 'Hold ← / → to hook the ball', 20, 300, 14, '#67e8f9', 'left', '700');
+    if (phase === 'roll') A.text(c, mode().hook > 1.2 ? 'Heavy oil — hold ← / → to fight the hook' : 'Hold ← / → to hook the ball', 20, 322, 14, '#67e8f9', 'left', '700');
     /* neon scoreboard */
-    const fr = frames(); let run = 0;
-    for (let f = 0; f < 10; f++) {
-      const x = 20 + (f % 5) * 82, y = 54 + Math.floor(f / 5) * 94, isCur = f === frame && g.state === 'playing';
-      const pg = c.createLinearGradient(x, y, x, y + 84); pg.addColorStop(0, 'rgba(26,32,52,.96)'); pg.addColorStop(1, 'rgba(14,18,32,.96)');
-      c.fillStyle = pg; A.roundRect(c, x, y, 76, 84, 8); c.fill();
-      c.save(); if (isCur) { c.shadowColor = '#22d3ee'; c.shadowBlur = 8 + (still ? 0 : 5 * Math.sin(t * 0.1)); }
-      c.strokeStyle = isCur ? '#22d3ee' : 'rgba(255,255,255,.12)'; c.lineWidth = isCur ? 2 : 1; A.roundRect(c, x, y, 76, 84, 8); c.stroke(); c.restore();
-      c.fillStyle = 'rgba(255,255,255,.04)'; c.fillRect(x + 6, y + 24, 64, 1);
-      A.text(c, String(f + 1), x + 6, y + 15, 11, '#8b93b3', 'left', '700');
-      const e = fr[f];
-      if (e) e.m.forEach((m, k) => {
-        const hot = m === 'X' || m === '/', mx = x + 76 - 8 - (e.m.length - 1 - k) * 18;
-        if (hot) A.glowText(c, m, mx, y + 18, 15, '#fbbf24', 'right', 8); else A.text(c, m, mx, y + 18, 15, '#e6e9f5', 'right', '800', A.MONO);
-      });
-      if (e && e.pts != null) { run += e.pts; A.text(c, String(run), x + 38, y + 62, 24, '#e6e9f5', 'center', '800', A.MONO); }
+    if (activeMode === 'spares') {
+      let run = 0;
+      for (let f = 0; f < 10; f++) {
+        const x = 20 + (f % 5) * 82, y = 54 + Math.floor(f / 5) * 94, isCur = f === frame && g.state === 'playing';
+        frameBox(c, x, y, isCur, t, still);
+        A.text(c, String(f + 1), x + 6, y + 15, 11, '#8b93b3', 'left', '700');
+        const e = spareFrames[f];
+        if (e) {
+          run += e.k + (e.cleared ? 30 : 0);
+          A.text(c, e.k + '/' + e.of, x + 70, y + 38, 20, e.cleared ? '#fbbf24' : '#e6e9f5', 'right', '800', A.MONO);
+          A.text(c, e.cleared ? 'CLEAR' : '—', x + 70, y + 56, 11, e.cleared ? '#34d399' : '#64748b', 'right', '700');
+          A.text(c, String(run), x + 38, y + 76, 18, '#e6e9f5', 'center', '800', A.MONO);
+        }
+      }
+      A.text(c, 'SPARE PRACTICE · LEAVE ' + Math.min(frame + 1, 10), 20, 256, 14, '#c8cde4', 'left', '700');
+    } else {
+      const fr = frames(); let run = seriesBase;
+      for (let f = 0; f < 10; f++) {
+        const x = 20 + (f % 5) * 82, y = 54 + Math.floor(f / 5) * 94, isCur = f === frame && g.state === 'playing';
+        frameBox(c, x, y, isCur, t, still);
+        A.text(c, String(f + 1), x + 6, y + 15, 11, '#8b93b3', 'left', '700');
+        const e = fr[f];
+        if (e) e.m.forEach((m, k) => {
+          const hot = m === 'X' || m === '/', mx = x + 76 - 8 - (e.m.length - 1 - k) * 18;
+          if (hot) A.glowText(c, m, mx, y + 18, 15, '#fbbf24', 'right', 8); else A.text(c, m, mx, y + 18, 15, '#e6e9f5', 'right', '800', A.MONO);
+        });
+        if (e && e.pts != null) { run += e.pts; A.text(c, String(run), x + 38, y + 62, 24, '#e6e9f5', 'center', '800', A.MONO); }
+      }
+      A.text(c, 'FRAME ' + Math.min(frame + 1, 10) + ' · ROLL ' + (rif + 1) + (mode().series > 1 ? ' · GAME ' + Math.min(gameNo + 1, mode().series) + '/' + mode().series : ''), 20, 256, 14, '#c8cde4', 'left', '700');
     }
-    A.text(c, 'FRAME ' + Math.min(frame + 1, 10) + ' · ROLL ' + (rif + 1), 20, 256, 14, '#c8cde4', 'left', '700');
     A.text(c, 'TOTAL ' + g.score, 20, 280, 18, '#fbbf24', 'left', '800', A.MONO);
     if (msgT > 0) {
-      const k = Math.max(0, Math.min(1, (90 - msgT) / 12)), e = 1 - Math.pow(1 - k, 3), big = /STRIKE|SPARE/.test(msg);
+      const k = Math.max(0, Math.min(1, (90 - msgT) / 12)), e = 1 - Math.pow(1 - k, 3), big = /STRIKE|SPARE|CLEAN/.test(msg);
       c.save(); c.globalAlpha = Math.min(1, msgT / 20); c.translate(CX, 300); c.scale(big ? 0.5 + 0.5 * e : 1, big ? 0.5 + 0.5 * e : 1);
       A.glowText(c, msg, 0, 0, 34, big ? '#fbbf24' : '#e6e9f5', 'center'); c.restore();
     }
   }
-  Arcade.game({ id: 'bowling', title: 'Bowling', subtitle: 'Ten frames. Aim, add spin and knock down all ten pins.', w: W, h: H, color: '#f87171', hud: false,
+  const game = Arcade.game({ id: GAME_ID, title: 'Bowling', subtitle: 'Ten frames. Aim, add spin and knock down all ten pins.', w: W, h: H, color: '#f87171', hud: false,
     controls: [['← / → or mouse', 'position the ball'], ['Space / click', 'lock position, angle, then power'], ['← / → while rolling', 'curve the ball'], ['Goal', 'strikes and spares score bonus points']], init, update, draw });
+
+  game.ui = UI.mountGame(game, {
+    id: GAME_ID, title: 'Bowling', subtitle: 'Neon lanes, a curling ball, and ten frames of nerves.', accent: '#f87171',
+    modes: [
+      { id: 'classic', name: 'League Night', blurb: 'A standard ten-frame game.', seasonTargets: [120, 180, 240] },
+      { id: 'blitz', name: 'Speed Lanes', blurb: 'A twelve-second clock per delivery — timeouts auto-throw. 1.2× score.', seasonTargets: [150, 220, 290] },
+      { id: 'spares', name: 'Spare Practice', blurb: 'Ten awkward leaves, one ball each. Clear a leave for +30. 1.15× score.', seasonTargets: [150, 230, 310] },
+      { id: 'series', name: 'Triple Header', blurb: 'Three full games back to back — total pins decide it. 1.25× score.', seasonTargets: [400, 520, 640] },
+      { id: 'master', name: 'Pro Oil', blurb: 'A heavy hook and no aim guide. 1.6× score.', lockedHint: 'Score 150 in one session to unlock', requires: { stat: 'bestGame', gte: 150 }, seasonTargets: [260, 360, 470] },
+    ],
+    settings: [
+      { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
+      { key: 'aimGuide', label: 'Aim guide', type: 'toggle', default: true },
+    ],
+    achievements: ACHIEVEMENTS,
+    tutorial: { type: 'interactive', steps: [
+      { text: 'Move with ← → or the mouse, then press Space or click to lock the ball position.' },
+      { text: 'Stop the angle meter where you want the ball to start, then time the power meter.' },
+      { text: 'Hold ← or → while the ball rolls to hook it into the pocket.' },
+      { text: 'Strikes and spares score bonus pins — Speed Lanes adds a shot clock, Spare Practice gives you a single ball per leave.' },
+    ] },
+    chapter: 'NEON LANES', levels: [{}, {}, {}],
+    hooks: {
+      applyMode: (next) => {
+        const key = MODE[next] ? next : 'classic';
+        if (key === 'master' && !(Number(stats().bestGame) >= 150)) {
+          UI.toast('Score 150 in one session to unlock Pro Oil', { color: '#f87171' });
+          return false;
+        }
+        activeMode = key;
+        if (game && lastInitMode !== activeMode) game.restart(false);
+        return true;
+      },
+      applySetting: (key, value) => {
+        if (key === 'aimGuide') guideOn = value !== false;
+        if (key === 'difficulty' && (value === 'easy' || value === 'normal' || value === 'hard')) {
+          A.difficulty = value;
+          A.speedMult = value === 'easy' ? 0.8 : value === 'hard' ? 1.35 : 1;
+        }
+      },
+      applyCosmetic,
+    },
+  });
+
+  if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+    window.BowlingTest = {
+      state() {
+        return {
+          mode: activeMode, state: G.state, score: G.score, hi: G.hi, phase, frame, rif, rolls: rolls.slice(),
+          gameNo, seriesBase, series: seriesScores.slice(), strikes: runStrikes, spares: runSpares, gutters: runGutters,
+          open: gameOpen, frames: gameFrames, pins: runPins, chain: strikeChain, maxChain, standing: standing(), onLane: pins.length,
+          clock: clockLeft, raw: rawScore(), marks: frameMarks.slice(), spareFrames: spareFrames.map((f) => ({ k: f.k, of: f.of, cleared: f.cleared })),
+          guide: mode().guide && guideOn, hook: mode().hook, msg,
+        };
+      },
+      modes() { return ['classic', 'blitz', 'spares', 'series', 'master']; },
+      setMode(id) { return game.ui.setMode(id); },
+      getMode() { return activeMode; },
+      restart(auto) { game.restart(auto === true); },
+      begin() { if (G.state === 'ready') game.begin(); },
+      roll(n) {
+        const avail = pins.filter((p) => !p.down && !p.gone).length;
+        const count = Math.max(0, Math.min(avail, n == null ? 10 : n | 0));
+        pins.forEach((p) => { p.before = !p.down && !p.gone; });
+        let c = 0;
+        for (const p of pins) if (!p.down && !p.gone && c < count) { p.down = true; p.gone = true; c++; }
+        afterRoll();
+        if (phase === 'between' && G.state === 'playing') nextTurn();
+        return this.state();
+      },
+      tick(n) { const count = n == null ? 1 : Math.max(1, n | 0); for (let i = 0; i < count; i++) { G.t++; update(G); } return this.state(); },
+      setClock(n) { clockLeft = Math.max(0, Number(n) || 0); },
+      finish() { finishGame(); return this.state(); },
+      cosmetic(slot, id) { applyCosmetic(slot, id); },
+      colors() { return { ball: look.ball.main, lane: look.lane, trim: look.trim, theme: look.theme }; },
+      cosmeticList() { return window.Meta && typeof Meta.getCosmetics === 'function' ? Meta.getCosmetics(GAME_ID) : []; },
+      stats() { return saved(); },
+      modalOpen() { return G.state === 'won' || G.state === 'over'; },
+    };
+  }
 })();
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>

@@ -2,66 +2,101 @@
 
 ## Pitch
 
-Rapid-fire arithmetic against the countdown: solve addition, subtraction, multiplication, and division to keep your streak alive. Keep the source game’s recognizable rhythm and make each run readable, quick to restart, and rewarding to master.
+Short sums at arcade pace. Every correct answer builds a combo and the combo builds a multiplier; every ten correct answers in a row buys two more seconds on the clock. Five presets change the clock, the target and the question pool: Classic mixes four operations in sixty seconds, Sprint halves the clock, Marathon stretches to two minutes with two-step problems, Accuracy asks for twenty-four sums at your own pace, and Master fires forty-five seconds of elite prompts. Target-clears, per-mode bests and a 2,500-point milestone give every preset a chase.
 
 ## Art direction
 
-Preserve the current artwork, silhouettes, animation, and sound on the canonical page. Use the game’s existing #60A5FA accent as a guide for new menu and reward states. Keep gameplay objects distinct from the background; never rely on colour alone for hazards or legal moves. Lite and reduced-motion settings must reduce effects without removing gameplay feedback.
+A dark study panel with a large equation card at the top and a nine-key pad below. Keys carry the selected `md:keys-*` skin; the panel and accent come from the `md:panel-*` and `md:accent-*` families. Correct answers flash the accent and pop the score; wrong answers flash red and shake the equation. Master removes decorative motion in Lite and reduced-motion modes while keeping the equation, keypad and HUD.
 
 ## Modes and match structure
 
-1. **Classic:** preserve the canonical rules and scoring.
-2. **Daily challenge:** a deterministic seeded puzzle or short target run with a saved local best.
+| Mode | Length | Target | Multiplier | Clear bonus | Question pool |
+| --- | --- | --- | --- | --- | --- |
+| Classic | 60 s | 600 | 1× | 1,000 | `+`, `−`, `×`, missing operand |
+| Sprint | 30 s | 350 | 1.15× | 800 | `+`, `−`, `×` |
+| Marathon | 120 s | 1,200 | 1.3× | 1,500 | all six, including division and two-step |
+| Accuracy | 24 sums | 500 | 1.2× | 1,200 | all six, no clock |
+| Master | 45 s | 900 | 1.5× | 2,000 | elite prompts |
 
-A mode change must reset only the state named by that mode. Pause and resume preserve the complete in-progress state. Daily seeds use the local date and produce the same starting state for every retry that day.
+1. **Classic:** the standard sixty-second board and unlock gate.
+2. **Sprint:** half the clock and a lower target, but faster scoring.
+3. **Marathon:** two full minutes and the widest question pool.
+4. **Accuracy:** twenty-four sums with no timer; misses still break the combo.
+5. **Master:** locked until Classic clears (`bestClassicScore ≥ 600`).
 
-## Settings and difficulty
+A mode change starts a fresh run. Pause freezes the clock and the current question; resume restores both.
 
-| Setting | Behavior |
-| --- | --- |
-| Easy | 0.8× simulation speed or a wider timing/mistake allowance; 1.0× score. |
-| Normal | Preserve the source page’s baseline rules at 1.0× speed and score. |
-| Hard | 1.35× simulation speed or a stricter opponent/puzzle target; 1.25× score. |
-| Performance | Respect Lite, Standard, and Ultra budgets; preserve essential playfield feedback. |
-| Reduced motion | Remove decorative movement, shake, and nonessential flashes; preserve input and game-state motion. |
-| Audio and palette | Inherit global settings, allow per-game overrides, and keep objects legible in colour-blind palettes. |
+## Core rules
+
+- A sum locks in as soon as the typed answer is complete; Enter submits a partial answer and counts it wrong if incomplete.
+- Correct: +1 combo, score award, next question. Every five combo steps raise the multiplier, capped at ×5.
+- Every tenth consecutive correct answer in a timed mode adds two seconds.
+- Wrong: combo resets to zero. Timed modes lose three seconds; Accuracy loses nothing but the combo.
+- A run ends when the clock reaches zero (timed) or the twenty-four-sum quota is filled (Accuracy).
+- Hint reveals the answer for 1.2 seconds and costs 50 points; it is unavailable below 50 points.
+
+## Scoring
+
+Each correct answer is `10 × multiplier + 5` when answered in under two seconds. The multiplier is `min(5, 1 + floor((combo − 1) / 5))`, so combo 1–5 is ×1, 6–10 is ×2, and so on.
+
+The final score is `round((base + clear bonus) × mode multiplier)` when the mode target is reached, otherwise `round(base × mode multiplier)`. A clear also requires the full quota in Accuracy. Records keep the final score and the best combo, plus a best Accuracy time when that quota run clears.
+
+## Records and persistence
+
+Saved under `maths-dash` through `Save` / `GameUI.record`:
+
+- `bestClassicScore`, `bestSprintScore`, `bestMarathonScore`, `bestAccuracyScore`, `bestMasterScore`
+- `bestScore`, `bestCombo`, `bestAccuracy`, `bestAccuracyTime`
+- `sumsAnswered`, `correctAnswers`, `wrongAnswers`, `wins`, `plays`, `secondsPlayed`
+- `classicWins`, `sprintWins`, `marathonWins`, `accuracyWins`, `masterWins`
+- `lastResult`, `lastMode`
+
+Time records use the minimum merge, so an instant test clear cannot erase a real best.
 
 ## Cosmetics
 
-Plan 3 cosmetics across palette, board/craft/object skin, effects, and scene/theme slots as applicable to this game. Keep all interactive objects distinguishable and do not change game physics. Purchases use the shared Sparks registry, charge once, and persist ownership and equip state after reload.
+Sixteen registered cosmetics using the `md:` prefix:
+
+| Slot | Items |
+| --- | --- |
+| Skin (keypad) | Ember Keys, Cyan Keys, Ruby Keys, Violet Keys, Mono Keys |
+| Palette (panel) | Night Panel, Slate Panel, Forest Panel, Plum Panel |
+| Effect (accent glow) | Ember Glow, Cyan Glow, Rose Glow, Lime Glow |
+| Theme (background) | Night Study, Dusk Study, Sea Study |
 
 ## Achievements
 
 | Achievement | Trigger | Rarity |
 | --- | --- | --- |
-| First Run | complete one session | Common |
-| Steady Hand | reach the first score milestone | Common |
-| Quick Clear | finish within the target time | Common |
-| Personal Best | set a new personal best | Rare |
-| Daily Player | complete a seeded daily run | Rare |
+| First Sum | answer one sum correctly | Common |
+| On A Roll | reach a combo of 10 | Rare |
+| Unstoppable | reach a combo of 20 | Epic |
+| Flawless Figure | clear a run at 100% accuracy with at least ten answers | Epic |
+| Quick Thinker | clear a run averaging under three seconds per correct answer | Rare |
+| Minute Mind | clear Classic | Common |
+| Dash And Done | clear Sprint | Common |
+| Long Haul | clear Marathon | Rare |
+| Steady Hand | clear Accuracy | Rare |
+| Number Master | clear Master | Legendary |
+| High Roller | finish a run with 2,500+ points | Rare |
+| Personal Best | set a new best score | Rare |
 
-Unlock each once under the host game id and send one achievement event and one toast. Score targets must respect the selected mode’s documented multiplier.
+Unlock each once under `maths-dash`; a single toast accompanies the first unlock.
 
 ## Tutorial and controls
 
-Use a short illustrated tutorial. Teach the primary objective, legal input, one recovery or strategy tip, and the end condition. Controls shown in the menu and during play: Type answer and press Enter, or tap the on-screen keypad.
-
-Support keyboard and touch. Board games must offer clear selected/active state and tap targets; action games must keep virtual controls away from hazards and the theatre launch controls. Shared menus must support gamepad focus and activation.
-
-## Current baseline and scope
-
-Canonical page: `36-maths-dash/index.html`. Current family: Board Kit (No). Catalog description: “Rapid-fire arithmetic against the countdown: solve addition, subtraction, multiplication, and division to keep your streak alive.” Controls: Type answer and press Enter, or tap the on-screen keypad. This bible is a rollout proposal; it does not claim the proposed modes, tier features, cosmetics, or achievements are already shipped. Before implementation, retain the existing game rules and inspect this page’s full source for its exact save id, events, and input behavior.
+The menu tutorial teaches the complete-the-answer input, the combo multiplier, the hint cost and the per-mode targets. Controls: type digits on the keyboard, Backspace to correct, Enter to submit; or tap the on-screen keypad, including the backspace and submit keys. The HUD shows time or sums remaining, score and combo with the live multiplier.
 
 ## Menu Identity Card
 
 - **Archetype:** paper.
 - **Mood:** Solve the prompt before the clock reaches zero.
-- **Palette:** `#080d15` background, `color-mix(in srgb, #f97316 8%, rgba(15,22,35,.94))` panel, `#f97316` accent, `color-mix(in srgb, #f97316 76%, white)` button, `#10151e` button text, `#f6f7fb` body text.
+- **Palette:** `#080d15` background, `color-mix(in srgb, #60a5fa 8%, rgba(15,22,35,.94))` panel, `#60a5fa` accent, `color-mix(in srgb, #60a5fa 76%, white)` button, `#10151e` button text, `#f6f7fb` body text.
 - **Type:** System UI title and body fonts.
-- **Frame and buttons:** Per-title `equation-frame` frame and `equation-banner` button identity, using the shared paper treatment.
+- **Frame and buttons:** Per-title `equation-frame` frame and `equation-banner` button identity.
 - **Scene recipe:** Original procedural equation mark with an accent-lit background, restrained depth bands, and a static Lite/reduced-motion frame.
-- **Music and UI sounds:** Per-title procedural motif; shared tick, select, and back cues.
-- **Menu items:** Play, Options, About, Exit. No proposed modes or cosmetics are shown as available.
-- **Settings:** Shared audio, display, controls, accessibility, and difficulty options.
-- **Controls:** Use number keys and Enter, or tap the answer buttons.
+- **Music and UI sounds:** Per-title procedural motif; shared tick, select, step and error cues.
+- **Menu items:** Play, Modes, Customize, Options, More, Exit.
+- **Settings:** Shared audio, display, controls, accessibility and difficulty options.
+- **Controls:** Type digits and Enter, or tap the keypad.
 - **Lite fallback:** Static equation composition with the title accent and scene silhouette.

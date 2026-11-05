@@ -1,14 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mini Golf</title>
 <script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
 </head>
 <body>
-
 <script src="../../kits/perf-kit.js"></script>
 <script src="../../kits/save-kit.js"></script>
 <script src="../../kits/meta-config.js"></script>
@@ -18,7 +16,7 @@
 <script src="../../kits/ui-kit.js"></script>
 <script>
 (function () {
-  const A = Arcade, W = 800, H = 480, BR = 7, HR = 12, MAXV = 11.5, WALL = 4;
+  const A = Arcade, W = 800, H = 480, BR = 7, HR = 12, MAXV = 11.5, WALL = 4, GAME_ID = 'minigolf';
   const rect = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
   const HOLES = [
     { par: 2, tee: [160, 240], hole: [640, 240], poly: rect(100, 180, 600, 120), name: 'Warm-up' },
@@ -31,15 +29,91 @@
     { par: 4, tee: [150, 160], hole: [640, 390], poly: rect(100, 100, 600, 340), walls: [[100, 230, 560, 230], [240, 330, 700, 330]], name: 'The Zigzag' },
     { par: 4, tee: [150, 270], hole: [650, 270], poly: rect(100, 100, 600, 340), mill: { cx: 400, cy: 270, len: 170, spd: 0.04 }, bumpers: [[260, 170, 20], [540, 370, 20], [260, 370, 20], [540, 170, 20]], name: 'Grand Finale' },
   ];
-  let G, h, segs, ball, last, strokes, state, drag = null, ptr = { x: 0, y: 0 }, aimA, kp, wasChg, sinkT, between, msg, msgT, totalS, totalPar, hitCd = 0, inited = false, held0 = false;
+  const MODE = {
+    classic: { mult: 1, holes: 9, clock: 0, wind: 0, cup: HR, guide: true, pickupAt: 8 },
+    sprint: { mult: 1.2, holes: 5, clock: 5400, wind: 0, cup: HR, guide: true, pickupAt: 8 },
+    windy: { mult: 1.3, holes: 9, clock: 0, wind: 0.05, cup: HR, guide: true, pickupAt: 8 },
+    tight: { mult: 1.4, holes: 9, clock: 0, wind: 0, cup: 8, guide: true, pickupAt: 6 },
+    master: { mult: 1.6, holes: 9, clock: 0, wind: -0.045, cup: 8, guide: false, pickupAt: 6 },
+  };
+  const ACHIEVEMENTS = [
+    { id: 'first-hole', name: 'Tee Time', desc: 'Sink your first hole.', rarity: 'common' },
+    { id: 'ace', name: 'Hole In One', desc: 'Sink a hole in a single stroke.', rarity: 'common' },
+    { id: 'ace-pair', name: 'Double Ace', desc: 'Sink two holes in one during a round.', rarity: 'epic' },
+    { id: 'eagle', name: 'Eagle Eye', desc: 'Finish a hole two strokes under par.', rarity: 'rare' },
+    { id: 'birdie', name: 'Under Par', desc: 'Finish a hole one stroke under par.', rarity: 'common' },
+    { id: 'steady', name: 'Steady Hand', desc: 'Play three holes in a row at par or better.', rarity: 'rare' },
+    { id: 'red-numbers', name: 'Red Numbers', desc: 'Finish a nine-hole round under par.', rarity: 'epic' },
+    { id: 'clean-card', name: 'Clean Card', desc: 'Finish nine holes without picking up.', rarity: 'rare' },
+    { id: 'sprint-clear', name: 'Quick Round', desc: 'Finish Speed Golf before the clock runs out.', rarity: 'rare' },
+    { id: 'windy-clear', name: 'Wind Player', desc: 'Finish Windy Links.', rarity: 'epic' },
+    { id: 'tight-clear', name: 'Threading It', desc: 'Finish Tight Cup.', rarity: 'epic' },
+    { id: 'master-clear', name: 'Club Champion', desc: 'Finish Championship.', rarity: 'legendary' },
+  ];
+
+  /* ---------- cosmetics ---------- */
+  const BALLS = {
+    'ball-classic': { hi: '#ffffff', main: '#f8fafc', shade: 'rgba(0,0,0,.18)' },
+    'ball-lime': { hi: '#e9ffb0', main: '#a3e635', shade: 'rgba(40,60,0,.22)' },
+    'ball-ice': { hi: '#e0f7ff', main: '#67e8f9', shade: 'rgba(0,40,60,.2)' },
+    'ball-sunset': { hi: '#ffe0c2', main: '#fb923c', shade: 'rgba(90,30,0,.22)' },
+    'ball-gold': { hi: '#fff3bf', main: '#d97706', shade: 'rgba(80,45,0,.24)' },
+  };
+  const GRASS = {
+    'grass-emerald': ['#22a55f', '#168247'],
+    'grass-links': ['#5aa63f', '#2f6b2a'],
+    'grass-autumn': ['#b08a3e', '#7a5a24'],
+    'grass-night': ['#1f5c46', '#0f3a2c'],
+  };
+  const AIMS = { 'aim-white': '255,255,255', 'aim-cyan': '103,232,249', 'aim-amber': '251,191,36', 'aim-lime': '163,230,53' };
+  const SKIES = {
+    'sky-dusk': ['#0f1a2e', '#08111f'],
+    'sky-night': ['#04060e', '#010207'],
+    'sky-sunset': ['#2c1530', '#120818'],
+  };
+  const look = { ball: BALLS['ball-classic'], grass: 'grass-emerald', aim: 'aim-white', sky: 'sky-dusk' };
+  const cosmeticKey = (id) => String(id || '').split(':').pop();
+  function applyCosmetic(slot, id) {
+    const key = cosmeticKey(id);
+    if (slot === 'skin' && BALLS[key]) look.ball = BALLS[key];
+    else if (slot === 'palette' && GRASS[key]) look.grass = key;
+    else if (slot === 'effect' && AIMS[key]) look.aim = key;
+    else if (slot === 'theme' && SKIES[key]) look.sky = key;
+  }
+
+  /* ---------- records ---------- */
+  function saved() { return (window.Save && Save.load(GAME_ID)) || {}; }
+  function stats() { const s = saved(); return s.stats || {}; }
+  function award(id, label) {
+    const s = saved(), earned = Array.isArray(s.achievements) ? s.achievements : [];
+    if (earned.includes(id) || !window.Save) return;
+    Save.update(GAME_ID, { achievements: [id] });
+    if (A.sfx) A.sfx('blip');
+    if (window.UI && UI.toast) UI.toast(label || id.replace(/-/g, ' '), { color: '#34d399' });
+  }
+
+  let h, segs, ball, last, strokes, state, drag = null, ptr = { x: 0, y: 0 }, aimA, kp = 0, wasChg = false, sinkT = 0, between = 0, msg = '', msgT = 0, totalS = 0, totalPar = 0, hitCd = 0, inited = false;
+  let activeMode = 'classic', lastInitMode = '', guideOn = true, timeLeft = 0, runEnded = false;
+  let roundAces = 0, roundBirdies = 0, roundEagles = 0, roundPars = 0, roundPickups = 0, underParStreak = 0, holesPlayed = 0;
+  const mode = () => MODE[activeMode] || MODE.classic;
+  const holes = () => HOLES.slice(0, mode().holes);
   const hole = () => HOLES[h];
+  const cup = () => mode().cup;
+  const guideVisible = () => mode().guide && guideOn;
+
   function load(i) {
     h = i; const H0 = hole(); segs = [];
     H0.poly.forEach((p, k) => { const q = H0.poly[(k + 1) % H0.poly.length]; segs.push([p[0], p[1], q[0], q[1]]); }); (H0.walls || []).forEach((w) => segs.push(w));
     ball = { x: H0.tee[0], y: H0.tee[1], vx: 0, vy: 0, s: 1 }; last = { x: ball.x, y: ball.y }; strokes = 0; state = 'aim'; aimA = Math.atan2(H0.hole[1] - ball.y, H0.hole[0] - ball.x); kp = 0; wasChg = false; sinkT = 0; drag = null;
     msg = 'Hole ' + (i + 1) + ' — ' + H0.name + ' · Par ' + H0.par; msgT = 120;
   }
-  function init(g) { G = g; totalS = 0; totalPar = 0; between = 0; load(0); if (!inited) { inited = true; bind(); } }
+  function init(g) {
+    G = g; totalS = 0; totalPar = 0; between = 0; timeLeft = mode().clock; runEnded = false;
+    roundAces = 0; roundBirdies = 0; roundEagles = 0; roundPars = 0; roundPickups = 0; underParStreak = 0; holesPlayed = 0;
+    g.scoreMultiplier = mode().mult;
+    load(0); lastInitMode = activeMode;
+    if (!inited) { inited = true; bind(); }
+  }
   const pt = (e) => { const r = G.canvas.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; };
   function bind() {
     G.canvas.addEventListener('pointermove', (e) => { ptr = pt(e); });
@@ -68,7 +142,7 @@
   }
   function slideY(s) { return s.y + Math.sin(G.t * s.spd + s.ph) * s.amp; }
   function physics() {
-    const H0 = hole();
+    const H0 = hole(), CR = cup();
     for (let k = 0; k < 3; k++) {
       ball.x += ball.vx / 3; ball.y += ball.vy / 3;
       for (const s of segs) hitSeg(s[0], s[1], s[2], s[3], WALL, null);
@@ -80,22 +154,80 @@
       }
     }
     const sand = (H0.sand || []).some(inR), f = sand ? 0.935 : 0.988; ball.vx *= f; ball.vy *= f;
+    ball.vx += mode().wind;
     const sp = Math.hypot(ball.vx, ball.vy); if (sp < 0.07) { ball.vx = ball.vy = 0; }
     if ((H0.water || []).some(inR)) { A.sfx('hurt'); G.burst(ball.x, ball.y, 16, { color: ['#60a5fa', '#fff'], speed: 3, grav: 0.1 }); ball.x = last.x; ball.y = last.y; ball.vx = ball.vy = 0; strokes++; msg = 'Splash! +1 stroke'; msgT = 80; state = 'aim'; return; }
     const d = Math.hypot(ball.x - H0.hole[0], ball.y - H0.hole[1]);
-    if (d < HR - 3 && sp < 6.5) { state = 'sink'; sinkT = 0; ball.vx = ball.vy = 0; A.sfx('coin'); return; }
-    if (d < HR + 6 && sp < 3 && sp > 0) { ball.vx += (H0.hole[0] - ball.x) * 0.012; ball.vy += (H0.hole[1] - ball.y) * 0.012; }
-    if (ball.vx === 0 && ball.vy === 0) { state = 'aim'; aimA = Math.atan2(H0.hole[1] - ball.y, H0.hole[0] - ball.x); if (strokes >= 8) finishHole(true); }
+    if (d < CR - 3 && sp < 6.5) { state = 'sink'; sinkT = 0; ball.vx = ball.vy = 0; A.sfx('coin'); return; }
+    if (d < CR + 6 && sp < 3 && sp > 0) { ball.vx += (H0.hole[0] - ball.x) * 0.012; ball.vy += (H0.hole[1] - ball.y) * 0.012; }
+    if (ball.vx === 0 && ball.vy === 0) { state = 'aim'; aimA = Math.atan2(H0.hole[1] - ball.y, H0.hole[0] - ball.x); if (strokes >= mode().pickupAt) finishHole(true); }
   }
   function finishHole(pickup) {
-    const par = hole().par, s = pickup ? 8 : strokes, d = s - par; let name, pts;
-    if (!pickup && s === 1) { name = 'HOLE IN ONE!'; pts = 80; } else { name = pickup ? 'Pick up (8 strokes)' : d <= -2 ? 'Eagle!' : d === -1 ? 'Birdie!' : d === 0 ? 'Par' : d === 1 ? 'Bogey' : 'Double bogey+'; pts = pickup ? 0 : Math.max(0, (par + 3 - s) * 10); }
+    const par = hole().par, s = pickup ? mode().pickupAt : strokes, d = s - par; let name, pts;
+    if (!pickup && s === 1) { name = 'HOLE IN ONE!'; pts = 80; } else { name = pickup ? 'Pick up (' + mode().pickupAt + ' strokes)' : d <= -2 ? 'Eagle!' : d === -1 ? 'Birdie!' : d === 0 ? 'Par' : d === 1 ? 'Bogey' : 'Double bogey+'; pts = pickup ? 0 : Math.max(0, (par + 3 - s) * 10); }
+    holesPlayed++;
+    if (pickup) roundPickups++;
+    else {
+      if (s === 1) roundAces++;
+      else if (d <= -2) roundEagles++;
+      else if (d === -1) roundBirdies++;
+      else if (d === 0) roundPars++;
+      underParStreak = d <= 0 ? underParStreak + 1 : 0;
+    }
     totalS += s; totalPar += par; G.addScore(pts); msg = name + (pts ? '  +' + pts : ''); msgT = 110; between = 100; state = 'between';
     if (!pickup) { A.sfx(d <= 0 ? 'win' : 'coin'); G.burst(hole().hole[0], hole().hole[1], 26, { color: ['#fbbf24', '#fff', '#22c55e'], speed: 4, glow: true }); }
+    award('first-hole', 'Tee Time');
+    if (!pickup && s === 1) award('ace', 'Hole In One');
+    if (roundAces >= 2) award('ace-pair', 'Double Ace');
+    if (!pickup && d <= -2 && s > 1) award('eagle', 'Eagle Eye');
+    if (!pickup && d === -1 && s > 1) award('birdie', 'Under Par');
+    if (underParStreak >= 3) award('steady', 'Steady Hand');
+  }
+  function recordRound() {
+    const st0 = stats(), patch = {
+      rounds: (st0.rounds || 0) + 1,
+      holes: (st0.holes || 0) + holesPlayed,
+      strokes: (st0.strokes || 0) + totalS,
+      aces: (st0.aces || 0) + roundAces,
+      birdies: (st0.birdies || 0) + roundBirdies,
+      eagles: (st0.eagles || 0) + roundEagles,
+      pars: (st0.pars || 0) + roundPars,
+      pickups: (st0.pickups || 0) + roundPickups,
+      bestRound: Math.max(st0.bestRound || 0, G.score),
+    };
+    const toPar = totalS - totalPar;
+    if (holes().length === 9) {
+      patch.bestToPar = Math.min(typeof st0.bestToPar === 'number' ? st0.bestToPar : 99, toPar);
+      patch.bestStrokes = Math.min(st0.bestStrokes || 999, totalS);
+    }
+    if (activeMode === 'classic') patch.classicBest = Math.max(st0.classicBest || 0, G.score);
+    patch[activeMode + 'Rounds'] = (st0[activeMode + 'Rounds'] || 0) + 1;
+    Save.update(GAME_ID, { stats: patch });
+  }
+  function finishRound(timedOut) {
+    if (runEnded) return;
+    runEnded = true;
+    const toPar = totalS - totalPar;
+    recordRound();
+    if (!timedOut && holes().length === 9) {
+      if (toPar < 0) award('red-numbers', 'Red Numbers');
+      if (roundPickups === 0) award('clean-card', 'Clean Card');
+    }
+    if (!timedOut) {
+      if (activeMode === 'sprint') award('sprint-clear', 'Quick Round');
+      if (activeMode === 'windy') award('windy-clear', 'Wind Player');
+      if (activeMode === 'tight') award('tight-clear', 'Threading It');
+      if (activeMode === 'master') award('master-clear', 'Club Champion');
+    }
+    const time = timedOut ? 'Time!' : 'Course complete!';
+    const sub = timedOut ? 'The clock ran out after ' + holesPlayed + ' hole' + (holesPlayed === 1 ? '' : 's') : totalS + ' strokes (' + (toPar === 0 ? 'level par' : (toPar > 0 ? '+' : '') + toPar + ' vs par') + ')';
+    G.win(time, sub);
   }
   function update(g) {
     if (g.state !== 'playing') return; if (hitCd > 0) hitCd--; if (msgT > 0) msgT--;
-    g.hudL = 'HOLE ' + (h + 1) + '/9 · PAR ' + hole().par; g.hudR = 'STROKES ' + strokes;
+    if (mode().clock) { timeLeft--; if (timeLeft <= 0) { finishRound(true); return; } }
+    g.hudL = 'HOLE ' + (h + 1) + '/' + holes().length + ' · PAR ' + hole().par;
+    g.hudR = (mode().clock ? 'TIME ' + Math.max(0, Math.ceil(timeLeft / 60)) + ' · ' : '') + 'STROKES ' + strokes;
     if (state === 'aim') {
       const s = A.axisX(); aimA += s * 0.03;
       const chg = A.held('Space'); if (chg) kp = Math.min(1, kp + 0.014); else if (wasChg && kp > 0.08) { putt(aimA, kp); kp = 0; } else kp = 0; wasChg = chg;
@@ -103,21 +235,29 @@
     else if (state === 'sink') {
       sinkT++; const H0 = hole(); ball.x += (H0.hole[0] - ball.x) * 0.25; ball.y += (H0.hole[1] - ball.y) * 0.25; ball.s = Math.max(0, 1 - sinkT / 18); if (sinkT >= 20) finishHole(false);
     } else if (state === 'between') {
-      if (--between <= 0) { if (h >= HOLES.length - 1) { const dd = totalS - totalPar; state = 'done'; g.win('Course complete!', totalS + ' strokes (' + (dd === 0 ? 'level par' : (dd > 0 ? '+' : '') + dd + ' vs par') + ')'); } else load(h + 1); }
+      if (--between <= 0) { if (h >= holes().length - 1) finishRound(false); else load(h + 1); }
     }
   }
-  function drawBall(c) { if (ball.s <= 0) return; A.shadow(c, ball.x + 2, ball.y + 3, BR * ball.s, BR * 0.5 * ball.s, 0.3); c.fillStyle = '#f8fafc'; c.beginPath(); c.arc(ball.x, ball.y, BR * ball.s, 0, A.TAU); c.fill(); c.fillStyle = 'rgba(0,0,0,.18)'; c.beginPath(); c.arc(ball.x + 1.5, ball.y + 1.5, BR * ball.s * 0.6, 0, A.TAU); c.fill(); }
+  function drawBall(c) {
+    if (ball.s <= 0) return;
+    const b = look.ball;
+    A.shadow(c, ball.x + 2, ball.y + 3, BR * ball.s, BR * 0.5 * ball.s, 0.3);
+    c.fillStyle = b.main; c.beginPath(); c.arc(ball.x, ball.y, BR * ball.s, 0, A.TAU); c.fill();
+    c.fillStyle = b.hi; c.beginPath(); c.arc(ball.x - 2, ball.y - 2, BR * ball.s * 0.55, 0, A.TAU); c.fill();
+    c.fillStyle = b.shade; c.beginPath(); c.arc(ball.x + 1.5, ball.y + 1.5, BR * ball.s * 0.6, 0, A.TAU); c.fill();
+  }
   function draw(g, c) {
-    A.sky(c, W, H, ['#0f1a2e', '#08111f']);
-    const H0 = hole();
+    const H0 = hole(), CR = cup(), aim = AIMS[look.aim] || AIMS['aim-white'];
+    A.sky(c, W, H, SKIES[look.sky] || SKIES['sky-dusk']);
     c.beginPath(); H0.poly.forEach((p, i) => (i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1]))); c.closePath();
-    const gr = c.createLinearGradient(0, 80, 0, 440); gr.addColorStop(0, '#22a55f'); gr.addColorStop(1, '#168247'); c.fillStyle = gr; c.fill();
+    const grass = GRASS[look.grass] || GRASS['grass-emerald'];
+    const gr = c.createLinearGradient(0, 80, 0, 440); gr.addColorStop(0, grass[0]); gr.addColorStop(1, grass[1]); c.fillStyle = gr; c.fill();
     c.save(); c.clip(); c.strokeStyle = 'rgba(255,255,255,.045)'; c.lineWidth = 12; for (let x = 60; x < 780; x += 24) { c.beginPath(); c.moveTo(x, 60); c.lineTo(x, 460); c.stroke(); }
     for (const s of H0.sand || []) { c.fillStyle = '#e8d48a'; c.fillRect(s[0], s[1], s[2], s[3]); c.fillStyle = 'rgba(160,120,40,.35)'; for (let i = 0; i < 40; i++) c.fillRect(s[0] + A.hash(i, h) * s[2], s[1] + A.hash(h, i) * s[3], 2, 2); }
     for (const s of H0.water || []) { c.fillStyle = '#2563eb'; c.fillRect(s[0], s[1], s[2], s[3]); c.strokeStyle = 'rgba(255,255,255,.35)'; c.lineWidth = 2; for (let y = s[1] + 12; y < s[1] + s[3]; y += 18) { c.beginPath(); for (let x = 0; x <= s[2]; x += 8) c.lineTo(s[0] + x, y + Math.sin((x + g.t * 2) * 0.12) * 3); c.stroke(); } }
     c.restore();
     c.fillStyle = 'rgba(255,255,255,.35)'; c.beginPath(); c.arc(H0.tee[0], H0.tee[1], 9, 0, A.TAU); c.fill();
-    c.fillStyle = '#05070b'; c.beginPath(); c.arc(H0.hole[0], H0.hole[1], HR, 0, A.TAU); c.fill(); c.strokeStyle = 'rgba(255,255,255,.4)'; c.lineWidth = 2; c.stroke();
+    c.fillStyle = '#05070b'; c.beginPath(); c.arc(H0.hole[0], H0.hole[1], CR, 0, A.TAU); c.fill(); c.strokeStyle = 'rgba(255,255,255,.4)'; c.lineWidth = 2; c.stroke();
     c.lineCap = 'round'; c.strokeStyle = '#8b5a2b'; c.lineWidth = WALL * 2 + 2; c.lineJoin = 'round';
     for (const s of segs) { c.beginPath(); c.moveTo(s[0], s[1]); c.lineTo(s[2], s[3]); c.stroke(); }
     c.strokeStyle = '#c08a4a'; c.lineWidth = 2; for (const s of segs) { c.beginPath(); c.moveTo(s[0], s[1] - 2); c.lineTo(s[2], s[3] - 2); c.stroke(); }
@@ -129,20 +269,91 @@
     c.strokeStyle = '#e5e7eb'; c.lineWidth = 2; c.beginPath(); c.moveTo(H0.hole[0], H0.hole[1]); c.lineTo(H0.hole[0], H0.hole[1] - 38); c.stroke(); c.fillStyle = '#ef4444'; c.beginPath(); c.moveTo(H0.hole[0], H0.hole[1] - 38); c.lineTo(H0.hole[0] + 18, H0.hole[1] - 31 + Math.sin(g.t * 0.1) * 1.5); c.lineTo(H0.hole[0], H0.hole[1] - 24); c.fill();
     drawBall(c);
     if (state === 'aim') {
-      let a = aimA, p = kp > 0 ? kp : 0.5, show = true;
+      let a = aimA, p = kp > 0 ? kp : 0.5, show = guideVisible();
       if (drag) { const dx = drag.x - ptr.x, dy = drag.y - ptr.y, len = Math.hypot(dx, dy); if (len > 6) { a = Math.atan2(dy, dx); p = Math.min(1, len / 150); } else show = false; }
       if (show) {
-        const L = 24 + p * 130; c.setLineDash([6, 6]); c.strokeStyle = 'rgba(255,255,255,.85)'; c.lineWidth = 2.5; c.beginPath(); c.moveTo(ball.x, ball.y); c.lineTo(ball.x + Math.cos(a) * L, ball.y + Math.sin(a) * L); c.stroke(); c.setLineDash([]);
+        const L = 24 + p * 130; c.setLineDash([6, 6]); c.strokeStyle = 'rgba(' + aim + ',.85)'; c.lineWidth = 2.5; c.beginPath(); c.moveTo(ball.x, ball.y); c.lineTo(ball.x + Math.cos(a) * L, ball.y + Math.sin(a) * L); c.stroke(); c.setLineDash([]);
         c.fillStyle = 'rgba(0,0,0,.5)'; A.roundRect(c, ball.x - 30, ball.y + 18, 60, 8, 4); c.fill(); c.fillStyle = A.mix('#22c55e', '#ef4444', p); A.roundRect(c, ball.x - 30, ball.y + 18, 60 * Math.max(0.05, p), 8, 4); c.fill();
       }
     }
     g.drawFX(c);
+    if (mode().wind) A.text(c, mode().wind > 0 ? 'WIND →' : 'WIND ←', 14, 74, 13, '#67e8f9', 'left', '800');
     if (msgT > 0) { c.save(); c.globalAlpha = Math.min(1, msgT / 20); const big = /HOLE IN|Eagle|Birdie|Par|Bogey|Pick|Splash/.test(msg); A.glowText(c, msg, 400, big ? 70 : 62, big ? 28 : 22, '#fbbf24', 'center'); c.restore(); }
     A.text(c, 'Total ' + totalS + ' strokes (par ' + totalPar + ')', 14, 466, 12, '#8b93b3', 'left', '700');
     if (g.t < 500 && state === 'aim') A.text(c, 'Drag back from anywhere and release — or ← → to aim, hold Space to charge', 400, 466, 13, 'rgba(255,255,255,.75)', 'center', '700');
   }
-  Arcade.game({ id: 'minigolf', title: 'Mini Golf', subtitle: 'Nine holes. Fewest strokes wins — par scores the most points.', w: W, h: H, color: '#84cc16',
+  const game = Arcade.game({ id: GAME_ID, title: 'Mini Golf', subtitle: 'Nine holes. Fewest strokes wins — par scores the most points.', w: W, h: H, color: '#84cc16',
     controls: [['Drag back & release', 'putt (longer pull = harder)'], ['← / →', 'aim'], ['Hold Space, release', 'charge and putt'], ['Hazards', 'water costs a stroke · sand slows the ball']], init, update, draw });
+
+  game.ui = UI.mountGame(game, {
+    id: GAME_ID, title: 'Mini Golf', subtitle: 'Nine holes, one club, and a cup that is smaller than it looks.', accent: '#84cc16',
+    modes: [
+      { id: 'classic', name: 'Classic Round', blurb: 'Nine holes. Fewest strokes takes the card.', seasonTargets: [250, 380, 500] },
+      { id: 'sprint', name: 'Speed Golf', blurb: 'Five holes against a 90-second clock. 1.2× score.', seasonTargets: [120, 160, 190] },
+      { id: 'windy', name: 'Windy Links', blurb: 'A crosswind bends every putt. 1.3× score.', seasonTargets: [250, 340, 400] },
+      { id: 'tight', name: 'Tight Cup', blurb: 'A smaller cup and six strokes to pick up. 1.4× score.', seasonTargets: [280, 360, 430] },
+      { id: 'master', name: 'Championship', blurb: 'Tight cups, crosswind, and no aim guide. 1.6× score.', lockedHint: 'Score 200 in Classic Round to unlock', requires: { stat: 'classicBest', gte: 200 }, seasonTargets: [300, 390, 460] },
+    ],
+    settings: [
+      { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
+      { key: 'trajectory', label: 'Aim guide', type: 'toggle', default: true },
+    ],
+    achievements: ACHIEVEMENTS,
+    tutorial: { type: 'interactive', steps: [
+      { text: 'Drag back from the ball and release to putt — longer pulls hit harder.' },
+      { text: 'Or use ← / → to aim, then hold Space and release to charge the putt.' },
+      { text: 'Water adds a stroke and sends you back; sand drags on the ball.' },
+      { text: 'Speed Golf runs on a clock and Championship hides the aim guide — finish under par to climb the card.' },
+    ] },
+    chapter: 'PUTTING GREENS', levels: [{}, {}, {}],
+    hooks: {
+      applyMode: (next) => {
+        const key = MODE[next] ? next : 'classic';
+        if (key === 'master' && !(Number(stats().classicBest) >= 200)) {
+          UI.toast('Score 200 in Classic Round to unlock Championship', { color: '#84cc16' });
+          return false;
+        }
+        activeMode = key;
+        if (game && lastInitMode !== activeMode) game.restart(false);
+        return true;
+      },
+      applySetting: (key, value) => {
+        if (key === 'trajectory') guideOn = value !== false;
+        if (key === 'difficulty' && (value === 'easy' || value === 'normal' || value === 'hard')) {
+          A.difficulty = value;
+          A.speedMult = value === 'easy' ? 0.8 : value === 'hard' ? 1.35 : 1;
+        }
+      },
+      applyCosmetic,
+    },
+  });
+
+  if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+    window.MiniGolfTest = {
+      state() {
+        return {
+          mode: activeMode, state: G.state, phase: state, hole: h + 1, holes: holes().length, par: hole().par,
+          strokes, totalS, totalPar, toPar: totalS - totalPar, score: G.score, hi: G.hi,
+          aces: roundAces, birdies: roundBirdies, eagles: roundEagles, pars: roundPars, pickups: roundPickups,
+          clock: timeLeft, cup: cup(), wind: mode().wind, guide: mode().guide && guideOn,
+          msg, underParStreak, played: holesPlayed, title: G.title,
+        };
+      },
+      modes() { return ['classic', 'sprint', 'windy', 'tight', 'master']; },
+      setMode(id) { return game.ui.setMode(id); },
+      getMode() { return activeMode; },
+      restart(auto) { game.restart(auto === true); },
+      begin() { if (G.state === 'ready') game.begin(); },
+      finish(n, pickup) { strokes = Math.max(1, n | 0); finishHole(!!pickup); return this.state(); },
+      setClock(n) { timeLeft = Math.max(0, n | 0); return timeLeft; },
+      tick(n) { const count = n == null ? 1 : Math.max(1, n | 0); for (let i = 0; i < count; i++) update(G); return this.state(); },
+      cosmetic(slot, id) { applyCosmetic(slot, id); },
+      colors() { return { ball: look.ball.main, grass: look.grass, aim: look.aim, sky: look.sky }; },
+      cosmeticList() { return window.Meta && typeof Meta.getCosmetics === 'function' ? Meta.getCosmetics(GAME_ID) : []; },
+      stats() { return saved(); },
+      modalOpen() { return G.state === 'won' || G.state === 'over'; },
+    };
+  }
 })();
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>

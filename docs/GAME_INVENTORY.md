@@ -41,11 +41,11 @@ Technical inventory of all 50 canonical HTML games in `public/assets/games/`. Th
 | 33 | Go 9×9 | `33-go/index.html` | 31.0 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Board DOM / SVG Grid | Yes | Board Kit |
 | 34 | Solitaire | `34-solitaire/index.html` | 25.8 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Board DOM / Card Table | No | Board Kit |
 | 35 | Memory Match | `35-memory-match/index.html` | 21.5 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Board DOM / Card Grid | Yes | Board Kit |
-| 36 | Maths Dash | `36-maths-dash/index.html` | 9.6 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
-| 37 | 8-Ball Pool | `37-pool/index.html` | 15.1 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js, fx-kit.js | Responsive Canvas | Yes | Arcade Core |
-| 38 | Bowling | `38-bowling/index.html` | 12.3 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js, fx-kit.js | Responsive Canvas | Yes | Arcade Core |
-| 39 | Basketball Hoops | `39-basketball/index.html` | 9.5 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js | Responsive Canvas | Yes | Arcade Core |
-| 40 | Mini Golf | `40-mini-golf/index.html` | 13.3 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js | Responsive Canvas | Yes | Arcade Core |
+| 36 | Maths Dash | `36-maths-dash/index.html` | 23.3 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Board DOM / SVG Grid | No | Board Kit |
+| 37 | 8-Ball Pool | `37-pool/index.html` | 36.5 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js, fx-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Responsive Canvas | Yes | Arcade Core |
+| 38 | Bowling | `38-bowling/index.html` | 36.5 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js, fx-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Responsive Canvas | Yes | Arcade Core |
+| 39 | Basketball Hoops | `39-basketball/index.html` | 20.6 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Responsive Canvas | Yes | Arcade Core |
+| 40 | Mini Golf | `40-mini-golf/index.html` | 25.0 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js, music-kit.js, menu-kit.js, menu-bootstrap.js | Responsive Canvas | Yes | Arcade Core |
 | 41 | Soccer Pool | `41-soccer-pool/index.html` | 11.0 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, arcade-core.js, score-bridge.js, ui-kit.js, fx-kit.js | Responsive Canvas | Yes | Arcade Core |
 | 42 | Merge 2048 | `42-2048/index.html` | 8.2 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js, music-kit.js | Board DOM / SVG Grid | No | Board Kit |
 | 43 | Sudoku | `43-sudoku/index.html` | 9.7 KB | perf-kit.js, save-kit.js, meta-config.js, meta-kit.js, board-kit.js, score-bridge.js, ui-kit.js | Board DOM / SVG Grid | No | Board Kit |
@@ -60,7 +60,7 @@ Technical inventory of all 50 canonical HTML games in `public/assets/games/`. Th
 ## Summary Statistics
 
 - **Total Games**: 50
-- **Current canonical HTML total**: 1431158 bytes (~1.37 MiB; 28.0 KB average; remeasured after games 31–35 on 2026-11-05)
+- **Current canonical HTML total**: 1496545 bytes (~1.43 MiB; 29.2 KB average; remeasured after games 36–40 on 2026-11-05)
 
 ### Script Kits Usage
 

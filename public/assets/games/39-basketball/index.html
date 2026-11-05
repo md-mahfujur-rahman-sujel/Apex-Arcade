@@ -18,10 +18,93 @@
 <script src="../../kits/ui-kit.js"></script>
 <script>
 (function () {
-  const A = Arcade, W = 800, H = 480, FLOOR = 430, BR = 12, RIMY = 214, RL = 692, RR = 732, BBX = 742, GRAV = 0.32, THREE = 300, TIME = 60 * 60;
+  const A = Arcade, W = 800, H = 480, FLOOR = 430, BR = 12, RIMY = 214, RL = 692, RR = 732, BBX = 742, GRAV = 0.32, THREE = 300, GAME_ID = 'basketball';
+  const MODE = {
+    classic: { time: 3600, mult: 1, wind: 0, downtown: false, hot: false, guide: true },
+    rapid: { time: 1800, mult: 1.25, wind: 0, downtown: false, hot: false, guide: true },
+    downtown: { time: 3600, mult: 1.3, wind: 0, downtown: true, hot: false, guide: true },
+    hot: { time: 3600, mult: 1.35, wind: 0, downtown: false, hot: true, guide: true },
+    master: { time: 3000, mult: 1.6, wind: -0.02, downtown: false, hot: false, guide: false },
+  };
+  const ACHIEVEMENTS = [
+    { id: 'first-basket', name: 'First Basket', desc: 'Sink your first shot.', rarity: 'common' },
+    { id: 'swish', name: 'Nothing But Net', desc: 'Sink a shot without touching the rim.', rarity: 'common' },
+    { id: 'long-ball', name: 'From Downtown', desc: 'Sink a three-pointer.', rarity: 'common' },
+    { id: 'triple-threat', name: 'Triple Threat', desc: 'Make three shots in a row.', rarity: 'rare' },
+    { id: 'heater', name: 'Heater', desc: 'Make five shots in a row.', rarity: 'epic' },
+    { id: 'sharpshooter', name: 'Sharpshooter', desc: 'Make ten shots in one session.', rarity: 'rare' },
+    { id: 'twenty-club', name: 'Twenty Club', desc: 'Score 20 in one session.', rarity: 'rare' },
+    { id: 'sniper', name: 'Sniper', desc: 'Swish five shots in a row.', rarity: 'epic' },
+    { id: 'rapid-clear', name: 'Quick Release', desc: 'Finish Rapid Fire.', rarity: 'rare' },
+    { id: 'downtown-clear', name: 'City Lights', desc: 'Finish Downtown.', rarity: 'epic' },
+    { id: 'hot-clear', name: 'Still Hot', desc: 'Finish Hot Hand.', rarity: 'epic' },
+    { id: 'rooftop-clear', name: 'Against The Wind', desc: 'Finish Rooftop Wind.', rarity: 'legendary' },
+  ];
+
+  /* ---------- cosmetics ---------- */
+  const BALLS = {
+    'ball-ember': { hi: '#fdba74', main: '#c2410c', line: '#431407', glow: '251,146,60' },
+    'ball-sunset': { hi: '#fed7aa', main: '#ea580c', line: '#7c2d12', glow: '251,113,133' },
+    'ball-jade': { hi: '#bbf7d0', main: '#15803d', line: '#052e16', glow: '74,222,128' },
+    'ball-mono': { hi: '#e2e8f0', main: '#64748b', line: '#0f172a', glow: '148,163,184' },
+    'ball-ruby': { hi: '#fecdd3', main: '#be123c', line: '#4c0519', glow: '251,113,133' },
+  };
+  const COURTS = {
+    'court-hardwood': { floor: ['#c8924f', '#8a5a24'], line: 'rgba(255,255,255,.5)', wall: 'rgba(255,255,255,.05)' },
+    'court-slate': { floor: ['#4b5563', '#232b36'], line: 'rgba(148,197,255,.55)', wall: 'rgba(148,197,255,.05)' },
+    'court-neon': { floor: ['#3b1f5c', '#1a0e33'], line: 'rgba(232,121,249,.7)', wall: 'rgba(232,121,249,.07)' },
+    'court-sand': { floor: ['#d9b26f', '#a0763a'], line: 'rgba(60,40,10,.55)', wall: 'rgba(255,255,255,.07)' },
+  };
+  const AIMS = { 'aim-white': '255,255,255', 'aim-cyan': '103,232,249', 'aim-amber': '251,191,36', 'aim-lime': '163,230,53' };
+  const SKIES = {
+    'sky-dusk': ['#1b2340', '#2b1f3d', '#3a2a4a'],
+    'sky-night': ['#070b17', '#0e1630', '#191033'],
+    'sky-sunrise': ['#3a2a4a', '#7a3f4a', '#b06a4a'],
+  };
+  const look = { ball: BALLS['ball-ember'], court: 'court-hardwood', aim: 'aim-white', sky: 'sky-dusk' };
+  const cosmeticKey = (id) => String(id || '').split(':').pop();
+  function applyCosmetic(slot, id) {
+    const key = cosmeticKey(id);
+    if (slot === 'skin' && BALLS[key]) look.ball = BALLS[key];
+    else if (slot === 'palette' && COURTS[key]) look.court = key;
+    else if (slot === 'effect' && AIMS[key]) look.aim = key;
+    else if (slot === 'theme' && SKIES[key]) look.sky = key;
+  }
+
+  /* ---------- records ---------- */
+  function saved() { return (window.Save && Save.load(GAME_ID)) || {}; }
+  function stats() { const s = saved(); return s.stats || {}; }
+  function award(id, label) {
+    const s = saved(), earned = Array.isArray(s.achievements) ? s.achievements : [];
+    if (earned.includes(id) || !window.Save) return;
+    Save.update(GAME_ID, { achievements: [id] });
+    if (A.sfx) A.sfx('blip');
+    if (window.UI && UI.toast) UI.toast(label || id.replace(/-/g, ' '), { color: '#34d399' });
+  }
+
   let G, ball, st, drag = null, ptr = { x: 0, y: 0 }, kang = 55, kpow = 0, wasChg = false, shots, made, streak, timeLeft, msg, msgT, net, scored, touched, bounces, waitT, three, prevY, inited = false, spot;
-  function spawn() { spot = A.rand(90, 480); ball = { x: spot, y: FLOOR - BR - 2, vx: 0, vy: 0 }; st = 'aim'; scored = false; touched = false; bounces = 0; three = spot < THREE; prevY = ball.y; drag = null; }
-  function init(g) { G = g; shots = 0; made = 0; streak = 0; timeLeft = TIME; msg = ''; msgT = 0; net = 0; kang = 55; kpow = 0; wasChg = false; spawn(); if (!inited) { inited = true; bind(); } }
+  let activeMode = 'classic', lastInitMode = '', guideOn = true;
+  let swishes = 0, threes = 0, swishStreak = 0, bestStreak = 0, bestSwish = 0, runEnded = false;
+  const mode = () => MODE[activeMode] || MODE.classic;
+  const guideVisible = () => mode().guide && guideOn;
+  const wind = () => mode().wind || 0;
+  const say = (t, f) => { msg = t; msgT = f || 80; };
+
+  function spawn() {
+    spot = mode().downtown ? A.rand(THREE + 40, 560) : A.rand(90, 480);
+    ball = { x: spot, y: FLOOR - BR - 2, vx: 0, vy: 0 };
+    st = 'aim'; scored = false; touched = false; bounces = 0;
+    three = mode().downtown ? true : spot < THREE;
+    prevY = ball.y; drag = null;
+  }
+  function init(g) {
+    G = g; shots = 0; made = 0; streak = 0; timeLeft = mode().time; msg = ''; msgT = 0; net = 0; kang = 55; kpow = 0; wasChg = false;
+    swishes = 0; threes = 0; swishStreak = 0; bestStreak = 0; bestSwish = 0; runEnded = false;
+    g.scoreMultiplier = mode().mult;
+    spawn();
+    lastInitMode = activeMode;
+    if (!inited) { inited = true; bind(); }
+  }
   const pt = (e) => { const r = G.canvas.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; };
   function bind() {
     const cv = G.canvas;
@@ -34,14 +117,27 @@
     });
   }
   function shoot(vx, vy) { ball.vx = vx; ball.vy = vy; st = 'fly'; shots++; prevY = ball.y; A.sfx('flap'); }
-  function result(ok) { waitT = ok ? 55 : 35; st = 'wait'; if (!ok) { streak = 0; msg = ''; } }
+  function result(ok) { waitT = ok ? 55 : 35; st = 'wait'; if (!ok) { streak = 0; swishStreak = 0; msg = ''; } }
   function score() {
-    scored = true; made++; streak++; const swish = !touched; let pts = three ? 3 : 2; if (swish) pts += 1; const bonus = streak >= 3 ? 1 : 0;
+    scored = true; made++; streak++; if (streak > bestStreak) bestStreak = streak;
+    const swish = !touched;
+    if (swish) { swishes++; swishStreak++; if (swishStreak > bestSwish) bestSwish = swishStreak; } else swishStreak = 0;
+    if (three) threes++;
+    let pts = three ? 3 : 2; if (swish) pts += 1; const bonus = streak >= 3 ? 1 : 0;
     G.addScore(pts + bonus); net = 30; A.sfx('coin'); G.burst((RL + RR) / 2, RIMY + 14, 18, { color: ['#fbbf24', '#fff', '#fb923c'], speed: 4, glow: true });
+    if (mode().hot) timeLeft += 120;
     msg = (swish ? 'SWISH! ' : '') + (three ? '3-pointer! ' : '') + '+' + (pts + bonus) + (bonus ? ' (streak bonus)' : ''); msgT = 80; G.popup((RL + RR) / 2, RIMY - 20, '+' + (pts + bonus), '#fbbf24', 22);
+    award('first-basket', 'First Basket');
+    if (swish) award('swish', 'Nothing But Net');
+    if (three) award('long-ball', 'From Downtown');
+    if (streak >= 3) award('triple-threat', 'Triple Threat');
+    if (streak >= 5) award('heater', 'Heater');
+    if (made >= 10) award('sharpshooter', 'Sharpshooter');
+    if (G.score >= 20) award('twenty-club', 'Twenty Club');
+    if (swishStreak >= 5) award('sniper', 'Sniper');
   }
   function step() {
-    ball.vy += GRAV; prevY = ball.y; ball.x += ball.vx; ball.y += ball.vy;
+    ball.vy += GRAV; ball.vx += wind(); prevY = ball.y; ball.x += ball.vx; ball.y += ball.vy;
     if (ball.y > FLOOR - BR) { ball.y = FLOOR - BR; ball.vy = -Math.abs(ball.vy) * 0.55; ball.vx *= 0.88; bounces++; if (Math.abs(ball.vy) > 1.5) A.sfx('bounce'); if (Math.abs(ball.vy) < 1.3) ball.vy = 0; }
     if (ball.x + BR > BBX && ball.y > 100 && ball.y < 262 && ball.vx > 0) { ball.x = BBX - BR; ball.vx = -ball.vx * 0.6; touched = true; A.sfx('thud'); }
     for (const rx of [RL, RR]) {
@@ -53,7 +149,7 @@
   function update(g) {
     if (g.state !== 'playing') return; if (msgT > 0) msgT--; if (net > 0) net--;
     timeLeft--; g.hudR = 'TIME ' + Math.max(0, Math.ceil(timeLeft / 60)); g.hudL = 'SCORE ' + g.score + (streak >= 2 ? '   STREAK ' + streak : '');
-    if (timeLeft <= 0) { g.win('Buzzer!', made + ' of ' + shots + ' shots made'); return; }
+    if (timeLeft <= 0) { finishSession(); return; }
     if (st === 'aim') {
       if (A.held('ArrowUp', 'KeyW')) kang = Math.min(80, kang + 0.8); if (A.held('ArrowDown', 'KeyS')) kang = Math.max(20, kang - 0.8);
       const chg = A.held('Space'); if (chg) kpow = Math.min(1, kpow + 0.017); else if (wasChg && kpow > 0.12) { const a = kang * Math.PI / 180, v = 5 + kpow * 11.5; shoot(Math.cos(a) * v, -Math.sin(a) * v); kpow = 0; } else kpow = 0;
@@ -65,7 +161,7 @@
     } else if (st === 'wait') { if (--waitT <= 0) spawn(); }
   }
   function stepHalfCore() {
-    ball.vy += GRAV / 2; prevY = ball.y; ball.x += ball.vx / 2; ball.y += ball.vy / 2;
+    ball.vy += GRAV / 2; ball.vx += wind() / 2; prevY = ball.y; ball.x += ball.vx / 2; ball.y += ball.vy / 2;
     if (ball.y > FLOOR - BR) { ball.y = FLOOR - BR; ball.vy = -Math.abs(ball.vy) * 0.55; ball.vx *= 0.94; bounces++; if (Math.abs(ball.vy) > 1.5) A.sfx('bounce'); if (Math.abs(ball.vy) < 1.3) ball.vy = 0; }
     if (ball.x + BR > BBX && ball.y > 100 && ball.y < 262 && ball.vx > 0) { ball.x = BBX - BR; ball.vx = -ball.vx * 0.6; touched = true; A.sfx('thud'); }
     for (const rx of [RL, RR]) {
@@ -74,15 +170,43 @@
     }
     if (!scored && prevY < RIMY && ball.y >= RIMY && ball.vy > 0 && ball.x > RL + 4 && ball.x < RR - 4) score();
   }
+  function finishSession() {
+    if (runEnded) return;
+    runEnded = true;
+    const st0 = stats();
+    const patch = {
+      sessions: (st0.sessions || 0) + 1,
+      shots: (st0.shots || 0) + shots,
+      made: (st0.made || 0) + made,
+      swishes: (st0.swishes || 0) + swishes,
+      threes: (st0.threes || 0) + threes,
+      points: (st0.points || 0) + G.score,
+      bestSession: Math.max(st0.bestSession || 0, G.score),
+      bestStreak: Math.max(st0.bestStreak || 0, bestStreak),
+      bestSwish: Math.max(st0.bestSwish || 0, bestSwish),
+    };
+    if (activeMode === 'classic') patch.classicBest = Math.max(st0.classicBest || 0, G.score);
+    patch[activeMode + 'Sessions'] = (st0[activeMode + 'Sessions'] || 0) + 1;
+    Save.update(GAME_ID, { stats: patch });
+    if (activeMode === 'rapid') award('rapid-clear', 'Quick Release');
+    if (activeMode === 'downtown') award('downtown-clear', 'City Lights');
+    if (activeMode === 'hot') award('hot-clear', 'Still Hot');
+    if (activeMode === 'master') award('rooftop-clear', 'Against The Wind');
+    G.win('Buzzer!', made + ' of ' + shots + ' shots made');
+  }
   function aimVec() {
     if (drag) { const dx = drag.x - ptr.x, dy = drag.y - ptr.y, len = Math.hypot(dx, dy); if (len < 8) return null; const v = Math.min(len, 150) * 0.112; return { vx: dx / len * v, vy: dy / len * v, p: Math.min(len, 150) / 150 }; }
     const a = kang * Math.PI / 180, p = kpow > 0 ? kpow : 0.62, v = 5 + p * 11.5; return { vx: Math.cos(a) * v, vy: -Math.sin(a) * v, p: kpow, key: true };
   }
   function draw(g, c) {
-    A.sky(c, W, H, ['#1b2340', '#2b1f3d', '#3a2a4a']);
-    c.fillStyle = 'rgba(255,255,255,.05)'; for (let i = 0; i < 12; i++) c.fillRect(i * 70 + 10, 60, 50, 150);
-    const fl = c.createLinearGradient(0, FLOOR, 0, H); fl.addColorStop(0, '#c8924f'); fl.addColorStop(1, '#8a5a24'); c.fillStyle = fl; c.fillRect(0, FLOOR, W, H - FLOOR);
-    c.strokeStyle = 'rgba(255,255,255,.5)'; c.lineWidth = 3; c.beginPath(); c.moveTo(THREE, FLOOR); c.lineTo(THREE, H); c.stroke(); A.text(c, '3 PTS', THREE - 8, FLOOR + 30, 12, 'rgba(255,255,255,.8)', 'right', '800'); A.text(c, '2 PTS', THREE + 8, FLOOR + 30, 12, 'rgba(255,255,255,.8)', 'left', '800');
+    const court = COURTS[look.court] || COURTS['court-hardwood'];
+    const aim = AIMS[look.aim] || AIMS['aim-white'];
+    const b = look.ball;
+    A.sky(c, W, H, SKIES[look.sky] || SKIES['sky-dusk']);
+    c.fillStyle = court.wall; for (let i = 0; i < 12; i++) c.fillRect(i * 70 + 10, 60, 50, 150);
+    const fl = c.createLinearGradient(0, FLOOR, 0, H); fl.addColorStop(0, court.floor[0]); fl.addColorStop(1, court.floor[1]); c.fillStyle = fl; c.fillRect(0, FLOOR, W, H - FLOOR);
+    c.strokeStyle = court.line; c.lineWidth = 3; c.beginPath(); c.moveTo(THREE, FLOOR); c.lineTo(THREE, H); c.stroke(); A.text(c, '3 PTS', THREE - 8, FLOOR + 30, 12, court.line, 'right', '800');
+    if (!mode().downtown) A.text(c, '2 PTS', THREE + 8, FLOOR + 30, 12, court.line, 'left', '800');
     /* hoop */
     c.fillStyle = '#334155'; c.fillRect(BBX + 8, 120, 6, FLOOR - 120);
     c.fillStyle = '#f8fafc'; A.roundRect(c, BBX, 100, 10, 160, 3); c.fill(); c.strokeStyle = '#ef4444'; c.lineWidth = 3; c.strokeRect(BBX + 1, 190, 8, 52);
@@ -94,18 +218,100 @@
     if (st === 'aim') {
       A.shadow(c, ball.x, FLOOR + 3, 14, 4, 0.35);
       const v = aimVec();
-      if (v) { for (let k = 2; k < 60; k += 3) { const x = ball.x + v.vx * k, y = ball.y + v.vy * k + 0.5 * GRAV * k * k; if (y > FLOOR) break; c.fillStyle = 'rgba(255,255,255,' + (0.85 - k * 0.012) + ')'; c.beginPath(); c.arc(x, y, 3, 0, A.TAU); c.fill(); }
+      if (v) {
+        if (guideVisible()) for (let k = 2; k < 60; k += 3) { const x = ball.x + v.vx * k, y = ball.y + v.vy * k + 0.5 * GRAV * k * k; if (y > FLOOR) break; c.fillStyle = 'rgba(' + aim + ',' + (0.85 - k * 0.012) + ')'; c.beginPath(); c.arc(x, y, 3, 0, A.TAU); c.fill(); }
         const p = v.key ? kpow : v.p; c.fillStyle = 'rgba(0,0,0,.5)'; A.roundRect(c, ball.x - 40, FLOOR + 44, 80, 10, 5); c.fill(); c.fillStyle = A.mix('#22c55e', '#ef4444', p); A.roundRect(c, ball.x - 40, FLOOR + 44, 80 * Math.max(0.04, p), 10, 5); c.fill(); }
     }
     if (st === 'fly') A.shadow(c, ball.x, FLOOR + 3, 12 * Math.max(0.3, 1 - (FLOOR - ball.y) / 500), 3, 0.25);
-    c.save(); c.translate(ball.x, ball.y); c.rotate(ball.x * 0.05); const bg = c.createRadialGradient(-4, -4, 1, 0, 0, BR); bg.addColorStop(0, '#fdba74'); bg.addColorStop(1, '#c2410c'); c.fillStyle = bg; c.beginPath(); c.arc(0, 0, BR, 0, A.TAU); c.fill(); c.strokeStyle = '#431407'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(-BR, 0); c.lineTo(BR, 0); c.moveTo(0, -BR); c.lineTo(0, BR); c.stroke(); c.beginPath(); c.arc(0, 0, BR * 0.7, 0.5, 2.6); c.stroke(); c.restore();
+    c.save(); c.translate(ball.x, ball.y); c.rotate(ball.x * 0.05); const bg = c.createRadialGradient(-4, -4, 1, 0, 0, BR); bg.addColorStop(0, b.hi); bg.addColorStop(1, b.main); c.fillStyle = bg; c.beginPath(); c.arc(0, 0, BR, 0, A.TAU); c.fill(); c.strokeStyle = b.line; c.lineWidth = 1.5; c.beginPath(); c.moveTo(-BR, 0); c.lineTo(BR, 0); c.moveTo(0, -BR); c.lineTo(0, BR); c.stroke(); c.beginPath(); c.arc(0, 0, BR * 0.7, 0.5, 2.6); c.stroke(); c.restore();
     g.drawFX(c);
+    if (mode().wind) { c.save(); c.fillStyle = 'rgba(103,232,249,.9)'; c.font = '700 13px sans-serif'; c.fillText('WIND ←', 14, 74); c.restore(); }
     if (msgT > 0) { c.save(); c.globalAlpha = Math.min(1, msgT / 20); A.glowText(c, msg, 400, 150, 28, '#fbbf24', 'center'); c.restore(); }
     A.text(c, 'Shots ' + made + '/' + shots, 14, 52, 13, '#c8cde4', 'left', '700');
     if (st === 'aim' && !drag && g.t < 400) A.text(c, 'Drag back from anywhere and release — or ↑/↓ to angle, hold Space to charge', 400, 460, 13, 'rgba(255,255,255,.8)', 'center', '700');
   }
-  Arcade.game({ id: 'basketball', title: 'Basketball Hoops', subtitle: 'Sixty seconds. Shoot for the net and chase a high score.', w: W, h: H, color: '#fb923c',
+  const game = Arcade.game({ id: GAME_ID, title: 'Basketball Hoops', subtitle: 'Sixty seconds. Shoot for the net and chase a high score.', w: W, h: H, color: '#fb923c',
     controls: [['Drag back & release', 'shoot (longer pull = harder)'], ['↑ / ↓', 'raise or lower the angle'], ['Hold Space, release', 'charge and shoot'], ['Beyond the line', '3 points · swish +1 · 3 in a row +1']], init, update, draw });
+
+  game.ui = UI.mountGame(game, {
+    id: GAME_ID, title: 'Basketball Hoops', subtitle: 'A rooftop court, sixty seconds, and a rim that never blinks.', accent: '#fb923c',
+    modes: [
+      { id: 'classic', name: 'Pickup Game', blurb: 'Sixty seconds on the rooftop court.', seasonTargets: [20, 35, 50] },
+      { id: 'rapid', name: 'Rapid Fire', blurb: 'Thirty seconds, no time to think. 1.25× score.', seasonTargets: [18, 30, 42] },
+      { id: 'downtown', name: 'Downtown', blurb: 'Every shot launches from beyond the arc. 1.3× score.', seasonTargets: [15, 25, 35] },
+      { id: 'hot', name: 'Hot Hand', blurb: 'Every make adds two seconds to the clock. 1.35× score.', seasonTargets: [22, 38, 55] },
+      { id: 'master', name: 'Rooftop Wind', blurb: 'A crosswind pushes every shot and the guide is gone. 1.6× score.', lockedHint: 'Score 20 in Pickup Game to unlock', requires: { stat: 'classicBest', gte: 20 }, seasonTargets: [25, 40, 60] },
+    ],
+    settings: [
+      { key: 'difficulty', label: 'Difficulty', type: 'select', options: ['easy', 'normal', 'hard'], default: 'normal' },
+      { key: 'trajectory', label: 'Trajectory guide', type: 'toggle', default: true },
+    ],
+    achievements: ACHIEVEMENTS,
+    tutorial: { type: 'interactive', steps: [
+      { text: 'Drag back from the ball and release to shoot — longer pulls fly harder.' },
+      { text: 'Or use ↑ / ↓ to set the angle, then hold Space and release to fire.' },
+      { text: 'Shots from behind the line are worth three; a clean swish adds a bonus point.' },
+      { text: 'Three makes in a row earns an extra point. Rapid Fire shortens the clock and Hot Hand adds time per make.' },
+    ] },
+    chapter: 'ROOFTOP COURTS', levels: [{}, {}, {}],
+    hooks: {
+      applyMode: (next) => {
+        const key = MODE[next] ? next : 'classic';
+        if (key === 'master' && !(Number(stats().classicBest) >= 20)) {
+          UI.toast('Score 20 in Pickup Game to unlock Rooftop Wind', { color: '#fb923c' });
+          return false;
+        }
+        activeMode = key;
+        if (game && lastInitMode !== activeMode) game.restart(false);
+        return true;
+      },
+      applySetting: (key, value) => {
+        if (key === 'trajectory') guideOn = value !== false;
+        if (key === 'difficulty' && (value === 'easy' || value === 'normal' || value === 'hard')) {
+          A.difficulty = value;
+          A.speedMult = value === 'easy' ? 0.8 : value === 'hard' ? 1.35 : 1;
+        }
+      },
+      applyCosmetic,
+    },
+  });
+
+  if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+    window.BasketballTest = {
+      state() {
+        return {
+          mode: activeMode, state: G.state, score: G.score, hi: G.hi, phase: st, spot: Math.round(spot), three,
+          shots, made, streak, bestStreak, swishes, threes, swishStreak, bestSwish, timeLeft,
+          wind: mode().wind, guide: mode().guide && guideOn, msg, mult: mode().mult,
+        };
+      },
+      modes() { return ['classic', 'rapid', 'downtown', 'hot', 'master']; },
+      setMode(id) { return game.ui.setMode(id); },
+      getMode() { return activeMode; },
+      restart(auto) { game.restart(auto === true); },
+      begin() { if (G.state === 'ready') game.begin(); },
+      make(threeArg, swishArg) {
+        shots++;
+        three = threeArg == null ? spot < THREE : !!threeArg;
+        touched = !swishArg;
+        score();
+        st = 'wait'; waitT = 2;
+        return this.state();
+      },
+      miss() {
+        shots++; streak = 0; swishStreak = 0;
+        st = 'wait'; waitT = 2;
+        return this.state();
+      },
+      tick(n) { const count = n == null ? 1 : Math.max(1, n | 0); for (let i = 0; i < count; i++) update(G); return this.state(); },
+      finish() { finishSession(); return this.state(); },
+      cosmetic(slot, id) { applyCosmetic(slot, id); },
+      colors() { return { ball: look.ball.main, court: look.court, aim: look.aim, sky: look.sky }; },
+      cosmeticList() { return window.Meta && typeof Meta.getCosmetics === 'function' ? Meta.getCosmetics(GAME_ID) : []; },
+      stats() { return saved(); },
+      modalOpen() { return G.state === 'won' || G.state === 'over'; },
+    };
+  }
 })();
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>

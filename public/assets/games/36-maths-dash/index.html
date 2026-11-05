@@ -6,24 +6,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Maths Dash</title>
 <style>
-  .md { display: grid; grid-template-columns: minmax(300px, 520px) minmax(240px, 1fr); gap: 22px; align-items: start; }
+  .md { --md-key: #f97316; --md-panel: #0c1226; --md-accent: #f97316; display: grid; grid-template-columns: minmax(300px, 520px) minmax(240px, 1fr); gap: 22px; align-items: start; }
   @media (max-width: 860px) { .md { grid-template-columns: 1fr; } }
-  .pl { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; box-shadow: 0 20px 50px -24px #000; user-select: none; }
+  .pl { background: var(--md-panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; box-shadow: 0 20px 50px -24px #000; user-select: none; }
   .hud { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
   .hud b { color: var(--text); font-size: 18px; }
-  .hud i { font-style: normal; color: var(--amber); font-weight: 700; }
-  .bar { height: 10px; background: #0b0d16; border-radius: 99px; margin: 10px 0 6px; overflow: hidden; border: 1px solid var(--line); }
-  .bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, var(--emerald), var(--cyan)); transition: width .1s linear; }
-  .bar.low i { background: linear-gradient(90deg, #ef4444, var(--amber)); }
+  .hud i { font-style: normal; color: var(--md-key); font-weight: 700; }
+  .meter { height: 10px; background: #0b0d16; border-radius: 99px; margin: 10px 0 6px; overflow: hidden; border: 1px solid var(--line); }
+  .meter i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, var(--md-accent), var(--md-key)); transition: width .1s linear; }
+  .meter.low i { background: linear-gradient(90deg, #ef4444, var(--amber)); }
   .q { text-align: center; font: 800 clamp(38px, 9vw, 76px) / 1.15 ui-monospace, Consolas, Menlo, monospace; padding: 14px 0 4px; min-height: 1.3em; }
-  .an { text-align: center; font: 800 clamp(30px, 7vw, 54px) / 1.2 ui-monospace, Consolas, Menlo, monospace; color: var(--cyan); min-height: 1.3em; border-bottom: 2px dashed var(--line); margin: 0 18% 6px; }
+  .an { text-align: center; font: 800 clamp(30px, 7vw, 54px) / 1.2 ui-monospace, Consolas, Menlo, monospace; color: var(--md-accent); min-height: 1.3em; border-bottom: 2px dashed var(--line); margin: 0 18% 6px; }
   .fb { text-align: center; min-height: 24px; font-weight: 700; margin-bottom: 8px; }
   .fb.g { color: var(--emerald); }
   .fb.b { color: #f87171; }
   .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  .pad .k { padding: 14px 0; font-size: 22px; touch-action: manipulation; }
+  #pad .k { padding: 14px 0; font-size: 22px; touch-action: manipulation; color: var(--md-key); border-color: var(--md-key); background: rgba(255,255,255,.03); }
+  #pad .k:hover { background: rgba(255,255,255,.1); }
   .side { display: grid; gap: 12px; }
   .capt { color: var(--muted); line-height: 1.7; font-size: 13px; }
+  .note { margin-top: 6px; color: var(--amber); font-weight: 600; font-size: 13px; }
+  #md { color: var(--muted); font-size: 13px; line-height: 1.6; }
 </style>
 <script src="../../kits/music-kit.js"></script><script src="../../kits/menu-kit.js"></script>
 </head>
@@ -39,14 +42,14 @@
 <script>
 const ui = Board.shell({
   id: 'maths-dash', title: 'Maths Dash', subtitle: 'Race the clock with quick sums and build a combo',
-  rules: 'You have 60 seconds. Answer each sum as fast as you can: type the digits (the answer locks in as soon as it is complete) or tap the keypad. Every 5 right answers in a row raises your multiplier (up to ×5) and every 10 in a row adds 2 seconds. A wrong answer costs 3 seconds and breaks your combo. Division sums always come out even and subtractions never go below zero. Pick a single times table to train it.',
-  controls: [['0 – 9', 'Type your answer'], ['Backspace', 'Delete a digit'], ['Enter', 'Start / submit'], ['N', 'Restart'], ['H / M', 'Toggle help / mute']],
+  rules: 'Answer each sum as fast as you can: type the digits (the answer locks in as soon as it is complete) or tap the keypad. Every five right answers in a row raises your multiplier, up to ×5, and every ten adds two seconds. A wrong answer costs three seconds in a timed run and breaks the combo. Reach the mode target to clear it. Classic gives you a minute of mixed sums, Sprint halves the clock, Marathon stretches it with two-step sums, Accuracy asks for 24 sums at your own pace, and Master pits you against hard multi-step prompts.',
+  controls: [['0 – 9', 'Type your answer'], ['Backspace', 'Delete a digit'], ['Enter', 'Start / submit'], ['T', 'Reveal the answer (−50)'], ['N', 'Restart'], ['H / M', 'Toggle help / mute']],
 });
 ui.main.innerHTML = `
 <div class="md">
   <div class="pl">
-    <div class="hud"><span>⏱ <b id="tm">60.0</b>s</span><span>Score <b id="sc">0</b></span><span>Combo <b id="cb">0</b> <i id="mx">×1</i></span></div>
-    <div class="bar" id="br"><i id="bf"></i></div>
+    <div class="hud" id="hud"></div>
+    <div class="meter" id="br"><i id="bf"></i></div>
     <div class="q" id="q">Ready?</div>
     <div class="an" id="an">&nbsp;</div>
     <div class="fb" id="fb">&nbsp;</div>
@@ -54,22 +57,106 @@ ui.main.innerHTML = `
   </div>
   <div class="side">
     <div class="bk-status" id="st"></div>
+    <div class="bk-row"><button class="bk-btn bk-primary" id="go">Start</button><button class="bk-btn" id="hint">Hint</button></div>
     <div class="bk-row">
-      <label>Sums <select class="bk-select" id="op"><option value="mix">Mixed</option><option value="+">Addition</option><option value="-">Subtraction</option><option value="x">Multiplication</option><option value="/">Division</option><option value="tt">Times tables</option></select></label>
+      <label>Focus <select class="bk-select" id="op"><option value="mix">Mixed</option><option value="+">Addition</option><option value="-">Subtraction</option><option value="x">Multiplication</option><option value="/">Division</option><option value="missing">Missing number</option><option value="tt">Times tables</option></select></label>
       <label>Level <select class="bk-select" id="lvl"><option value="0">Easy</option><option value="1" selected>Medium</option><option value="2">Hard</option></select></label>
       <label id="tbl" style="display:none">Table <select class="bk-select" id="tb"><option value="all">All (2–12)</option>${[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => `<option value="${n}">${n}×</option>`).join('')}</select></label>
     </div>
-    <div class="bk-row"><button class="bk-btn bk-primary" id="go">Start</button></div>
     <div class="capt" id="cp"></div>
+    <div id="md"></div>
   </div>
 </div>`;
 const $ = (s) => ui.main.querySelector(s);
-const DUR = 60000, R = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
-let run = false, tl = DUR, last = 0, iv = 0, score = 0, combo = 0, bestC = 0, right = 0, wrong = 0, typed = '', cur = null, prevText = '', fbT = 0;
 
+/* ---------------- modes, records, cosmetics ---------------- */
+const MODE_NAMES = { classic: 'Classic', sprint: 'Sprint', marathon: 'Marathon', accuracy: 'Accuracy', master: 'Master' };
+const MODE_KEY = { classic: 'Classic', sprint: 'Sprint', marathon: 'Marathon', accuracy: 'Accuracy', master: 'Master' };
+const CFG = {
+  classic: { dur: 60000, quota: 0, target: 600, mult: 1, bonus: 1000, pool: ['+', '-', 'x', 'missing'] },
+  sprint: { dur: 30000, quota: 0, target: 350, mult: 1.15, bonus: 800, pool: ['+', '-', 'x'] },
+  marathon: { dur: 120000, quota: 0, target: 1200, mult: 1.3, bonus: 1500, pool: ['+', '-', 'x', '/', 'missing', 'two'] },
+  accuracy: { dur: 0, quota: 24, target: 500, mult: 1.2, bonus: 1200, pool: ['+', '-', 'x', '/', 'missing', 'two'] },
+  master: { dur: 45000, quota: 0, target: 900, mult: 1.5, bonus: 2000, pool: ['elite'] },
+};
+const MODES = [
+  { id: 'classic', name: 'Classic', blurb: 'Sixty seconds of mixed sums with a 600-point target.' },
+  { id: 'sprint', name: 'Sprint', blurb: 'Half the clock and a lower target, but every point is worth 1.15×.' },
+  { id: 'marathon', name: 'Marathon', blurb: 'Two full minutes of everything, including two-step sums. 1.3× score.' },
+  { id: 'accuracy', name: 'Accuracy', blurb: 'Twenty-four sums at your own pace. No clock, but misses break the combo. 1.2× score.' },
+  { id: 'master', name: 'Master', blurb: 'Forty-five seconds of elite prompts for 1.5× score.', requires: { stat: 'bestClassicScore', gte: 600 }, lockedHint: 'Clear Classic to unlock' },
+];
+const ACHIEVEMENTS = [
+  { id: 'first-sum', name: 'First Sum', desc: 'Answer a sum correctly.', rarity: 'common' },
+  { id: 'combo-10', name: 'On A Roll', desc: 'Answer ten sums in a row.', rarity: 'rare' },
+  { id: 'combo-20', name: 'Unstoppable', desc: 'Answer twenty sums in a row.', rarity: 'epic' },
+  { id: 'perfect', name: 'Flawless Figure', desc: 'Finish a run with 100% accuracy and at least ten answers.', rarity: 'epic' },
+  { id: 'quick-thinker', name: 'Quick Thinker', desc: 'Clear a run averaging under three seconds per correct answer.', rarity: 'rare' },
+  { id: 'classic-clear', name: 'Minute Mind', desc: 'Clear Classic.', rarity: 'common' },
+  { id: 'sprint-clear', name: 'Dash And Done', desc: 'Clear Sprint.', rarity: 'common' },
+  { id: 'marathon-clear', name: 'Long Haul', desc: 'Clear Marathon.', rarity: 'rare' },
+  { id: 'accuracy-clear', name: 'Steady Hand', desc: 'Clear Accuracy.', rarity: 'rare' },
+  { id: 'master-clear', name: 'Number Master', desc: 'Clear Master.', rarity: 'legendary' },
+  { id: 'high-score', name: 'High Roller', desc: 'Finish a run with 2,500+ points.', rarity: 'rare' },
+  { id: 'personal-best', name: 'Personal Best', desc: 'Set a new best score.', rarity: 'rare' },
+];
+const KEY_SETS = {
+  'md:keys-ember': '#f97316',
+  'md:keys-cyan': '#22d3ee',
+  'md:keys-ruby': '#fb7185',
+  'md:keys-violet': '#a78bfa',
+  'md:keys-mono': '#e5e7eb',
+};
+const PANELS = {
+  'md:panel-night': '#0c1226',
+  'md:panel-slate': '#111827',
+  'md:panel-forest': '#07130c',
+  'md:panel-plum': '#1a0b1f',
+};
+const ACCENTS = { 'md:accent-orange': '#f97316', 'md:accent-cyan': '#06b6d4', 'md:accent-rose': '#fb7185', 'md:accent-lime': '#a3e635' };
+const THEMES = {
+  'md:theme-night': '',
+  'md:theme-dusk': 'radial-gradient(1000px 500px at 10% -10%, #4c1d3d, transparent 60%), radial-gradient(800px 500px at 100% 0, #7c2d12, transparent 55%), #0b0705',
+  'md:theme-sea': 'radial-gradient(1000px 500px at 12% -8%, #164e63, transparent 60%), radial-gradient(800px 500px at 100% 0, #14532d, transparent 55%), #041514',
+};
+const PALETTE = { key: KEY_SETS['md:keys-ember'], panel: PANELS['md:panel-night'], accent: ACCENTS['md:accent-orange'] };
+function paintPalette() {
+  const el = ui.main.querySelector('.md'); if (!el) return;
+  el.style.setProperty('--md-key', PALETTE.key);
+  el.style.setProperty('--md-panel', PALETTE.panel);
+  el.style.setProperty('--md-accent', PALETTE.accent);
+}
+function applyCosmetic(slot, id) {
+  if (slot === 'skin' && KEY_SETS[id]) PALETTE.key = KEY_SETS[id];
+  else if (slot === 'palette' && PANELS[id]) PALETTE.panel = PANELS[id];
+  else if (slot === 'effect' && ACCENTS[id]) PALETTE.accent = ACCENTS[id];
+  else if (slot === 'theme' && THEMES[id] !== undefined) document.body.style.background = THEMES[id];
+  paintPalette(); if (booted) paint();
+}
+
+/* ---------------- state ---------------- */
+const R = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const fmt = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+let gm = 'classic', run = false, over = false, won = false, overText = '';
+let tl = 60000, elapsed = 0, score = 0, combo = 0, bestCombo = 0, right = 0, wrong = 0;
+let typed = '', cur = null, prevText = '', reveal = '', note = '', qStart = 0, iv = 0, lastTick = 0, fbT = 0, runId = 0;
+let menuPaused = false, booted = false;
+
+const cfgOf = () => CFG[gm];
+const mult = () => Math.min(5, 1 + Math.floor(Math.max(0, combo - 1) / 5));
+const bestKey = () => 'best' + MODE_KEY[gm] + 'Score';
+const winKey = () => gm + 'Wins';
+
+/* ---------------- prompts ---------------- */
+function pickOp() {
+  const focus = $('#op').value;
+  if (gm === 'master') return 'elite';
+  if (focus !== 'mix') return focus;
+  const pool = cfgOf().pool;
+  return pool[R(0, pool.length - 1)];
+}
 function gen() {
-  let op = $('#op').value; const L = +$('#lvl').value;
-  if (op === 'mix') op = ['+', '-', 'x', '/'][R(0, 3)];
+  const op = pickOp(), L = gm === 'master' ? 2 : +$('#lvl').value;
   if (op === 'tt') {
     const n = $('#tb').value === 'all' ? R(2, 12) : +$('#tb').value, k = R(1, 12);
     return R(0, 1) ? { t: `${n} × ${k}`, a: n * k } : { t: `${k} × ${n}`, a: n * k };
@@ -78,75 +165,249 @@ function gen() {
   if (op === '+') { const x = R(...AR), y = R(...AR); return { t: `${x} + ${y}`, a: x + y }; }
   if (op === '-') { let x = R(...AR), y = R(...AR); if (y > x) [x, y] = [y, x]; return { t: `${x} − ${y}`, a: x - y }; }
   if (op === 'x') { const x = R(2, FA), y = R(2, FB); return { t: `${x} × ${y}`, a: x * y }; }
-  const y = R(2, FB), q = R(2, FA); return { t: `${y * q} ÷ ${y}`, a: q };
+  if (op === '/') { const y = R(2, FB), q = R(2, FA); return { t: `${y * q} ÷ ${y}`, a: q }; }
+  if (op === 'missing') {
+    if (R(0, 1)) { const a = R(2, 20), b = R(2, 20); return { t: `${a} + ? = ${a + b}`, a: b }; }
+    const b = R(2, FB), c = R(2, 9);
+    return R(0, 1) ? { t: `? × ${b} = ${b * c}`, a: c } : { t: `${b} × ? = ${b * c}`, a: c };
+  }
+  if (op === 'two') { const a = R(1, 20), b = R(2, 9), c = R(2, 9); return { t: `${a} + ${b} × ${c}`, a: a + b * c }; }
+  if (op === 'square') { const n = R(4, 12 + L * 4); return { t: `${n}²`, a: n * n }; }
+  if (op === 'root') { const n = R(3, 10 + L * 4); return { t: `√${n * n}`, a: n }; }
+  const elite = ['two', 'square', 'root', 'missing', 'x'];
+  const pick = elite[R(0, elite.length - 1)];
+  if (pick === 'two') { const a = R(2, 20), b = R(3, 12), c = R(3, 12); return { t: `${a} + ${b} × ${c}`, a: a + b * c }; }
+  if (pick === 'square') { const n = R(6, 20); return { t: `${n}²`, a: n * n }; }
+  if (pick === 'root') { const n = R(5, 18); return { t: `√${n * n}`, a: n }; }
+  if (pick === 'missing') { const b = R(3, 12), c = R(3, 12); return { t: `? × ${b} = ${b * c}`, a: c }; }
+  const x = R(6, 20), y = R(4, 12);
+  return { t: `${x} × ${y}`, a: x * y };
 }
-function next() { let c, n = 0; do { c = gen(); n++; } while (c.t === prevText && n < 10); cur = c; prevText = c.t; }
-function bestKey() { const op = $('#op').value; return 'apex:md:' + op + (op === 'tt' ? $('#tb').value : ':' + $('#lvl').value); }
-const bestVal = () => +(Board.ls.get(bestKey()) || 0);
-const mult = () => Math.min(5, 1 + Math.floor(Math.max(0, combo - 1) / 5));
+function next() {
+  let c, n = 0;
+  do { c = gen(); n += 1; } while (c.t === prevText && n < 10);
+  cur = c; prevText = c.t; qStart = Board.now();
+}
 
-function flash(t, c) { const f = $('#fb'); f.textContent = t; f.className = 'fb ' + c; Board.cancel(fbT); fbT = Board.after(900, () => { f.innerHTML = '&nbsp;'; f.className = 'fb'; }); }
+/* ---------------- painting ---------------- */
+function flash(t, c) {
+  const f = $('#fb'); f.textContent = t; f.className = 'fb ' + c;
+  Board.cancel(fbT); fbT = Board.after(900, () => { f.innerHTML = '&nbsp;'; f.className = 'fb'; });
+}
+function paintBar() {
+  const c = cfgOf();
+  if (c.quota) {
+    $('#bf').style.width = Math.max(0, Math.min(100, (right + wrong) / c.quota * 100)) + '%';
+    $('#br').classList.remove('low');
+  } else {
+    $('#bf').style.width = Math.max(0, Math.min(100, tl / c.dur * 100)) + '%';
+    $('#br').classList.toggle('low', tl < 10000);
+  }
+}
 function paint() {
-  $('#sc').textContent = score; $('#cb').textContent = combo; $('#mx').textContent = '×' + (combo ? mult() : 1);
-  $('#q').textContent = run ? cur.t : (right + wrong ? 'Time!' : 'Ready?');
-  $('#an').textContent = typed || '\u00a0';
-  paintTime();
-  const b = bestVal();
-  $('#st').innerHTML = run ? `Answer fast — ${right} right so far` : (right + wrong ? `Last run: <b>${score}</b> points` : 'Press Start (or Enter) when you are ready');
-  $('#cp').innerHTML = `Best score for these settings: <b>${b}</b>`;
+  const c = cfgOf();
+  $('#hud').innerHTML = `<span>${c.quota ? 'Sums' : 'Time'} <b>${c.quota ? (right + wrong) + '/' + c.quota : (tl / 1000).toFixed(1) + 's'}</b></span><span>Score <b>${score}</b></span><span>Combo <b>${combo}</b> <i>×${combo ? mult() : 1}</i></span>`;
+  paintBar();
+  $('#q').textContent = run ? cur.t : over ? 'Time!' : 'Ready?';
+  $('#an').textContent = reveal || typed || '\u00a0';
+  $('#go').textContent = run ? 'Restart' : over ? 'Play again' : 'Start';
+  const best = Number((GameUI.stats() || {})[bestKey()]) || 0;
+  $('#st').innerHTML = (over ? overText : run ? `Target ${c.target} points · ${right + wrong} answered · ${right} right` : `Press Start (or Enter) to begin ${MODE_NAMES[gm]}`) + (note && !over ? `<div class="note">${note}</div>` : '');
+  $('#cp').innerHTML = `Best ${MODE_NAMES[gm]}: <b>${best}</b><br>Target: <b>${c.target}</b> points · Best combo: <b>${bestCombo}</b>`;
+  $('#md').textContent = MODE_NAMES[gm] + ' · ' + (c.quota ? c.quota + ' sums' : (c.dur / 1000) + ' seconds') + ' · ' + String(c.mult) + '× score · focus: ' + ($('#op').value === 'mix' ? 'mixed' : $('#op').selectedOptions[0].textContent.toLowerCase());
 }
-function paintTime() {
-  $('#tm').textContent = (Math.max(0, tl) / 1000).toFixed(1);
-  const bar = $('#br'); $('#bf').style.width = Math.max(0, Math.min(100, tl / DUR * 100)) + '%'; bar.classList.toggle('low', tl < 10000);
+
+/* ---------------- run ---------------- */
+function resetRun() {
+  Board.cancel(iv); Board.cancel(fbT); runId += 1;
+  run = false; over = false; won = false; overText = ''; note = ''; reveal = ''; typed = '';
+  const c = cfgOf(); tl = c.dur; elapsed = 0; score = 0; combo = 0; bestCombo = 0; right = 0; wrong = 0;
+  prevText = ''; cur = null; $('#fb').innerHTML = '&nbsp;';
+  paint();
 }
-function start() {
-  Board.cancel(iv); run = true; tl = DUR; score = 0; combo = 0; bestC = 0; right = 0; wrong = 0; typed = ''; prevText = ''; next();
-  last = Board.now(); iv = Board.every(100, tick); $('#go').textContent = 'Restart'; flash('Go!', 'g'); Board.sfx('click'); paint();
+function startRun() {
+  Board.cancel(iv); Board.cancel(fbT); runId += 1;
+  const c = cfgOf();
+  run = true; over = false; won = false; overText = ''; note = ''; reveal = ''; typed = '';
+  tl = c.dur; elapsed = 0; score = 0; combo = 0; bestCombo = 0; right = 0; wrong = 0; prevText = '';
+  next(); lastTick = Board.now(); iv = Board.every(100, loop);
+  flash('Go!', 'g'); Board.sfx('click'); paint();
 }
-function reset() {
-  Board.cancel(iv); run = false; tl = DUR; score = 0; combo = 0; right = 0; wrong = 0; typed = ''; $('#go').textContent = 'Start';
-  $('#tbl').style.display = $('#op').value === 'tt' ? '' : 'none'; $('#fb').innerHTML = '&nbsp;'; paint();
+function loop() {
+  if (!run) return;
+  const now = Board.now(), dt = Math.max(0, now - lastTick);
+  lastTick = now;
+  if (dt) applyTime(dt);
 }
-function tick() { const n = Board.now(); tl -= n - last; last = n; if (tl <= 0) { tl = 0; end(); } else paintTime(); }
+function applyTime(ms) {
+  if (!run) return;
+  const c = cfgOf();
+  if (c.dur) { tl = Math.max(0, tl - ms); if (!tl) { conclude(); return; } }
+  else elapsed += ms;
+  paint();
+}
+
+/* ---------------- answers ---------------- */
+function advance() {
+  const c = cfgOf();
+  if (c.quota && right + wrong >= c.quota) { conclude(); return; }
+  next(); typed = ''; reveal = ''; paint();
+}
 function good() {
-  right++; combo++; bestC = Math.max(bestC, combo); const m = mult(), pts = 10 * m; score += pts;
-  if (combo % 10 === 0) { tl += 2000; flash(`+${pts}  ·  +2s bonus!`, 'g'); } else flash('+' + pts, 'g');
-  Board.sfx('step'); typed = ''; next(); paint();
+  right += 1; combo += 1; bestCombo = Math.max(bestCombo, combo);
+  const c = cfgOf(), m = mult(), pts = 10 * m + (Board.now() - qStart < 2000 ? 5 : 0);
+  score += pts;
+  GameUI.unlock('first-sum');
+  if (combo >= 10) GameUI.unlock('combo-10');
+  if (combo >= 20) GameUI.unlock('combo-20');
+  if (c.dur && combo % 10 === 0) { tl += 2000; flash(`+${pts}  ·  +2s`, 'g'); }
+  else flash('+' + pts, 'g');
+  Board.sfx(c.dur && combo % 10 === 0 ? 'win' : 'step');
+  advance();
 }
 function bad() {
-  wrong++; combo = 0; tl -= 3000; flash(`✗  ${cur.t} = ${cur.a}   (−3s)`, 'b'); Board.sfx('error'); typed = '';
-  if (tl <= 0) { tl = 0; end(); return; } next(); paint();
+  wrong += 1; combo = 0; typed = ''; reveal = '';
+  const c = cfgOf();
+  if (c.dur) { tl = Math.max(0, tl - 3000); flash(`✗  ${cur.t} = ${cur.a}   (−3s)`, 'b'); }
+  else flash(`✗  ${cur.t} = ${cur.a}`, 'b');
+  Board.sfx('error');
+  if (c.dur && !tl) { conclude(); return; }
+  advance();
 }
 function check(final) {
-  if (!run || !typed) return; const a = String(cur.a);
-  if (typed === a) good(); else if (final || typed.length >= a.length) bad(); else paint();
+  if (!run || !typed || !cur) return;
+  const a = String(cur.a);
+  if (typed === a) good();
+  else if (final || typed.length >= a.length) bad();
+  else paint();
 }
-function digit(k) { if (!run || typed.length >= 6) return; typed += k; check(false); }
+function digit(k) {
+  if (!run || typed.length >= 4) return;
+  typed += k; check(false);
+}
 function back() { if (!run) return; typed = typed.slice(0, -1); paint(); }
-function end() {
-  Board.cancel(iv); run = false; typed = ''; paint(); $('#go').textContent = 'Play again';
-  const best = bestVal(), rec = score > best; if (rec) Board.ls.set(bestKey(), String(score));
-  const tot = right + wrong, acc = tot ? Math.round(right / tot * 100) : 0, avg = right ? ((DUR - Math.min(tl, 0)) / 1000 / Math.max(1, tot)).toFixed(1) : '—';
-  Board.sfx(rec && score > 0 ? 'win' : 'lose'); paint();
-  Board.modal(rec && score > 0 ? 'New high score!' : 'Time\'s up!',
-    `<p style="margin:0 0 6px;font-size:28px;font-weight:800">${score} points</p>Right: <b>${right}</b> · Wrong: <b>${wrong}</b> · Accuracy: <b>${acc}%</b><br>Best streak: <b>${bestC}</b> · About <b>${avg}s</b> per sum<br>${rec ? '' : 'Your best: <b>' + best + '</b>'}`,
-    [['Play again', start], ['Close']]);
+
+function showHint() {
+  if (!run || !cur) return;
+  if (score < 50) { note = 'A hint costs 50 points.'; paint(); return; }
+  score -= 50; note = 'Hint revealed the answer (−50).'; reveal = String(cur.a); paint();
+  const g = runId;
+  Board.after(1200, () => { if (g !== runId || !run) return; reveal = ''; note = ''; paint(); });
 }
-$('#go').onclick = (e) => { e.currentTarget.blur(); start(); };
+
+function conclude() {
+  if (!run) return;
+  run = false; Board.cancel(iv); Board.cancel(fbT); runId += 1; over = true; typed = ''; reveal = ''; note = '';
+  const c = cfgOf(), total = right + wrong, acc = total ? Math.round(right / total * 100) : 0;
+  const spent = c.dur ? Math.max(0, c.dur - tl) : elapsed;
+  const earned = Math.round(score * c.mult);
+  won = earned >= c.target && (!c.quota || total >= c.quota);
+  const finalScore = Math.round((score + (won ? c.bonus : 0)) * c.mult);
+  overText = won ? `Cleared ${MODE_NAMES[gm]} with ${finalScore} points` : `${c.quota ? 'Run over' : "Time's up"} — ${finalScore} points (target ${c.target})`;
+  const records = {}; records[bestKey()] = finalScore; records.bestCombo = bestCombo; records.bestAccuracy = acc;
+  const mins = {}; if (won && c.quota) mins.bestAccuracyTime = Math.max(1, Math.round(spent / 1000));
+  const counters = { sumsAnswered: total, correctAnswers: right, wrongAnswers: wrong };
+  if (won) { counters.wins = 1; counters[winKey()] = 1; }
+  const achievements = [];
+  if (won) achievements.push(gm + '-clear');
+  if (won && total >= 10 && acc === 100) achievements.push('perfect');
+  if (won && right >= 10 && spent / right < 3000) achievements.push('quick-thinker');
+  if (finalScore >= 2500) achievements.push('high-score');
+  const prevBest = Number((GameUI.stats() || {}).bestScore) || 0;
+  GameUI.record({ score: finalScore, result: (won ? 'Cleared ' : 'Finished ') + MODE_NAMES[gm], records, mins, counters, achievements });
+  if (finalScore > prevBest) GameUI.unlock('personal-best');
+  paint();
+  Board.sfx(won ? 'win' : 'lose');
+  const title = won ? 'Target reached!' : c.quota ? 'Run over' : "Time's up!";
+  Board.modal(title, `<p style="margin:0 0 6px;font-size:28px;font-weight:800">${finalScore} points</p>Right: <b>${right}</b> · Wrong: <b>${wrong}</b> · Accuracy: <b>${acc}%</b><br>Best streak: <b>${bestCombo}</b> · ${c.quota ? total + ' sums in ' + fmt(spent) : Math.round(spent / 1000) + 's played'}<br>Mode: <b>${MODE_NAMES[gm]}</b>`, [['Play again', startRun], ['Close']]);
+}
+
+/* ---------------- input ---------------- */
+$('#go').onclick = (e) => { e.currentTarget.blur(); startRun(); };
+$('#hint').onclick = (e) => { e.currentTarget.blur(); showHint(); };
 $('#pad').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return; b.blur(); const k = b.dataset.k;
-  if (k === '⌫') back(); else if (k === '↵') { if (run) check(true); else start(); } else digit(k);
+  if (k === '⌫') back(); else if (k === '↵') { if (run) check(true); else startRun(); } else digit(k);
 });
-['op', 'lvl', 'tb'].forEach((id) => { $('#' + id).onchange = (e) => { e.currentTarget.blur(); reset(); }; });
+['op', 'lvl', 'tb'].forEach((id) => {
+  $('#' + id).onchange = (e) => {
+    e.currentTarget.blur();
+    $('#tbl').style.display = $('#op').value === 'tt' ? '' : 'none';
+    paint();
+  };
+});
 document.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
   const k = e.key;
   if (k.length === 1 && k >= '0' && k <= '9') { digit(k); e.preventDefault(); }
   else if (k === 'Backspace') { back(); e.preventDefault(); }
-  else if (k === 'Enter') { e.preventDefault(); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); if (run) check(true); else start(); }
-  else if (k === 'n' || k === 'N') start();
+  else if (k === 'Enter') { e.preventDefault(); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); if (run) check(true); else startRun(); }
+  else if (k === 'n' || k === 'N') startRun();
+  else if (k === 't' || k === 'T') showHint();
 });
-reset();
+
+/* ---------------- shared menu contract ---------------- */
+const GameUI = Board.ui({
+  id: 'maths-dash', title: 'Maths Dash', subtitle: 'Five ways to run the numbers.', accent: '#f97316',
+  modes: MODES, achievements: ACHIEVEMENTS,
+  tutorial: { type: 'interactive', steps: [
+    { text: 'Type the answer with the number keys or the keypad.' },
+    { text: 'Five correct answers in a row raise the multiplier; ten add two seconds.' },
+    { text: 'A wrong answer costs three seconds and breaks the combo.' },
+    { text: 'Reach the mode target to clear it and earn its badge.' },
+  ] },
+  hooks: {
+    applyMode: (next) => { gm = MODES.some((m) => m.id === next) ? next : 'classic'; if (booted) resetRun(); },
+    applyCosmetic,
+    onStart: () => { menuPaused = false; },
+  },
+});
+window.ApexGameMenuActions = {
+  play: function () { menuPaused = false; },
+  pause: function () { menuPaused = true; },
+  resume: function () { menuPaused = false; },
+  restart: function () { menuPaused = false; startRun(); }
+};
+
+booted = true; paintPalette(); resetRun();
+
+if (/(\?|&)test=1(?:&|$)/.test(location.search)) {
+  const state = () => ({
+    mode: gm, running: run, over, won, overText, score, combo, bestCombo, right, wrong,
+    accuracy: right + wrong ? Math.round(right / (right + wrong) * 100) : 0,
+    target: cfgOf().target, quota: cfgOf().quota, mult: cfgOf().mult,
+    remaining: tl, elapsed, question: cur ? cur.t : '', answer: cur ? cur.a : null,
+    typed, reveal, menuPaused, note,
+  });
+  const typeText = (text) => { for (const ch of String(text)) if (ch >= '0' && ch <= '9') digit(ch); };
+  window.MathsTest = {
+    state,
+    modes: () => MODES.map((m) => m.id),
+    setMode: (id) => GameUI.setMode(id),
+    getMode: () => GameUI.getMode(),
+    restart: () => { resetRun(); return state(); },
+    start: () => { startRun(); return state(); },
+    setScore: (n) => { score = Math.max(0, Number(n) || 0); paint(); return state(); },
+    setCombo: (n) => { combo = Math.max(0, Number(n) || 0); bestCombo = Math.max(bestCombo, combo); paint(); return state(); },
+    setClock: (ms) => { tl = Math.max(0, Number(ms) || 0); paint(); return state(); },
+    tick: (ms) => { applyTime(Number(ms) || 0); return state(); },
+    setQuestion: (n, opts) => {
+      cur = { t: String(n), a: Number(n) || 0 }; typed = ''; reveal = '';
+      qStart = Board.now() - (opts && opts.fast ? 0 : 3000); paint(); return state();
+    },
+    type: (text) => { typeText(text); return state(); },
+    submit: () => { check(true); return state(); },
+    finish: () => { conclude(); return state(); },
+    hint: () => { showHint(); return state(); },
+    colors: () => ({ key: PALETTE.key, panel: PALETTE.panel, accent: PALETTE.accent, theme: document.body.style.background || 'auto' }),
+    cosmetic: (slot, id) => { applyCosmetic(slot, id); return window.MathsTest.colors(); },
+    cosmeticList: () => (window.Meta && Meta.getCosmetics ? Meta.getCosmetics('maths-dash') : []).map((item) => ({ id: item.id, slot: item.slot })),
+    achievements: () => (Save.load('maths-dash').achievements || []).slice(),
+    stats: () => Save.load('maths-dash').stats || {},
+    modalOpen: () => { const d = document.getElementById('bk-dlg'); return !!(d && d.open); },
+    closeModal: () => { const d = document.getElementById('bk-dlg'); if (d && d.open) d.close(); },
+  };
+}
 </script>
 <script src="../../kits/menu-bootstrap.js"></script>
 </body>
