@@ -161,6 +161,14 @@ html {
   min-height: 2.75rem;
 }
 
+/* The shared touch pad sizes its own cells from --pad-cell. Inheriting the
+   theater-wide minimum makes each D-pad button larger than its grid track, so
+   the arrows overlap and the dock spills out over the game. */
+[data-touch-controller] button {
+  min-width: 0;
+  min-height: 0;
+}
+
 [data-theater] button:not(:disabled) {
   cursor: pointer;
   transition: filter 140ms ease, transform 140ms ease;
@@ -203,6 +211,286 @@ html {
   outline-offset: 2px;
 }
 
+/* ── Console-style touch pad ─────────────────────────────────────────────
+   A heavyweight matte-graphite gamepad face: one recessed analog stick on
+   the left, a coloured A/B/X/Y diamond on the right, START pill and power
+   LED in the middle. Smooth radial gradients and deep inner shadows give
+   it mass; every dimension derives from --pad-cell so nothing overlaps. */
+.apex-pad {
+  --pad-cell: clamp(1.9rem, 8.6vw, 2.4rem);
+  --pad-face: calc(var(--pad-cell) * 1.28);
+  --stick-size: calc(var(--pad-cell) * 2.5);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--pad-cell) * 0.3);
+  width: 100%;
+  max-width: 34rem;
+  padding: calc(var(--pad-cell) * 0.5) calc(var(--pad-cell) * 0.55) calc(var(--pad-cell) * 0.62);
+  border-radius: calc(var(--pad-cell) * 1.05) calc(var(--pad-cell) * 1.05) calc(var(--pad-cell) * 1.5) calc(var(--pad-cell) * 1.5);
+  background:
+    radial-gradient(120% 60% at 50% -12%, rgb(255 255 255 / 10%), transparent 60%),
+    linear-gradient(180deg, #43474e 0%, #2a2d33 34%, #17191d 78%, #101215 100%);
+  box-shadow:
+    inset 0 2px 2px rgb(255 255 255 / 16%),
+    inset 0 -8px 18px rgb(0 0 0 / 70%),
+    inset 2px 0 3px rgb(255 255 255 / 5%),
+    inset -2px 0 3px rgb(0 0 0 / 40%),
+    0 16px 34px rgb(0 0 0 / 78%);
+  color-scheme: dark;
+}
+
+/* Ribbed grip patches moulded into the lower corners, like thumb rests. */
+.apex-pad::before,
+.apex-pad::after {
+  content: "";
+  position: absolute;
+  bottom: calc(var(--pad-cell) * 0.3);
+  width: calc(var(--pad-cell) * 1.15);
+  height: calc(var(--pad-cell) * 0.8);
+  border-radius: 45% 55% 60% 40% / 50%;
+  background: repeating-linear-gradient(115deg, rgb(0 0 0 / 34%) 0 2px, transparent 2px 5px);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.apex-pad::before {
+  left: calc(var(--pad-cell) * 0.5);
+  transform: rotate(8deg);
+}
+
+.apex-pad::after {
+  right: calc(var(--pad-cell) * 0.5);
+  transform: rotate(-8deg);
+}
+
+.apex-pad-brand {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: clamp(0.32rem, 1.5vw, 0.4rem);
+  letter-spacing: 0.14em;
+  color: rgb(203 213 225 / 55%);
+  text-shadow: 0 1px 0 rgb(0 0 0 / 60%);
+}
+
+.apex-pad-print {
+  font-family: var(--font-mono);
+  font-size: clamp(0.3rem, 1.4vw, 0.38rem);
+  letter-spacing: 0.16em;
+  color: rgb(203 213 225 / 52%);
+  text-shadow: 0 1px 0 rgb(0 0 0 / 65%);
+}
+
+.apex-pad-led {
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 35% 30%, #d9ffe4, #35d06a 55%, #0d6b31);
+  box-shadow: 0 0 6px 1px rgb(70 220 120 / 60%), inset 0 0 2px rgb(255 255 255 / 70%);
+}
+
+/* Analog stick: recessed well plus a domed thumb cap that springs home. */
+.apex-stick {
+  position: relative;
+  flex: none;
+  width: var(--stick-size);
+  height: var(--stick-size);
+  padding: 0;
+  border: 0;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 50% 40%, #08090b 0%, #14161a 52%, #23262b 88%, #2c3036 100%);
+  box-shadow:
+    inset 0 5px 12px rgb(0 0 0 / 85%),
+    inset 0 -2px 4px rgb(255 255 255 / 7%),
+    0 1px 0 rgb(255 255 255 / 10%);
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: grab;
+}
+
+.apex-stick:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.apex-stick:not(:disabled):active {
+  cursor: grabbing;
+}
+
+.apex-stick-cap {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: calc(var(--stick-size) * 0.66);
+  height: calc(var(--stick-size) * 0.66);
+  margin: calc(var(--stick-size) * -0.33);
+  border-radius: 9999px;
+  background: radial-gradient(circle at 36% 28%, #565b63 0%, #33373d 42%, #14161a 100%);
+  box-shadow:
+    inset 0 2px 3px rgb(255 255 255 / 26%),
+    inset 0 -6px 10px rgb(0 0 0 / 75%),
+    0 7px 14px rgb(0 0 0 / 72%);
+  transition: transform 180ms cubic-bezier(0.22, 0.9, 0.32, 1.25);
+  pointer-events: none;
+}
+
+.apex-stick[data-active='true'] .apex-stick-cap {
+  transition: none;
+}
+
+.apex-stick-ring {
+  width: 62%;
+  height: 62%;
+  border-radius: 9999px;
+  border: 2px solid rgb(0 0 0 / 45%);
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / 14%), 0 1px 1px rgb(255 255 255 / 10%);
+}
+
+/* Face cluster: glossy black keys with console-coloured letters. */
+.apex-pad-faceplate {
+  display: grid;
+  flex: none;
+  grid-template-columns: repeat(3, var(--pad-face));
+  grid-template-rows: repeat(3, var(--pad-face));
+  gap: calc(var(--pad-cell) * 0.08);
+}
+
+.apex-pad-face {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: var(--pad-face);
+  height: var(--pad-face);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 9999px;
+  background: radial-gradient(circle at 34% 26%, #4b5058 0%, #26292f 46%, #0e1013 100%);
+  box-shadow:
+    inset 0 2px 2px rgb(255 255 255 / 22%),
+    inset 0 -5px 9px rgb(0 0 0 / 72%),
+    0 4px 9px rgb(0 0 0 / 68%);
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.apex-pad-letter {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: calc(var(--pad-cell) * 0.5);
+  line-height: 1;
+  color: var(--ink);
+  text-shadow: 0 0 7px color-mix(in srgb, var(--ink) 60%, transparent), 0 1px 1px rgb(0 0 0 / 85%);
+}
+
+.apex-pad-keyword {
+  font-family: var(--font-mono);
+  font-size: calc(var(--pad-cell) * 0.18);
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+  color: rgb(226 232 240 / 78%);
+  text-align: center;
+  max-width: 92%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.apex-pad-face:not(:disabled):active {
+  border-color: color-mix(in srgb, var(--ink) 70%, transparent);
+  box-shadow:
+    inset 0 0 12px color-mix(in srgb, var(--ink) 50%, transparent),
+    0 0 14px color-mix(in srgb, var(--ink) 45%, transparent);
+}
+
+/* Unmapped keys stay in the diamond as faint ghosts so the pad always reads
+   as a full controller, but they cannot be pressed. */
+.apex-pad-face:disabled {
+  opacity: 0.16;
+  pointer-events: none;
+}
+
+.apex-pad-a { --ink: #6cc24a; }
+.apex-pad-b { --ink: #e04338; }
+.apex-pad-x { --ink: #2f9fe0; }
+.apex-pad-y { --ink: #f2c40e; }
+
+/* Centre column: brand, power LED and the START pill (pause). */
+.apex-pad-center {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--pad-cell) * 0.16);
+  overflow: hidden;
+}
+
+.apex-pad-start {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.apex-pad-pill {
+  width: calc(var(--pad-cell) * 1.5);
+  height: calc(var(--pad-cell) * 0.36);
+  border-radius: 9999px;
+  background: linear-gradient(180deg, #4a4e55, #26292e 60%, #141619);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 26%),
+    inset 0 -2px 4px rgb(0 0 0 / 65%),
+    0 2px 5px rgb(0 0 0 / 70%);
+}
+
+.apex-pad-start:not(:disabled):active .apex-pad-pill {
+  background: linear-gradient(180deg, #e8f6ff, #9fc6dd 60%, #4d7d96);
+  box-shadow: inset 0 0 8px rgb(220 245 255 / 70%), 0 0 10px rgb(160 220 255 / 45%);
+}
+
+/* A landscape phone only has ~390px of height and the handheld dock needs real
+   room, so drop the two chrome bands that repeat what the pad already carries:
+   the tribute kicker line and the bottom helper bar (its Pause duplicate is the
+   START pill). Keeps the playfield large enough to actually see. */
+@media (orientation: landscape) and (max-height: 560px) {
+  [data-theater-bar] {
+    flex-wrap: nowrap;
+    gap: 0.4rem;
+    padding-block: 0.25rem;
+  }
+
+  [data-theater-bar] button {
+    min-width: 2.25rem;
+    min-height: 2.25rem;
+  }
+
+  [data-theater-kicker],
+  [data-theater-helper],
+  .portrait-tip {
+    display: none;
+  }
+
+  .apex-pad {
+    --pad-cell: clamp(1.4rem, 4.6vh, 1.8rem);
+  }
+}
+
 @media (forced-colors: active) {
   :where(button, a, input, select, [tabindex]):focus-visible {
     outline: 2px solid Highlight !important;
@@ -216,5 +504,26 @@ html {
 
   html {
     scrollbar-color: auto;
+  }
+
+  .apex-pad,
+  .apex-stick,
+  .apex-stick-cap,
+  .apex-pad-face,
+  .apex-pad-pill {
+    background: ButtonFace !important;
+    border-color: ButtonText !important;
+  }
+
+  .apex-stick,
+  .apex-pad-face,
+  .apex-pad-print,
+  .apex-pad-brand,
+  .apex-pad-letter {
+    color: ButtonText !important;
+  }
+
+  .apex-pad-led {
+    display: none;
   }
 }

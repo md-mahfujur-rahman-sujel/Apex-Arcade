@@ -1189,59 +1189,398 @@ const COLLECTIONS_BY_CATEGORY: Record<GameInfo['category'], string[]> = {
 
 const ENHANCED_GAME_IDS = new Set(['flappy-bird', 'tic-tac-toe', '2048']);
 
-// Theater controls are deliberately declared per game. Titles whose primary
-// interaction is tapping or dragging keep their own native touch surface.
+// Map the shared touch dock to the input each game actually reads.
+// Arcade pages listen on KeyboardEvent.code through arcade-core; board and
+// puzzle pages listen on KeyboardEvent.key, so plain letters ('u', '1', ' ')
+// are dispatched as both. Face buttons follow one convention: A is the
+// jump/confirm verb, B the primary action, X a utility, Y a special.
+// Directions are only listed where the game polls that axis, and a pointer
+// action is added only for pages that hit-test taps or drags.
 const ARCADE_TOUCH_CONTROLS: Record<number, NonNullable<GameInfo['touchControls']>> = {
-  1: { mode: 'virtual', actions: [{ label: 'Flap', key: ' ' }] },
+  1: { mode: 'virtual', actions: [{ button: 'A', label: 'Flap', key: ' ' }] },
   2: { mode: 'virtual', directions: { up: 'ArrowUp', down: 'ArrowDown' } },
-  3: { mode: 'virtual', directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' } },
-  4: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Fire', key: ' ' }, { label: 'Overdrive', key: 'k' }] },
-  5: { mode: 'virtual', directions: { up: 'ArrowUp', left: 'ArrowLeft', right: 'ArrowRight', down: 'ArrowDown' }, actions: [{ label: 'Rotate', key: 'x' }, { label: 'Drop', key: ' ' }, { label: 'Hold', key: 'c' }] },
+  3: {
+    mode: 'virtual',
+    directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [{ button: 'A', label: 'Loop', key: 't' }, { button: 'B', label: 'Skin', key: 'k' }],
+  },
+  4: {
+    mode: 'virtual',
+    directions: { left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [{ button: 'A', label: 'Fire', key: ' ' }, { button: 'B', label: 'Boost', key: 'k' }],
+  },
+  5: {
+    mode: 'virtual',
+    directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [
+      { button: 'A', label: 'Drop', key: ' ' },
+      { button: 'B', label: 'Rotate', key: 'x' },
+      { button: 'X', label: 'Hold', key: 'c' },
+      { button: 'Y', label: 'Spin', key: 'z' },
+    ],
+  },
   6: { mode: 'virtual', directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' } },
-  7: { mode: 'virtual', directions: { up: 'ArrowUp', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Fire', key: ' ' }, { label: 'Warp', key: 'Shift' }] },
-  8: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight', down: 'ArrowDown' }, actions: [{ label: 'Jump', key: ' ' }] },
-  9: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Jump', key: ' ' }] },
-  10: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Jump', key: ' ' }] },
-  11: { mode: 'virtual', directions: { left: 'a', right: 'd', up: 'w', down: 's' }, actions: [{ label: 'Punch', key: 'f' }, { label: 'Kick', key: 'g' }, { label: 'Rush', key: 'h' }] },
-  12: { mode: 'virtual', directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Confirm', key: ' ' }, { label: 'Cancel', key: 'x' }] },
-  13: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Whip', key: 'x' }, { label: 'Axe', key: 'c' }] },
-  14: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Fire', key: 'x' }, { label: 'Missile', key: 'c' }] },
-  15: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight', down: 'ArrowDown' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Strike', key: 'x' }, { label: 'Dash', key: 'Shift' }] },
-  16: { mode: 'virtual', directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Dash', key: 'Shift' }] },
-  17: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Shoot', key: 'x' }, { label: 'Dash', key: 'Shift' }] },
-  18: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight', down: 'ArrowDown' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Attack', key: 'x' }, { label: 'Roll', key: 'Shift' }] },
-  19: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Dash', key: 'Shift' }, { label: 'Flare', key: 'x' }] },
-  20: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Jump', key: ' ' }, { label: 'Punch', key: 'x' }] },
-  21: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select square', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'Flip board', key: 'f' }, { label: 'Hint', key: 't' }] },
-  22: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Roll', key: ' ' }, { label: 'New game', key: 'n' }, { label: 'Select', pointer: true }] },
-  23: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Roll', key: ' ' }, { label: 'New game', key: 'n' }, { label: 'Select', pointer: true }] },
-  24: { mode: 'virtual', pointerCursor: true, directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Shoot', key: ' ' }, { label: 'Aim', pointer: true }, { label: 'New game', key: 'n' }] },
-  25: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Advance', key: ' ' }, { label: 'Build', key: 'b' }, { label: 'Select', pointer: true }, { label: 'New game', key: 'n' }] },
-  26: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select piece', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'Flip board', key: 'f' }] },
-  27: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Drop', key: 'Enter' }, { label: 'Undo', key: 'u' }, { label: 'New game', key: 'n' }] },
-  28: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select pit', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'New game', key: 'n' }] },
-  29: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select square', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'Hint', key: 't' }] },
-  30: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Place mark', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'New game', key: 'n' }] },
-  31: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select point', pointer: true }, { label: 'Roll', key: ' ' }, { label: 'Undo', key: 'u' }, { label: 'Hint', key: 't' }] },
-  32: { mode: 'virtual', pointerCursor: true, directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Draw line', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'Hint', key: 't' }] },
-  33: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Place stone', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'Pass', key: 'p' }, { label: 'Hint', key: 't' }] },
-  34: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select card', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'New game', key: 'n' }, { label: 'Hint', key: 't' }] },
-  35: { mode: 'virtual', directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Flip card', key: ' ' }, { label: 'New game', key: 'n' }, { label: 'Hint', key: 't' }] },
-  36: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select answer', pointer: true }, { label: 'Erase', key: 'Backspace' }, { label: 'Submit', key: 'Enter' }, { label: 'Hint', key: 't' }] },
-  37: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Aim or shoot', pointer: true }, { label: 'New game', key: 'n' }] },
-  38: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Bowl', pointer: true }, { label: 'New game', key: 'n' }] },
-  39: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Shoot', pointer: true }, { label: 'New game', key: 'n' }] },
-  40: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Aim or putt', pointer: true }, { label: 'New game', key: 'n' }] },
-  41: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Aim or shoot', pointer: true }, { label: 'New game', key: 'n' }] },
-  42: { mode: 'virtual', directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Undo', key: 'u' }, { label: 'New game', key: 'n' }] },
-  43: { mode: 'virtual', pointerCursor: true, directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Select 1', key: '1' }, { label: 'Erase', key: 'Backspace' }, { label: 'Select 2', key: '2' }, { label: 'Hint', key: 't' }] },
-  44: { mode: 'virtual', pointerCursor: true, directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Reveal', key: ' ' }, { label: 'Flag', key: 'f' }, { label: 'Select', pointer: true }, { label: 'New game', key: 'n' }] },
-  45: { mode: 'virtual', directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Undo', key: 'u' }, { label: 'New game', key: 'n' }] },
-  46: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select or move bolt', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'Restart', key: 'r' }] },
-  47: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select tube', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'Hint', key: 't' }, { label: 'Restart', key: 'r' }] },
-  48: { mode: 'virtual', directions: { left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Drop fruit', key: ' ' }, { label: 'New game', key: 'n' }] },
-  49: { mode: 'virtual', directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, actions: [{ label: 'Hit ball', key: ' ' }, { label: 'Serve or alt hit', key: 'Enter' }, { label: 'Pause', key: 'p' }, { label: 'Guide', key: 'g' }] },
-  50: { mode: 'virtual', pointerCursor: true, actions: [{ label: 'Select tile', pointer: true }, { label: 'Undo', key: 'u' }, { label: 'Shuffle', key: 's' }, { label: 'Hint', key: 'h' }] },
+  7: {
+    mode: 'virtual',
+    directions: { up: 'ArrowUp', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [{ button: 'A', label: 'Fire', key: ' ' }, { button: 'B', label: 'Warp', key: 'Shift' }],
+  },
+  8: {
+    mode: 'virtual',
+    directions: { down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [{ button: 'A', label: 'Jump', key: ' ' }],
+  },
+  9: {
+    mode: 'virtual',
+    directions: { down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [{ button: 'A', label: 'Jump', key: ' ' }, { button: 'B', label: 'Glide', key: 'Shift' }],
+  },
+  10: {
+    mode: 'virtual',
+    directions: { down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [{ button: 'A', label: 'Jump', key: ' ' }, { button: 'B', label: 'Dash', key: 'Shift' }],
+  },
+  11: {
+    mode: 'virtual',
+    directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [
+      { button: 'A', label: 'Jump', key: ' ' },
+      { button: 'B', label: 'Punch', key: 'f' },
+      { button: 'X', label: 'Kick', key: 'g' },
+      { button: 'Y', label: 'Rush', key: 'h' },
+    ],
+  },
+  12: {
+    mode: 'virtual',
+    directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [
+      { button: 'A', label: 'Talk', key: ' ' },
+      { button: 'B', label: 'Back', key: 'x' },
+      { button: 'X', label: 'Potion', key: '1' },
+      { button: 'Y', label: 'Ether', key: '2' },
+    ],
+  },
+  13: {
+    mode: 'virtual',
+    directions: { down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [
+      { button: 'A', label: 'Jump', key: ' ' },
+      { button: 'B', label: 'Whip', key: 'x' },
+      { button: 'X', label: 'Axe', key: 'c' },
+    ],
+  },
+  14: {
+    mode: 'virtual',
+    directions: { down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [
+      { button: 'A', label: 'Jump', key: ' ' },
+      { button: 'B', label: 'Beam', key: 'x' },
+      { button: 'X', label: 'Missile', key: 'c' },
+    ],
+  },
+  15: {
+    mode: 'virtual',
+    directions: { down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [
+      { button: 'A', label: 'Jump', key: ' ' },
+      { button: 'B', label: 'Strike', key: 'x' },
+      { button: 'X', label: 'Dash', key: 'Shift' },
+      { button: 'Y', label: 'Heal', key: 'v' },
+    ],
+  },
+  16: {
+    mode: 'virtual',
+    directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [{ button: 'A', label: 'Jump', key: ' ' }, { button: 'B', label: 'Dash', key: 'Shift' }],
+  },
+  17: {
+    mode: 'virtual',
+    directions: { left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [
+      { button: 'A', label: 'Jump', key: ' ' },
+      { button: 'B', label: 'Shoot', key: 'x' },
+      { button: 'X', label: 'Dash', key: 'Shift' },
+      { button: 'Y', label: 'Super', key: 'c' },
+    ],
+  },
+  18: {
+    mode: 'virtual',
+    directions: { down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [
+      { button: 'A', label: 'Jump', key: ' ' },
+      { button: 'B', label: 'Attack', key: 'x' },
+      { button: 'X', label: 'Roll', key: 'Shift' },
+    ],
+  },
+  19: {
+    mode: 'virtual',
+    directions: { down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [
+      { button: 'A', label: 'Jump', key: ' ' },
+      { button: 'B', label: 'Flare', key: 'x' },
+      { button: 'X', label: 'Dash', key: 'Shift' },
+    ],
+  },
+  20: {
+    mode: 'virtual',
+    directions: { down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [{ button: 'A', label: 'Jump', key: ' ' }, { button: 'B', label: 'Punch', key: 'x' }],
+  },
+  21: {
+    mode: 'virtual',
+    pointerCursor: true,
+    actions: [
+      { button: 'A', label: 'Move', pointer: true },
+      { button: 'B', label: 'Undo', key: 'u' },
+      { button: 'X', label: 'Flip', key: 'f' },
+      { button: 'Y', label: 'Hint', key: 't' },
+    ],
+  },
+  22: {
+    mode: 'virtual',
+    pointerCursor: true,
+    actions: [
+      { button: 'A', label: 'Roll', key: ' ' },
+      { button: 'B', label: 'Tap', pointer: true },
+      { button: 'X', label: 'New', key: 'n' },
+    ],
+  },
+  23: {
+    mode: 'virtual',
+    pointerCursor: true,
+    actions: [
+      { button: 'A', label: 'Roll', key: ' ' },
+      { button: 'B', label: 'Token', pointer: true },
+      { button: 'X', label: 'New', key: 'n' },
+    ],
+  },
+  24: {
+    mode: 'virtual',
+    pointerCursor: true,
+    directions: { left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [{ button: 'A', label: 'Shoot', key: ' ' }, { button: 'B', label: 'Flick', pointer: true }],
+  },
+  25: {
+    mode: 'virtual',
+    pointerCursor: true,
+    actions: [
+      { button: 'A', label: 'Next', key: ' ' },
+      { button: 'B', label: 'Build', key: 'b' },
+      { button: 'X', label: 'Tap', pointer: true },
+      { button: 'Y', label: 'New', key: 'n' },
+    ],
+  },
+  26: {
+    mode: 'virtual',
+    pointerCursor: true,
+    actions: [
+      { button: 'A', label: 'Move', pointer: true },
+      { button: 'B', label: 'Undo', key: 'u' },
+      { button: 'X', label: 'Flip', key: 'f' },
+    ],
+  },
+  27: {
+    mode: 'virtual',
+    pointerCursor: true,
+    directions: { left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [
+      { button: 'A', label: 'Drop', key: 'Enter' },
+      { button: 'B', label: 'Column', pointer: true },
+      { button: 'X', label: 'Undo', key: 'u' },
+      { button: 'Y', label: 'New', key: 'n' },
+    ],
+  },
+  28: {
+    mode: 'virtual',
+    pointerCursor: true,
+    actions: [
+      { button: 'A', label: 'Pit', pointer: true },
+      { button: 'B', label: 'Undo', key: 'u' },
+      { button: 'X', label: 'New', key: 'n' },
+    ],
+  },
+  29: {
+    mode: 'virtual',
+    pointerCursor: true,
+    actions: [
+      { button: 'A', label: 'Place', pointer: true },
+      { button: 'B', label: 'Undo', key: 'u' },
+      { button: 'X', label: 'Hint', key: 't' },
+    ],
+  },
+  30: {
+    mode: 'virtual',
+    pointerCursor: true,
+    actions: [
+      { button: 'A', label: 'Place', pointer: true },
+      { button: 'B', label: 'Undo', key: 'u' },
+      { button: 'X', label: 'New', key: 'n' },
+    ],
+  },
+  31: {
+    mode: 'virtual',
+    pointerCursor: true,
+    actions: [
+      { button: 'A', label: 'Roll', key: ' ' },
+      { button: 'B', label: 'Point', pointer: true },
+      { button: 'X', label: 'Undo', key: 'u' },
+      { button: 'Y', label: 'Hint', key: 't' },
+    ],
+  },
+  32: {
+    mode: 'virtual',
+    pointerCursor: true,
+    actions: [
+      { button: 'A', label: 'Line', pointer: true },
+      { button: 'B', label: 'Undo', key: 'u' },
+      { button: 'X', label: 'Hint', key: 't' },
+    ],
+  },
+  33: {
+    mode: 'virtual',
+    pointerCursor: true,
+    actions: [
+      { button: 'A', label: 'Stone', pointer: true },
+      { button: 'B', label: 'Undo', key: 'u' },
+      { button: 'X', label: 'New', key: 'n' },
+      { button: 'Y', label: 'Hint', key: 't' },
+    ],
+  },
+  34: {
+    mode: 'virtual',
+    pointerCursor: true,
+    actions: [
+      { button: 'A', label: 'Card', pointer: true },
+      { button: 'B', label: 'Undo', key: 'u' },
+      { button: 'X', label: 'New', key: 'n' },
+      { button: 'Y', label: 'Hint', key: 't' },
+    ],
+  },
+  35: {
+    mode: 'virtual',
+    pointerCursor: true,
+    directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [
+      { button: 'A', label: 'Flip', key: ' ' },
+      { button: 'B', label: 'Card', pointer: true },
+      { button: 'X', label: 'Hint', key: 't' },
+      { button: 'Y', label: 'New', key: 'n' },
+    ],
+  },
+  36: {
+    mode: 'virtual',
+    pointerCursor: true,
+    actions: [
+      { button: 'A', label: 'Pad', pointer: true },
+      { button: 'B', label: 'Send', key: 'Enter' },
+      { button: 'X', label: 'Erase', key: 'Backspace' },
+      { button: 'Y', label: 'Hint', key: 't' },
+    ],
+  },
+  37: {
+    mode: 'virtual',
+    pointerCursor: true,
+    actions: [{ button: 'A', label: 'Shot', pointer: true }],
+  },
+  38: {
+    mode: 'virtual',
+    pointerCursor: true,
+    directions: { left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [{ button: 'A', label: 'Bowl', key: ' ' }, { button: 'B', label: 'Lane', pointer: true }],
+  },
+  39: {
+    mode: 'virtual',
+    pointerCursor: true,
+    directions: { up: 'ArrowUp', down: 'ArrowDown' },
+    actions: [{ button: 'A', label: 'Shoot', key: ' ' }, { button: 'B', label: 'Drag', pointer: true }],
+  },
+  40: {
+    mode: 'virtual',
+    pointerCursor: true,
+    directions: { left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [{ button: 'A', label: 'Putt', key: ' ' }, { button: 'B', label: 'Aim', pointer: true }],
+  },
+  41: {
+    mode: 'virtual',
+    pointerCursor: true,
+    actions: [{ button: 'A', label: 'Flick', pointer: true }],
+  },
+  42: {
+    mode: 'virtual',
+    directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [{ button: 'A', label: 'Undo', key: 'u' }, { button: 'B', label: 'New', key: 'n' }],
+  },
+  43: {
+    mode: 'virtual',
+    pointerCursor: true,
+    directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [
+      { button: 'A', label: 'Cell', pointer: true },
+      { button: 'B', label: 'Erase', key: 'Backspace' },
+      { button: 'X', label: 'Notes', key: ' ' },
+      { button: 'Y', label: 'Hint', key: 't' },
+    ],
+  },
+  44: {
+    mode: 'virtual',
+    pointerCursor: true,
+    directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [
+      { button: 'A', label: 'Reveal', key: ' ' },
+      { button: 'B', label: 'Flag', key: 'f' },
+      { button: 'X', label: 'Cell', pointer: true },
+      { button: 'Y', label: 'New', key: 'n' },
+    ],
+  },
+  45: {
+    mode: 'virtual',
+    directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [{ button: 'A', label: 'Undo', key: 'u' }, { button: 'B', label: 'New', key: 'n' }],
+  },
+  46: {
+    mode: 'virtual',
+    pointerCursor: true,
+    actions: [
+      { button: 'A', label: 'Bolt', pointer: true },
+      { button: 'B', label: 'Undo', key: 'u' },
+      { button: 'X', label: 'Retry', key: 'r' },
+      { button: 'Y', label: 'Help', key: 'h' },
+    ],
+  },
+  47: {
+    mode: 'virtual',
+    pointerCursor: true,
+    actions: [
+      { button: 'A', label: 'Tube', pointer: true },
+      { button: 'B', label: 'Undo', key: 'u' },
+      { button: 'X', label: 'Spare', key: 't' },
+      { button: 'Y', label: 'New', key: 'n' },
+    ],
+  },
+  48: {
+    mode: 'virtual',
+    directions: { left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [{ button: 'A', label: 'Drop', key: ' ' }, { button: 'B', label: 'New', key: 'n' }],
+  },
+  49: {
+    mode: 'virtual',
+    directions: { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+    actions: [
+      { button: 'A', label: 'Serve', key: ' ' },
+      { button: 'B', label: 'Smash', key: 'Enter' },
+      { button: 'X', label: 'Guide', key: 'g' },
+    ],
+  },
+  50: {
+    mode: 'virtual',
+    pointerCursor: true,
+    actions: [
+      { button: 'A', label: 'Tile', pointer: true },
+      { button: 'B', label: 'Undo', key: 'u' },
+      { button: 'X', label: 'Shuffle', key: 's' },
+      { button: 'Y', label: 'Hint', key: 'h' },
+    ],
+  },
 };
 
 const getTouchControls = (game: GameInfo): NonNullable<GameInfo['touchControls']> =>

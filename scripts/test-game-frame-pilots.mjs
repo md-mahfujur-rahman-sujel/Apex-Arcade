@@ -82,7 +82,7 @@ try {
   await mobileMerge.locator('.apex-menu-root').waitFor({ state: 'hidden' });
   const mobileIntro = mobileMerge.locator('#bk-dlg');
   if (await mobileIntro.count() && await mobileIntro.evaluate((dialog) => dialog.open)) await mobileIntro.locator('button').first().click();
-  assert.equal(await mobilePage.getByRole('button', { name: 'Up' }).count(), 0, 'Direct-swipe game omits the overlapping theater d-pad');
+  assert.equal(await mobilePage.locator('#playable-theater-modal [data-touch-layout="2048"]').count(), 1, 'Shared controller is available alongside native swipe controls');
 
   const swipeSignature = async () => mobileMerge.locator('#bd .tl').evaluateAll((tiles) => tiles.map((tile) => `${tile.textContent}:${tile.style.left}:${tile.style.top}`).join('|'));
   let swipeChangedBoard = false;
@@ -111,7 +111,7 @@ try {
   }
   assert.ok(swipeChangedBoard, 'A mobile touch swipe changes the 2048 board');
   if (errors.length) throw new Error(`Browser errors: ${errors.join(' | ')}`);
-  console.log('PASS Merge 2048 native touch swipe changes the board; virtual controls do not cover actions; zero browser errors');
+  console.log('PASS Merge 2048 native touch swipe changes the board alongside the shared controller; zero browser errors');
   await mobileContext.close();
 } finally {
   await browser.close();

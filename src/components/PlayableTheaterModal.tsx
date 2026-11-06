@@ -100,6 +100,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
   const [showVirtualControls, setShowVirtualControls] = useState(false);
   const [dismissRotateTip, setDismissRotateTip] = useState(false);
   const [touchCursor, setTouchCursor] = useState({ x: 0.5, y: 0.5 });
+  const touchCursorRef = useRef({ x: 0.5, y: 0.5 });
 
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -142,6 +143,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     setHasLaunched(false);
     setIframeStarted(false);
     setTouchCursor({ x: 0.5, y: 0.5 });
+    touchCursorRef.current = { x: 0.5, y: 0.5 };
     setShowSettings(false);
     setReducedMotion(game ? readReducedMotionPreference(game.id, defaultPreferencesRef.current.reducedMotion || window.matchMedia('(prefers-reduced-motion: reduce)').matches) : false);
     setVolume(defaultPreferencesRef.current.sfxVolume);
@@ -517,54 +519,55 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     }
   };
 
-  // Virtual Key Dispatcher for mobile touch controls
+  // Dispatch through the game's own browsing context so its keyboard handlers
+  // receive the same key/code values as a physical keyboard.
   const dispatchVirtualKey = (key: string, action: 'down' | 'up') => {
-    // 1. Post to iframe
+    const keyCode = key === ' ' ? 'Space'
+      : key === 'Shift' ? 'ShiftLeft'
+        : /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}`
+          : /^[0-9]$/.test(key) ? `Digit${key}`
+            : key;
+    const type = action === 'down' ? 'keydown' : 'keyup';
+
+    if (showingEngine) {
+      window.dispatchEvent(new KeyboardEvent(type, { key, code: keyCode, bubbles: true, cancelable: true }));
+      return;
+    }
+
     try {
-      iframeRef.current?.contentWindow?.postMessage(
-        {
-          type: 'KEY_EVENT',
+      const frameWindow = iframeRef.current?.contentWindow;
+      const frameDocument = iframeRef.current?.contentDocument;
+      if (frameWindow && frameDocument) {
+        const FrameKeyboardEvent = frameDocument.defaultView?.KeyboardEvent;
+        if (!FrameKeyboardEvent) return;
+        frameDocument.dispatchEvent(new FrameKeyboardEvent(type, {
           key,
-          action,
-        },
-        window.location.origin
-      );
-    } catch (e) {}
-
-    // 2. Dispatch synthetic key event to iframe contentDocument if accessible
-    try {
-      const doc = iframeRef.current?.contentDocument;
-      if (doc) {
-        doc.dispatchEvent(
-          new KeyboardEvent(action === 'down' ? 'keydown' : 'keyup', {
-            key,
-            code: key === ' ' ? 'Space' : key === 'Enter' ? 'Enter' : key,
-            bubbles: true,
-            cancelable: true,
-          })
-        );
+          code: keyCode,
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          repeat: false,
+        }));
       }
-    } catch (e) {}
-
-    // 3. Dispatch to window for 2.5D engines
-    window.dispatchEvent(
-      new KeyboardEvent(action === 'down' ? 'keydown' : 'keyup', {
-        key,
-        code: key === ' ' ? 'Space' : key === 'Enter' ? 'Enter' : key,
-        bubbles: true,
-      })
-    );
+    } catch {
+      // Same-origin game frames normally allow direct keyboard events. If a
+      // browser blocks frame access, keep the host responsive as a fallback.
+      window.dispatchEvent(new KeyboardEvent(type, { key, code: keyCode, bubbles: true, cancelable: true }));
+    }
   };
 
   const moveTouchCursor = (dx: number, dy: number) => {
-    setTouchCursor((current) => ({
-      x: Math.max(0.015, Math.min(0.985, current.x + dx / Math.max(180, window.innerWidth * 0.38))),
-      y: Math.max(0.015, Math.min(0.985, current.y + dy / Math.max(180, window.innerHeight * 0.38))),
-    }));
+    const next = {
+      x: Math.max(0.015, Math.min(0.985, touchCursorRef.current.x + dx / Math.max(180, window.innerWidth * 0.38))),
+      y: Math.max(0.015, Math.min(0.985, touchCursorRef.current.y + dy / Math.max(180, window.innerHeight * 0.38))),
+    };
+    touchCursorRef.current = next;
+    setTouchCursor(next);
+    dispatchVirtualPointer('move');
   };
 
-  const virtualPointerTargetRef = useRef<Element | null>(null);
-  const dispatchVirtualPointer = (action: 'down' | 'up') => {
+  const virtualPointerRef = useRef<{ target: Element | null; startX: number; startY: number; moved: boolean }>({ target: null, startX: 0, startY: 0, moved: false });
+  const dispatchVirtualPointer = (action: 'move' | 'down' | 'up') => {
     let target: Element | null = null;
     let clientX = 0;
     let clientY = 0;
@@ -572,8 +575,8 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     const frame = iframeRef.current;
     if (frame?.contentDocument && iframeStarted) {
       const doc = frame.contentDocument;
-      clientX = touchCursor.x * Math.max(1, frame.clientWidth);
-      clientY = touchCursor.y * Math.max(1, frame.clientHeight);
+      clientX = touchCursorRef.current.x * Math.max(1, frame.clientWidth);
+      clientY = touchCursorRef.current.y * Math.max(1, frame.clientHeight);
       target = doc.elementFromPoint(clientX, clientY) || doc.body;
       view = doc.defaultView;
     } else {
@@ -581,16 +584,22 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
       if (!stage) return;
       const surface = stage.querySelector('canvas') || stage;
       const rect = surface.getBoundingClientRect();
-      clientX = rect.left + touchCursor.x * rect.width;
-      clientY = rect.top + touchCursor.y * rect.height;
+      clientX = rect.left + touchCursorRef.current.x * rect.width;
+      clientY = rect.top + touchCursorRef.current.y * rect.height;
       target = document.elementFromPoint(clientX, clientY);
       view = window;
     }
-    if (action === 'down') virtualPointerTargetRef.current = target;
-    target = action === 'up' ? virtualPointerTargetRef.current || target : target;
+
+    if (action === 'down') {
+      virtualPointerRef.current = { target, startX: clientX, startY: clientY, moved: false };
+    } else if (action === 'move' && virtualPointerRef.current.target) {
+      const drag = virtualPointerRef.current;
+      if (Math.hypot(clientX - drag.startX, clientY - drag.startY) > 7) drag.moved = true;
+    }
+    if (action === 'up') target = virtualPointerRef.current.target || target;
     if (!target || !view) return;
     const targetWindow = view as Window & typeof globalThis;
-    const eventType = action === 'down' ? 'pointerdown' : 'pointerup';
+    const eventType = action === 'move' ? 'pointermove' : action === 'down' ? 'pointerdown' : 'pointerup';
     const pointerInit: PointerEventInit = {
       bubbles: true,
       cancelable: true,
@@ -598,16 +607,28 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
       pointerType: 'touch',
       isPrimary: true,
       button: 0,
-      buttons: action === 'down' ? 1 : 0,
+      buttons: action === 'up' ? 0 : virtualPointerRef.current.target ? 1 : 0,
+      clientX,
+      clientY,
+    };
+    const mouseInit: MouseEventInit = {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      buttons: action === 'up' ? 0 : virtualPointerRef.current.target ? 1 : 0,
       clientX,
       clientY,
     };
     if (typeof targetWindow.PointerEvent !== 'undefined') {
       target.dispatchEvent(new targetWindow.PointerEvent(eventType, pointerInit));
     }
+    const mouseType = action === 'move' ? 'mousemove' : action === 'down' ? 'mousedown' : 'mouseup';
+    target.dispatchEvent(new targetWindow.MouseEvent(mouseType, mouseInit));
     if (action === 'up') {
-      target.dispatchEvent(new targetWindow.MouseEvent('click', { bubbles: true, cancelable: true, button: 0, clientX, clientY }));
-      virtualPointerTargetRef.current = null;
+      if (!virtualPointerRef.current.moved) {
+        target.dispatchEvent(new targetWindow.MouseEvent('click', { bubbles: true, cancelable: true, button: 0, clientX, clientY }));
+      }
+      virtualPointerRef.current = { target: null, startX: 0, startY: 0, moved: false };
     }
   };
 
@@ -618,8 +639,8 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     const stageRect = stage.getBoundingClientRect();
     const surfaceRect = surface.getBoundingClientRect();
     return {
-      left: `${surfaceRect.left - stageRect.left + touchCursor.x * surfaceRect.width}px`,
-      top: `${surfaceRect.top - stageRect.top + touchCursor.y * surfaceRect.height}px`,
+      left: `${surfaceRect.left - stageRect.left + touchCursorRef.current.x * surfaceRect.width}px`,
+      top: `${surfaceRect.top - stageRect.top + touchCursorRef.current.y * surfaceRect.height}px`,
     };
   };
 
@@ -870,10 +891,10 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
         } bg-[#0A0D18] border-0 sm:border border-white/10 rounded-none sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col transition-all`}
       >
         {/* Top Control Bar (Responsive Flexbox) */}
-        <div inert={isPaused} className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-6 py-2 sm:py-3 bg-[#070913] border-b border-white/10 shrink-0">
+        <div inert={isPaused} data-theater-bar className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-6 py-2 sm:py-3 bg-[#070913] border-b border-white/10 shrink-0">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <div>
-              <div className="flex items-center gap-1.5">
+              <div data-theater-kicker className="flex items-center gap-1.5">
                 <span className="text-[10px] font-mono text-cyan-400 uppercase tracking-wider font-semibold">
                   {viewMode === '2.5d' ? '3D Isometric Engine' : 'Full Tribute Edition'}
                 </span>
@@ -1038,7 +1059,8 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
         )}
 
         {/* Stage Container (Responsive height on mobile/tablet/desktop) */}
-        <div id="playable-theater-stage" inert={isPaused || showSettings} style={showTouchPad ? { paddingLeft: 'clamp(4.25rem, 19vw, 6.5rem)', paddingRight: 'clamp(4.25rem, 19vw, 6.5rem)' } : undefined} className="relative flex-1 p-0 sm:p-2 md:p-3 flex flex-col items-center justify-center bg-[#05060D] overflow-hidden">
+        <div id="playable-theater-stage" inert={isPaused || showSettings} className="relative flex-1 p-0 sm:p-2 md:p-3 flex flex-col items-center justify-center bg-[#05060D] overflow-hidden">
+          <div className="relative z-0 flex min-h-0 w-full flex-1 flex-col items-center justify-center">
           {!hasLaunched ? (
             <div className="relative flex h-full w-full max-w-3xl flex-col justify-end overflow-hidden rounded-2xl border border-white/10 bg-[#0d1425] p-6 sm:p-10" style={{ background: `radial-gradient(circle at 75% 25%, ${game.accentColor}55, transparent 42%), #0d1425` }}>
               <div aria-hidden="true" className="pointer-events-none absolute right-6 top-6 grid h-20 w-20 place-items-center rounded-3xl border border-white/10 bg-white/5 text-5xl shadow-xl backdrop-blur-sm sm:right-8 sm:top-8 sm:h-24 sm:w-24 sm:text-6xl" style={{ boxShadow: `0 12px 48px ${game.accentColor}25` }}>{game.icon}</div>
@@ -1051,8 +1073,8 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
           ) : viewMode === '2.5d' && game.playableEngineId ? (
             renderEngine()
           ) : game.htmlPath ? (
-            <div className="w-full h-full flex-1 flex flex-col items-center justify-center">
-              <iframe ref={iframeRef} src={frameSrc()} title={game.title} className={`w-full h-full min-h-[320px] rounded-none sm:rounded-xl border-0 sm:border border-white/10 bg-black shadow-2xl ${isPaused || showSettings ? 'pointer-events-none' : ''}`} inert={isPaused || showSettings} allow="gamepad; fullscreen; autoplay; clipboard-write; focus-without-user-activation" tabIndex={0} onLoad={() => {
+            <div className="w-full min-h-0 flex-1 flex flex-col items-center justify-center">
+              <iframe ref={iframeRef} src={frameSrc()} title={game.title} className={`w-full min-h-0 flex-1 rounded-none sm:rounded-xl border-0 sm:border border-white/10 bg-black shadow-2xl ${isPaused || showSettings ? 'pointer-events-none' : ''}`} inert={isPaused || showSettings} allow="gamepad; fullscreen; autoplay; clipboard-write; focus-without-user-activation" tabIndex={0} onLoad={() => {
                 try {
                   const frame = iframeRef.current;
                   if (!isPaused) { frame?.focus(); frame?.contentWindow?.focus(); }
@@ -1069,6 +1091,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
               }} />
             </div>
           ) : renderEngine()}
+          </div>
           {showTouchPad && game.touchControls && <>
             {game.touchControls.pointerCursor && <div aria-hidden="true" data-virtual-cursor className="pointer-events-none absolute z-20 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-cyan-400/25 shadow-[0_0_14px_#67e8f9]" style={touchCursorStyle()} />}
             <TouchGamepad gameId={game.id} gameTitle={game.title} controls={game.touchControls} onKey={dispatchVirtualKey} onPointer={dispatchVirtualPointer} onCursorMove={moveTouchCursor} onPause={pauseGame} />
@@ -1076,7 +1099,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
         </div>
 
         {/* Bottom Helper Bar (Responsive layout) */}
-        <div inert={isPaused} className="px-3 sm:px-6 py-2 sm:py-2.5 bg-[#070913] border-t border-white/5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400 shrink-0">
+        <div inert={isPaused} data-theater-helper className="px-3 sm:px-6 py-2 sm:py-2.5 bg-[#070913] border-t border-white/5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
             <span className="font-medium text-slate-300 truncate text-[11px] sm:text-xs">

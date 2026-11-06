@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { TouchControlsConfig } from '../types/game';
 
 type Direction = 'up' | 'down' | 'left' | 'right';
@@ -14,133 +14,139 @@ interface TouchGamepadProps {
   onPause: () => void;
 }
 
-const DIRECTIONS: Direction[] = ['up', 'down', 'left', 'right'];
 const FACE_BUTTONS: FaceButton[] = ['A', 'B', 'X', 'Y'];
-const BUTTON_COLORS: Record<FaceButton, string> = {
-  A: 'bg-rose-500 text-white shadow-[inset_0_2px_2px_#ffffff55,0_3px_0_#7f1d1d]',
-  B: 'bg-amber-400 text-slate-950 shadow-[inset_0_2px_2px_#ffffff99,0_3px_0_#92400e]',
-  X: 'bg-sky-400 text-slate-950 shadow-[inset_0_2px_2px_#ffffff99,0_3px_0_#075985]',
-  Y: 'bg-emerald-400 text-slate-950 shadow-[inset_0_2px_2px_#ffffff99,0_3px_0_#065f46]',
+const CURSOR_STEPS: Record<Direction, [number, number]> = {
+  up: [0, -0.055],
+  down: [0, 0.055],
+  left: [-0.055, 0],
+  right: [0.055, 0],
 };
-
-interface StickProps {
-  label: string;
-  onMove: (dx: number, dy: number) => void;
-  onDirections?: (directions: Direction[]) => void;
-}
-
-function ThumbStick({ label, onMove, onDirections }: StickProps) {
-  const pointerRef = useRef<number | null>(null);
-  const lastRef = useRef({ x: 0, y: 0 });
-  const directionRef = useRef<Direction[]>([]);
-  const [knob, setKnob] = useState({ x: 0, y: 0 });
-
-  const update = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (pointerRef.current !== event.pointerId) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const radius = Math.max(1, rect.width * 0.34);
-    const x = event.clientX - (rect.left + rect.width / 2);
-    const y = event.clientY - (rect.top + rect.height / 2);
-    const distance = Math.hypot(x, y);
-    const scale = distance > radius ? radius / distance : 1;
-    const next = { x: x * scale, y: y * scale };
-    setKnob(next);
-
-    const dx = event.clientX - lastRef.current.x;
-    const dy = event.clientY - lastRef.current.y;
-    lastRef.current = { x: event.clientX, y: event.clientY };
-    if (Math.abs(dx) + Math.abs(dy) > 0) onMove(dx, dy);
-
-    if (onDirections) {
-      const normalizedX = next.x / radius;
-      const normalizedY = next.y / radius;
-      const directions: Direction[] = [];
-      if (normalizedX < -0.38) directions.push('left');
-      if (normalizedX > 0.38) directions.push('right');
-      if (normalizedY < -0.38) directions.push('up');
-      if (normalizedY > 0.38) directions.push('down');
-      if (directions.join(',') !== directionRef.current.join(',')) {
-        onDirections(directions);
-        directionRef.current = directions;
-      }
-    }
-  };
-
-  const end = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (pointerRef.current !== event.pointerId) return;
-    pointerRef.current = null;
-    directionRef.current = [];
-    setKnob({ x: 0, y: 0 });
-    onDirections?.([]);
-  };
-
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      className="relative grid h-14 w-14 shrink-0 touch-none place-items-center rounded-full border border-white/25 bg-black/35 shadow-[inset_0_4px_10px_#0009,0_2px_5px_#0008] outline-none focus-visible:ring-2 focus-visible:ring-white/80 active:brightness-125"
-      onPointerDown={(event) => {
-        event.preventDefault();
-        pointerRef.current = event.pointerId;
-        lastRef.current = { x: event.clientX, y: event.clientY };
-        event.currentTarget.setPointerCapture(event.pointerId);
-        update(event);
-      }}
-      onPointerMove={update}
-      onPointerUp={end}
-      onPointerCancel={end}
-      onLostPointerCapture={end}
-    >
-      <span className="absolute inset-1 rounded-full border border-white/10" />
-      <span
-        aria-hidden="true"
-        className="relative h-8 w-8 rounded-full border border-white/30 bg-gradient-to-br from-slate-500 to-slate-900 shadow-[inset_0_2px_4px_#ffffff55,0_3px_5px_#000b]"
-        style={{ transform: `translate(${knob.x}px, ${knob.y}px)` }}
-      />
-    </button>
-  );
-}
+const FACE_SPOTS: Record<FaceButton, string> = {
+  Y: 'col-start-2 row-start-1',
+  X: 'col-start-1 row-start-2',
+  B: 'col-start-3 row-start-2',
+  A: 'col-start-2 row-start-3',
+};
+const KEY_LABELS: Record<string, string> = {
+  ' ': 'Space',
+  ArrowUp: '↑',
+  ArrowDown: '↓',
+  ArrowLeft: '←',
+  ArrowRight: '→',
+  Enter: 'Enter',
+  Backspace: 'Erase',
+  Shift: 'Shift',
+};
+const STICK_KEYS: Record<string, Direction> = {
+  ArrowUp: 'up',
+  ArrowDown: 'down',
+  ArrowLeft: 'left',
+  ArrowRight: 'right',
+};
+// Deflection below this fraction of full travel reads as centred, so a resting
+// thumb never leaks a direction into the game.
+const STICK_DEADZONE = 0.35;
 
 export const TouchGamepad: React.FC<TouchGamepadProps> = ({ gameId, gameTitle, controls, onKey, onPointer, onCursorMove, onPause }) => {
   const heldKeysRef = useRef(new Set<string>());
   const pointerHeldRef = useRef(false);
+  const repeatTimersRef = useRef(new Map<Direction, number>());
   const callbacksRef = useRef({ onKey, onPointer });
   callbacksRef.current = { onKey, onPointer };
+
+  const capRef = useRef<HTMLSpanElement>(null);
+  const stickRef = useRef<{ cx: number; cy: number; travel: number } | null>(null);
+  const stickDirRef = useRef<Direction | null>(null);
+  const magnitudeRef = useRef(1);
+
   const actions = controls.actions || [];
   const actionButtons = actions.map((action, index) => ({ ...action, button: action.button || FACE_BUTTONS[index] }));
   const directions = controls.directions || {};
+  const showStick = Boolean(controls.pointerCursor) || Object.values(directions).some(Boolean);
 
   const keyDown = (key?: string) => {
     if (!key || heldKeysRef.current.has(key)) return;
     heldKeysRef.current.add(key);
     onKey(key, 'down');
   };
+
   const keyUp = (key?: string) => {
     if (!key || !heldKeysRef.current.has(key)) return;
     heldKeysRef.current.delete(key);
     onKey(key, 'up');
   };
 
-  useEffect(() => () => {
-    heldKeysRef.current.forEach((key) => callbacksRef.current.onKey(key, 'up'));
-    heldKeysRef.current.clear();
-    if (pointerHeldRef.current) callbacksRef.current.onPointer('up');
-  }, []);
+  const stopCursorRepeat = (direction: Direction) => {
+    const timer = repeatTimersRef.current.get(direction);
+    if (timer !== undefined) window.clearInterval(timer);
+    repeatTimersRef.current.delete(direction);
+  };
+
+  const moveCursor = (direction: Direction) => {
+    const [dx, dy] = CURSOR_STEPS[direction];
+    const scale = Math.min(1, Math.max(0.4, magnitudeRef.current));
+    onCursorMove(dx * window.innerWidth * scale, dy * window.innerHeight * scale);
+  };
 
   const pressDirection = (direction: Direction) => {
     keyDown(directions[direction]);
     if (controls.pointerCursor) {
-      const deltas: Record<Direction, [number, number]> = { up: [0, -0.06], down: [0, 0.06], left: [-0.06, 0], right: [0.06, 0] };
-      const [dx, dy] = deltas[direction];
-      onCursorMove(dx * window.innerWidth, dy * window.innerHeight);
+      moveCursor(direction);
+      if (!repeatTimersRef.current.has(direction)) {
+        repeatTimersRef.current.set(direction, window.setInterval(() => moveCursor(direction), 75));
+      }
     }
   };
 
-  const syncStickDirections = (next: Direction[]) => {
-    DIRECTIONS.forEach((direction) => {
-      if (next.includes(direction)) keyDown(directions[direction] || `Arrow${direction[0].toUpperCase()}${direction.slice(1)}`);
-      else keyUp(directions[direction] || `Arrow${direction[0].toUpperCase()}${direction.slice(1)}`);
-    });
+  const releaseDirection = (direction: Direction) => {
+    stopCursorRepeat(direction);
+    keyUp(directions[direction]);
+  };
+
+  const setStickDirection = (direction: Direction | null) => {
+    if (stickDirRef.current === direction) return;
+    if (stickDirRef.current) releaseDirection(stickDirRef.current);
+    stickDirRef.current = direction;
+    if (direction) pressDirection(direction);
+  };
+
+  const stickMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const stick = stickRef.current;
+    if (!stick) return;
+    let dx = event.clientX - stick.cx;
+    let dy = event.clientY - stick.cy;
+    const len = Math.hypot(dx, dy);
+    if (len > stick.travel) {
+      dx = (dx / len) * stick.travel;
+      dy = (dy / len) * stick.travel;
+    }
+    if (capRef.current) capRef.current.style.transform = `translate(${dx}px, ${dy}px)`;
+    const norm = Math.min(1, len / stick.travel);
+    magnitudeRef.current = norm;
+    if (norm < STICK_DEADZONE) {
+      setStickDirection(null);
+      return;
+    }
+    setStickDirection(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
+  };
+
+  const stickDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!showStick) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const rect = event.currentTarget.getBoundingClientRect();
+    stickRef.current = { cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2, travel: rect.width * 0.24 };
+    event.currentTarget.dataset.active = 'true';
+    stickMove(event);
+  };
+
+  const stickUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!stickRef.current) return;
+    stickRef.current = null;
+    magnitudeRef.current = 1;
+    event.currentTarget.dataset.active = 'false';
+    if (capRef.current) capRef.current.style.transform = 'translate(0px, 0px)';
+    setStickDirection(null);
   };
 
   const pressAction = (action: (typeof actionButtons)[number]) => {
@@ -150,6 +156,7 @@ export const TouchGamepad: React.FC<TouchGamepadProps> = ({ gameId, gameTitle, c
       onPointer('down');
     }
   };
+
   const releaseAction = (action: (typeof actionButtons)[number]) => {
     keyUp(action.key);
     if (action.pointer && pointerHeldRef.current) {
@@ -158,46 +165,112 @@ export const TouchGamepad: React.FC<TouchGamepadProps> = ({ gameId, gameTitle, c
     }
   };
 
-  const touchButton = 'pointer-events-auto touch-none select-none rounded-full border border-white/35 font-black transition-transform active:translate-y-0.5 active:brightness-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white';
+  useEffect(() => () => {
+    repeatTimersRef.current.forEach((timer) => window.clearInterval(timer));
+    repeatTimersRef.current.clear();
+    heldKeysRef.current.forEach((key) => callbacksRef.current.onKey(key, 'up'));
+    heldKeysRef.current.clear();
+    if (pointerHeldRef.current) callbacksRef.current.onPointer('up');
+  }, []);
+
+  const actionsByButton = new Map(actionButtons.map((action) => [action.button, action]));
+  const faceSlots = FACE_BUTTONS.map((button) => ({ button, action: actionsByButton.get(button), spot: FACE_SPOTS[button] }));
+  const stickLabel = controls.pointerCursor
+    ? 'Analog stick — drag to move the pointer'
+    : `Analog stick — drag to move (${Object.values(directions).filter(Boolean).map((k) => KEY_LABELS[k] || k).join(', ') || 'not mapped'})`;
 
   return (
     <div
       data-touch-controller
       data-touch-layout={gameId}
-      aria-label={`${gameTitle} touch controller`}
-      className="pointer-events-none absolute inset-0 z-30 flex items-center justify-between px-1 py-2 sm:px-2"
+      aria-label={`${gameTitle} touch controls`}
+      className="pointer-events-none relative z-30 mt-auto flex w-full justify-center px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]"
     >
-      <section aria-label="Left controller grip" className="pointer-events-auto flex h-[min(72%,390px)] w-[clamp(4.25rem,19vw,6.5rem)] flex-col items-center justify-around rounded-[2rem] border border-sky-200/50 bg-gradient-to-br from-sky-400 via-sky-600 to-blue-950 px-1.5 py-2 shadow-[inset_2px_0_4px_#ffffff55,inset_-4px_0_8px_#02061799,0_12px_28px_#000b] sm:w-24 sm:rounded-[2.8rem]">
-        <ThumbStick label="Left thumbstick: movement" onMove={() => {}} onDirections={syncStickDirections} />
-        <div className="grid grid-cols-3 grid-rows-3 gap-0.5 rounded-xl bg-slate-950/40 p-1 shadow-inner">
-          {(['up', 'left', 'down', 'right'] as Direction[]).map((direction) => {
-            const spots: Record<Direction, string> = { up: 'col-start-2 row-start-1', left: 'col-start-1 row-start-2', down: 'col-start-2 row-start-3', right: 'col-start-3 row-start-2' };
-            const glyphs: Record<Direction, string> = { up: '▲', down: '▼', left: '◀', right: '▶' };
-            const key = directions[direction];
-            return <button key={direction} type="button" aria-label={`${direction} control${key ? ` (${key === ' ' ? 'Space' : key})` : ''}`} className={`${touchButton} ${spots[direction]} grid h-7 w-7 place-items-center bg-slate-800/90 text-[10px] text-white shadow-[inset_0_1px_2px_#ffffff44,0_3px_0_#020617] sm:h-8 sm:w-8`} onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); pressDirection(direction); }} onPointerUp={() => keyUp(key)} onPointerCancel={() => keyUp(key)}>{glyphs[direction]}</button>;
-          })}
-        </div>
-        <div className="flex w-full justify-center gap-2">
-          <button type="button" aria-label="Select minus" className="pointer-events-auto h-5 min-w-7 rounded-full border border-white/25 bg-slate-900/80 px-1 text-[8px] font-bold text-white" onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); keyDown('Escape'); }} onPointerUp={() => keyUp('Escape')} onPointerCancel={() => keyUp('Escape')} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); keyDown('Escape'); } }} onKeyUp={() => keyUp('Escape')}>−</button>
-          <button type="button" aria-label="Home pause" className="pointer-events-auto grid h-6 w-6 place-items-center rounded-full border border-white/30 bg-slate-900/80 text-[9px] font-black text-white" onClick={onPause}>⌂</button>
-        </div>
-      </section>
+      <div className="apex-pad pointer-events-auto">
+        <button
+          type="button"
+          data-touch-stick="true"
+          data-touch-cursor={controls.pointerCursor ? 'true' : 'false'}
+          data-touch-dirs={Object.entries(directions).filter(([, key]) => key).map(([dir]) => dir).join(',')}
+          aria-label={stickLabel}
+          title={stickLabel}
+          disabled={!showStick}
+          className="apex-stick"
+          onPointerDown={stickDown}
+          onPointerMove={stickMove}
+          onPointerUp={stickUp}
+          onPointerCancel={stickUp}
+          onLostPointerCapture={stickUp}
+          onKeyDown={(event) => {
+            const direction = STICK_KEYS[event.key];
+            if (!direction || !showStick) return;
+            event.preventDefault();
+            magnitudeRef.current = 1;
+            pressDirection(direction);
+          }}
+          onKeyUp={(event) => {
+            const direction = STICK_KEYS[event.key];
+            if (direction) releaseDirection(direction);
+          }}
+        >
+          <span className="apex-stick-cap" ref={capRef} aria-hidden="true">
+            <span className="apex-stick-ring" />
+          </span>
+        </button>
 
-      <section aria-label="Right controller grip" className="pointer-events-auto flex h-[min(72%,390px)] w-[clamp(4.25rem,19vw,6.5rem)] flex-col items-center justify-around rounded-[2rem] border border-rose-200/50 bg-gradient-to-bl from-rose-400 via-red-600 to-rose-950 px-1.5 py-2 shadow-[inset_-2px_0_4px_#ffffff55,inset_4px_0_8px_#02061799,0_12px_28px_#000b] sm:w-24 sm:rounded-[2.8rem]">
-        <div className="grid grid-cols-3 grid-rows-3 gap-0.5">
-          {actionButtons.map((action) => {
-            const button = (action.button || 'A') as FaceButton;
-            const spots: Record<FaceButton, string> = { Y: 'col-start-2 row-start-1', X: 'col-start-1 row-start-2', B: 'col-start-3 row-start-2', A: 'col-start-2 row-start-3' };
-            const accessible = action.key ? `${action.label} (${action.key === ' ' ? 'Space' : action.key})` : `${action.label} (${button})`;
-            return <button key={`${button}-${action.label}`} type="button" data-touch-action={button} data-touch-pointer={action.pointer ? 'true' : 'false'} aria-label={accessible} title={action.label} className={`${touchButton} ${spots[button]} grid h-8 w-8 place-items-center text-xs ${BUTTON_COLORS[button]}`} onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); pressAction(action); }} onPointerUp={() => releaseAction(action)} onPointerCancel={() => releaseAction(action)}>{button}</button>;
-          })}
-        </div>
-        {controls.pointerCursor && <ThumbStick label="Right thumbstick: move on-screen pointer" onMove={onCursorMove} />}
-        <div className="flex w-full justify-center gap-2">
-          <button type="button" aria-label="Select minus" className="pointer-events-auto h-5 min-w-7 rounded-full border border-white/25 bg-slate-900/80 px-1 text-[8px] font-bold text-white" onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); keyDown('Escape'); }} onPointerUp={() => keyUp('Escape')} onPointerCancel={() => keyUp('Escape')} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); keyDown('Escape'); } }} onKeyUp={() => keyUp('Escape')}>−</button>
-          <button type="button" aria-label="Start pause" className="pointer-events-auto min-h-6 rounded-full border border-white/30 bg-slate-900/80 px-2 text-[8px] font-black uppercase text-white" onClick={onPause}>Start</button>
-        </div>
-      </section>
+        <section aria-label="Console controls" className="apex-pad-center">
+          <span className="apex-pad-brand" aria-hidden="true">APEX·ARCADE</span>
+          <span className="flex items-center gap-1.5" aria-hidden="true">
+            <span className="apex-pad-led" />
+            <span className="apex-pad-print">POWER</span>
+          </span>
+          <button
+            type="button"
+            data-touch-pause="true"
+            aria-label="START — pause the game"
+            title="Pause game"
+            className="apex-pad-start"
+            onClick={onPause}
+          >
+            <span className="apex-pad-print" aria-hidden="true">START</span>
+            <span className="apex-pad-pill" aria-hidden="true" />
+          </button>
+        </section>
+
+        <section aria-label={`${gameTitle} actions`} className="apex-pad-faceplate">
+          {faceSlots.map(({ button, action, spot }) => (
+            <button
+              key={button}
+              type="button"
+              data-touch-action={button}
+              data-touch-key={action?.key || ''}
+              data-touch-pointer={action?.pointer ? 'true' : 'false'}
+              aria-label={action ? `${action.label}${action.key ? ` (${KEY_LABELS[action.key] || action.key})` : ''}${action.pointer ? ' (tap or drag)' : ''}` : `${button} unused`}
+              title={action?.label || `${button} unused`}
+              disabled={!action}
+              className={`apex-pad-face apex-pad-${button.toLowerCase()} ${spot}`}
+              onPointerDown={(event) => {
+                if (!action) return;
+                event.preventDefault();
+                event.currentTarget.setPointerCapture(event.pointerId);
+                pressAction(action);
+              }}
+              onPointerUp={() => action && releaseAction(action)}
+              onPointerCancel={() => action && releaseAction(action)}
+              onLostPointerCapture={() => action && releaseAction(action)}
+              onKeyDown={(event) => {
+                if (!action || (event.key !== 'Enter' && event.key !== ' ')) return;
+                event.preventDefault();
+                pressAction(action);
+              }}
+              onKeyUp={() => action && releaseAction(action)}
+            >
+              <span className="apex-pad-letter" aria-hidden="true">{button}</span>
+              {action && <span className="apex-pad-keyword" aria-hidden="true">{action.label}</span>}
+            </button>
+          ))}
+        </section>
+      </div>
     </div>
   );
 };

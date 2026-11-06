@@ -31,6 +31,13 @@
   B.rand = (n) => Math.floor(Math.random() * n);
   B.shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = B.rand(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
+  /* The theater modal already carries the title, close and sound controls, so
+     inside an iframe this page's own header is duplicate chrome that pushes the
+     board out of view on short viewports (a phone held sideways). */
+  const THEATER_EMBEDDED = (function () {
+    try { return window.parent !== window; } catch (e) { return false; }
+  })();
+
   /* ---------- pause clock and schedulers ----------
      Board games run on wall-clock timers; these helpers stop advancing while
      the shared pause is active so turns, AI and countdowns stay frozen. */
@@ -255,9 +262,18 @@ kbd{font:600 12px ui-monospace,Consolas,monospace;background:#0b0d16;border:1px 
 html[data-apex-paused="true"] *,html[data-apex-paused="true"] *::before,html[data-apex-paused="true"] *::after{animation-play-state:paused!important}
 `;
 
+  const EMBEDDED_CSS = `
+.bk-wrap{padding:6px 12px 28px}
+.bk-top{margin-bottom:0}
+.bk-back{display:none}
+.bk-title{margin:0 0 2px;font-size:clamp(19px,3.4vw,24px)}
+.bk-sub{margin:0 0 8px;font-size:13px}
+.bk-help{margin-bottom:10px;padding:8px 12px}
+`;
+
   B.shell = function (o) {
     document.title = o.title + ' — Apex Arcade';
-    const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
+    const st = document.createElement('style'); st.textContent = CSS + (THEATER_EMBEDDED ? EMBEDDED_CSS : ''); document.head.appendChild(st);
     document.body.innerHTML = `
 <div class="bk-wrap">
   <div class="bk-top"><a class="bk-back" href="#" onclick="if(window.parent!==window){window.parent.postMessage({type:'CLOSE_THEATER'},'*');return false;}">← Apex Arcade</a><span class="bk-grow"></span>${o.cpu ? '<label class="bk-spd">Computer speed <select class="bk-select" id="bk-spd"><option value="slow">Slow</option><option value="normal">Normal</option><option value="fast">Fast</option></select></label>' : ''}<button class="bk-btn" id="bk-mute"></button></div>

@@ -44,7 +44,7 @@ try {
     const button = document.querySelector('#playable-theater-modal button[aria-label="Pause game"]');
     return button instanceof HTMLButtonElement && !button.disabled;
   });
-  await page.getByRole('button', { name: 'Pause game' }).click();
+  await page.locator('[data-touch-controller] [data-touch-pause="true"]').click();
   await page.getByRole('dialog', { name: 'Game paused' }).waitFor();
   await page.getByRole('button', { name: 'Resume', exact: true }).click();
   await page.getByRole('dialog', { name: 'Game paused' }).waitFor({ state: 'detached' });
@@ -86,14 +86,16 @@ try {
   await page.getByRole('button', { name: 'Close theater settings' }).click();
   await page.evaluate(() => {
     const frame = document.querySelector('#playable-theater-modal iframe');
-    frame.contentWindow.__touchMessages = [];
+    frame.contentWindow.__touchKeyboardEvents = [];
     frame.contentWindow.__touchKeys = [];
-    frame.contentWindow.addEventListener('message', (event) => frame.contentWindow.__touchMessages.push(event.data));
-    frame.contentDocument.addEventListener('keydown', (event) => frame.contentWindow.__touchKeys.push(event.key));
+    frame.contentWindow.addEventListener('keydown', (event) => {
+      frame.contentWindow.__touchKeyboardEvents.push({ key: event.key, code: event.code });
+      frame.contentWindow.__touchKeys.push(event.key);
+    });
   });
   const flap = page.getByRole('button', { name: 'Flap (Space)' });
   await flap.tap();
-  await page.waitForFunction(() => document.querySelector('#playable-theater-modal iframe')?.contentWindow.__touchMessages.some((message) => message?.type === 'KEY_EVENT' && message.key === ' ' && message.action === 'down'));
+  await page.waitForFunction(() => document.querySelector('#playable-theater-modal iframe')?.contentWindow.__touchKeyboardEvents.some((event) => event.key === ' ' && event.code === 'Space'));
   assert.ok(await page.locator('#playable-theater-modal iframe').evaluate((frame) => frame.contentWindow.__touchKeys.includes(' ')), 'touch key reaches the iframe game keyboard handler');
 
   // D-pad navigation changes theater focus and A activates a focused control.
@@ -154,26 +156,53 @@ try {
     await gameFrame.locator('.apex-menu-root').waitFor({ state: 'hidden' });
     const controls = gameTheater.locator('[data-touch-layout] button');
     assert.equal(await gameTheater.locator('[data-touch-layout]').getAttribute('data-touch-layout'), gameId, `${gameId} uses its own controller profile`);
-    const firstAction = gameTheater.locator('[data-touch-action]').first();
+    const layout = await page.locator('#playable-theater-modal iframe, #playable-theater-stage canvas').first().evaluate((surface) => {
+      const controller = document.querySelector('[data-touch-controller]');
+      const frameBox = surface.getBoundingClientRect();
+      const controllerBox = controller.getBoundingClientRect();
+      return { surfaceBottom: frameBox.bottom, controllerTop: controllerBox.top };
+    });
+    assert.ok(layout.controllerTop >= layout.surfaceBottom - 1, `${gameId} controller dock sits below the game screen: ${JSON.stringify(layout)}`);
+    const firstAction = gameTheater.locator('[data-touch-action]:not(:disabled)').first();
     const hasAction = await firstAction.count() > 0;
-    const testedControl = hasAction ? firstAction : gameTheater.locator('[data-touch-controller] button[aria-label*="control"]').first();
+    const stick = gameTheater.locator('[data-touch-stick]:not(:disabled)').first();
+    const hasStick = await stick.count() > 0;
+    const testedControl = hasAction ? firstAction : stick;
     await testedControl.waitFor();
-    const isPointerAction = hasAction && (await firstAction.getAttribute('data-touch-pointer')) === 'true';
+    const isPointerAction = hasAction
+      ? (await firstAction.getAttribute('data-touch-pointer')) === 'true'
+      : hasStick && (await stick.getAttribute('data-touch-cursor')) === 'true';
     await page.locator('#playable-theater-modal iframe').evaluate((frame) => {
       frame.contentWindow.__touchEvents = [];
-      frame.contentWindow.addEventListener('message', (event) => { if (event.data?.type === 'KEY_EVENT') frame.contentWindow.__touchEvents.push(event.data); });
+      frame.contentWindow.addEventListener('keydown', (event) => frame.contentWindow.__touchEvents.push({ type: 'keydown', key: event.key, code: event.code }));
       frame.contentDocument.addEventListener('pointerdown', () => frame.contentWindow.__touchEvents.push({ type: 'pointerdown' }));
+      frame.contentDocument.addEventListener('pointermove', () => frame.contentWindow.__touchEvents.push({ type: 'pointermove' }));
       frame.contentDocument.addEventListener('click', () => frame.contentWindow.__touchEvents.push({ type: 'click' }));
     });
     const actionLabel = await testedControl.getAttribute('aria-label');
-    await testedControl.tap();
+    if (hasAction) {
+      await testedControl.tap();
+    } else {
+      // The shared pad now uses one analog stick: drag it off-centre to prove
+      // the deflection reaches the game as a key or pointer move.
+      const box = await stick.boundingBox();
+      const cx = box.x + box.width / 2;
+      const cy = box.y + box.height / 2;
+      const dirs = ((await stick.getAttribute('data-touch-dirs')) || '').split(',').filter(Boolean);
+      const dir = dirs[0] || 'right';
+      const vec = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[dir];
+      await page.mouse.move(cx, cy);
+      await page.mouse.down();
+      await page.mouse.move(cx + vec[0] * box.width * 0.4, cy + vec[1] * box.height * 0.4, { steps: 5 });
+    }
     await page.waitForFunction((pointerAction) => {
       const events = document.querySelector('#playable-theater-modal iframe')?.contentWindow.__touchEvents || [];
       return pointerAction
-        ? events.some((event) => event.type === 'pointerdown' || event.type === 'click')
-        : events.some((event) => event.type === 'KEY_EVENT' && event.action === 'down');
+        ? events.some((event) => event.type === 'pointerdown' || event.type === 'pointermove' || event.type === 'click')
+        : events.some((event) => event.type === 'keydown');
     }, isPointerAction, { timeout: 2500 }).catch(() => { throw new Error(`${gameId} controller action ${actionLabel} did not reach the game frame`); });
-    assert.ok(await controls.count() >= 5, `${gameId} exposes movement and action controls`);
+    if (!hasAction) await page.mouse.up();
+    assert.ok(await controls.count() >= 2, `${gameId} exposes its configured controls and pause button`);
     assert.equal(await page.getByRole('button', { name: 'Toggle Virtual Touch Controls' }).count(), 1, `${gameId} can toggle the shared controller`);
     await page.getByRole('button', { name: 'Close Theater' }).click();
   }

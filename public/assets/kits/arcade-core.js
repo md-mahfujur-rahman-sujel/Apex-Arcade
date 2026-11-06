@@ -281,7 +281,10 @@
       '.touch .g{display:flex;gap:10px}' +
       '.touch button{width:62px;height:62px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:rgba(20,26,45,.55);color:#fff;font:700 18px ' + A.FONT + ';touch-action:none;backdrop-filter:blur(4px)}' +
       '.touch button:active,.touch button.on{background:rgba(6,182,212,.55)}' +
-      '@media (pointer:coarse){.touch{display:flex}}';
+      '@media (pointer:coarse){.touch{display:flex}}' +
+      // Inside the theater the modal already carries the title, so the in-page
+      // caption would just steal playfield height — critical on a landscape phone.
+      (THEATER_EMBEDDED ? '.arc{padding:2px 8px 4px}.arc h1,.arc .sub{display:none}' : '');
     document.head.appendChild(style);
     document.title = cfg.title;
     const touchMarkup = !THEATER_EMBEDDED && (cfg.touchL || cfg.touchR)
