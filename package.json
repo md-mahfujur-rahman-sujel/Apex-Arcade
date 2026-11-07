@@ -16,6 +16,7 @@
     "test:apex-event": "npm run build && node scripts/test-apex-event.mjs",
     "test:cosmetics": "npm run build && node scripts/test-cosmetics.mjs",
     "test:game-frame-pilots": "npm run build && node scripts/test-game-frame-pilots.mjs",
+    "test:intros": "npm run build && node scripts/test-intros.mjs",
     "test:menu-pilots": "npm run build && node scripts/test-menu-pilots.mjs",
     "test:2048-modes": "npm run build && node scripts/test-2048-modes.mjs",
     "test:game-01": "npm run build && node scripts/test-game-01.mjs",

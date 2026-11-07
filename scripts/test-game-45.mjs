@@ -233,6 +233,9 @@ try {
   await page.evaluate(() => { SlideTest.setMode('classic'); SlideTest.restart(); });
   await page.click('.apex-menu-root [data-menu-action="play"]');
   await page.waitForFunction(() => document.querySelector('.apex-menu-root').hidden === true);
+  // Play gates the run behind the beginning animation: the live-run chrome only
+  // settles once that gate has released.
+  await page.waitForFunction(() => window.ApexIntroRunning !== true, null, { timeout: 20000 });
   await page.waitForFunction(() => { const el = document.querySelector('.apex-game-menu'); return !el || getComputedStyle(el).display === 'none'; });
   const chrome = await page.evaluate(() => ({
     help: document.getElementById('bk-help') ? document.getElementById('bk-help').open : null,

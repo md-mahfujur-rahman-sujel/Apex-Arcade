@@ -7,6 +7,39 @@ import { preview } from 'vite';
 const server = await preview({ preview: { host: '127.0.0.1', port: 0 } });
 const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
 const distRoot = path.resolve('dist');
+const base = server.config.base;
+const gamesSource = await readFile(path.resolve('src', 'data', 'gamesData.ts'), 'utf8');
+const folderById = new Map();
+{
+  let pendingId = null;
+  for (const match of gamesSource.matchAll(/^ {4}(id|htmlPath): '([^']+)',$/gm)) {
+    if (match[1] === 'id') pendingId = match[2];
+    else if (pendingId) { folderById.set(pendingId, match[2].split('/')[3]); pendingId = null; }
+  }
+}
+const gameUrl = (gameId) => {
+  const folder = folderById.get(gameId);
+  assert.ok(folder, `${gameId} resolves to a standalone game page`);
+  return `${origin}${base}assets/games/${folder}/index.html`;
+};
+/* The theater's Play now starts the run, so the in-frame menu only appears on a
+   standalone game page. A bare same-origin host keeps the menu's Exit contract
+   testable: it records what the page posts upward and closes when asked. */
+const MENU_HOST_PATH = `${base}menu-host.html`;
+const MENU_HOST_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Menu host</title></head>
+<body style="margin:0;background:#101014">
+<iframe id="host-frame" style="width:100vw;height:100vh;border:0"></iframe>
+<script>
+window.__hostMessages = [];
+window.addEventListener('message', function (event) {
+  var data = event.data;
+  if (!data || typeof data.type !== 'string') return;
+  window.__hostMessages.push(data.type);
+  if (data.type === 'MENU_EXIT') document.getElementById('host-frame').remove();
+});
+document.getElementById('host-frame').src = new URLSearchParams(location.search).get('src');
+</script>
+</body></html>`;
 const candidates = [process.env.CHROME_BIN, 'C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].filter(Boolean);
 let executablePath;
 for (const candidate of candidates) { try { await access(candidate); executablePath = candidate; break; } catch { /* Try another installed browser. */ } }
@@ -17,6 +50,7 @@ const errors = [];
 await context.route(`${origin}/**`, async (route) => {
   const url = new URL(route.request().url());
   const pathname = decodeURIComponent(url.pathname);
+  if (pathname === MENU_HOST_PATH) return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: MENU_HOST_PAGE });
   const relativePath = pathname.startsWith('/Apex-Arcade/') ? pathname.slice('/Apex-Arcade'.length) : pathname;
   const filePath = path.resolve(distRoot, `.${relativePath}`);
   if (filePath !== distRoot && !filePath.startsWith(`${distRoot}${path.sep}`)) return route.fulfill({ status: 403, body: 'Forbidden' });
@@ -46,19 +80,24 @@ await page.addInitScript(() => {
   }
 });
 
+/* The menu this suite guards is the one a player boots a game page into, so every
+   case opens the standalone page directly. */
 async function openGame(gameId, title) {
-  await page.goto(`${origin}/#/game/${gameId}`);
-  await page.getByRole('button', { name: 'Play now' }).click();
-  await page.getByRole('button', { name: `Play ${title}`, exact: true }).click();
-  await page.locator('#playable-theater-modal iframe').waitFor({ state: 'attached' });
-  await page.waitForFunction(() => !!document.querySelector('#playable-theater-modal iframe')?.contentDocument?.querySelector('.apex-menu-root'));
-  const frame = page.frames().find((candidate) => candidate.url().includes('/assets/games/'));
-  assert.ok(frame, `${title} game iframe is loaded: ${JSON.stringify(await page.locator('#playable-theater-modal iframe').evaluateAll((frames) => frames.map((item) => item.src)))}`);
-  await frame.locator('.apex-menu-root').waitFor({ state: 'visible' });
-  await frame.waitForFunction(() => {
+  await page.goto(gameUrl(gameId));
+  await page.locator('.apex-menu-root').waitFor({ state: 'visible' });
+  assert.ok(await page.locator('.apex-menu-root').getAttribute('data-menu-game'), `${title} mounts its own menu`);
+  await page.waitForFunction(() => {
     const link = document.getElementById('apex-menu-kit-styles');
     return !!(link && link.sheet);
   });
+  return page;
+}
+
+async function openHostedGame(gameId, title) {
+  await page.goto(`${origin}${MENU_HOST_PATH}?src=${encodeURIComponent(gameUrl(gameId))}`);
+  const frame = page.frames().find((candidate) => candidate.url().includes('/assets/games/'));
+  assert.ok(frame, `${title} game page is hosted in a frame`);
+  await frame.locator('.apex-menu-root').waitFor({ state: 'visible' });
   return frame;
 }
 
@@ -129,63 +168,60 @@ try {
   console.log('PASS reduced-motion preference persists and scene fallback renders a static frame');
 
   await menu.getByRole('button', { name: 'Options', exact: true }).click();
-  await page.waitForFunction(() => {
-    const frame = document.querySelector('#playable-theater-modal iframe');
-    return (frame?.contentWindow?.__menuAudioContexts || []).some((context) => context.state === 'running');
-  });
+  await page.waitForFunction(() => (window.__menuAudioContexts || []).some((context) => context.state === 'running'));
   console.log('PASS gesture unlocks the menu Web Audio context');
 
   const ticTacToe = await openGame('tic-tac-toe', 'Tic-Tac-Toe');
   assert.equal(await ticTacToe.locator('.apex-menu-root').getAttribute('data-menu-archetype'), 'paper');
   assert.ok(await ticTacToe.locator('.apex-menu-root .apex-menu-action').count() >= 5);
-  console.log('PASS Tic-Tac-Toe Paper and Ink pilot launches in the theater');
+  console.log('PASS Tic-Tac-Toe Paper and Ink pilot launches its menu');
 
   const merge = await openGame('2048', 'Merge 2048');
   const mergeMenu = merge.locator('.apex-menu-root');
   assert.equal(await mergeMenu.getAttribute('data-menu-archetype'), 'glass');
   await mergeMenu.getByRole('button', { name: 'Play', exact: true }).click();
-  const mergePage = page.frames().find((frame) => frame.url().includes('/42-2048/index.html'));
-  assert.ok(mergePage, 'Merge 2048 game frame is loaded');
-  const intro = mergePage.locator('#bk-dlg');
+  // Play gates the run behind the beginning animation: the board only becomes
+  // reachable once that hand is passed to the game.
+  await merge.waitForFunction(() => window.ApexIntroRunning !== true, null, { timeout: 20000 });
+  const intro = merge.locator('#bk-dlg');
   if (await intro.count() && await intro.evaluate((dialog) => dialog.open)) await intro.locator('button').first().click();
-  await mergePage.locator('#bd .tl').first().waitFor({ state: 'visible' });
-  await mergePage.locator('body').press('ArrowRight');
-  await mergePage.waitForTimeout(180);
-  const savedBoard = await mergePage.locator('#bd .tl').evaluateAll((tiles) => tiles.map((tile) => `${tile.textContent}:${tile.style.left}:${tile.style.top}`).sort().join('|'));
+  await merge.locator('#bd .tl').first().waitFor({ state: 'visible' });
+  await merge.locator('body').press('ArrowRight');
+  await merge.waitForTimeout(180);
+  const savedBoard = await merge.locator('#bd .tl').evaluateAll((tiles) => tiles.map((tile) => `${tile.textContent}:${tile.style.left}:${tile.style.top}`).sort().join('|'));
   assert.ok(savedBoard, 'Merge 2048 creates a saved active run');
-  await page.getByRole('button', { name: 'Close Theater' }).click();
 
   const resumed = await openGame('2048', 'Merge 2048');
   const resumedMenu = resumed.locator('.apex-menu-root');
   await resumedMenu.getByRole('button', { name: 'Continue Run', exact: true }).click();
-  const resumedFrame = page.frames().find((frame) => frame.url().includes('/42-2048/index.html'));
-  await resumedFrame.locator('#bd .tl').first().waitFor({ state: 'visible' });
-  const resumedBoard = await resumedFrame.locator('#bd .tl').evaluateAll((tiles) => tiles.map((tile) => `${tile.textContent}:${tile.style.left}:${tile.style.top}`).sort().join('|'));
+  await resumed.waitForFunction(() => window.ApexIntroRunning !== true, null, { timeout: 20000 });
+  await resumed.locator('#bd .tl').first().waitFor({ state: 'visible' });
+  const resumedBoard = await resumed.locator('#bd .tl').evaluateAll((tiles) => tiles.map((tile) => `${tile.textContent}:${tile.style.left}:${tile.style.top}`).sort().join('|'));
   assert.equal(resumedBoard, savedBoard, 'Continue Run restores the saved tile positions and values');
-  await page.getByRole('button', { name: 'Close Theater' }).click();
   console.log('PASS Merge 2048 Continue Run restores the saved board');
 
-  const exitFrame = await openGame('flappy-bird', 'Glowmoth Gauntlet');
+  const exitFrame = await openHostedGame('flappy-bird', 'Glowmoth Gauntlet');
   await exitFrame.locator('.apex-menu-root').getByRole('button', { name: 'Exit', exact: true }).click();
-  await page.locator('#playable-theater-modal').waitFor({ state: 'detached' });
-  console.log('PASS menu Exit closes its same-origin theater');
+  await page.waitForFunction(() => document.getElementById('host-frame') === null, null, { timeout: 5000 });
+  assert.ok(await page.evaluate(() => window.__hostMessages.includes('MENU_EXIT')), 'menu Exit tells its host to close');
+  console.log('PASS menu Exit hands the close back to its host');
 
   const mahjong = await openGame('mahjong', 'Jade Table');
   await mahjong.locator('[data-menu-action="play"]').click();
+  await mahjong.waitForFunction(() => window.ApexIntroRunning !== true, null, { timeout: 20000 });
   for (const pair of await mahjong.evaluate(() => solution.map((ids) => ids.slice()))) {
     for (const id of pair) await mahjong.locator(`.mj-tile[data-id="${id}"]`).click();
   }
   await mahjong.locator('#bk-dlg').waitFor({ state: 'visible' });
   await mahjong.locator('#bk-dlg').press('Escape');
   await mahjong.locator('#bk-dlg').waitFor({ state: 'hidden' });
-  assert.equal(await page.getByRole('dialog', { name: 'Game paused', exact: true }).count(), 0, 'Escape in a game result does not open the theater pause layer');
-  assert.equal(await mahjong.evaluate(() => Board.paused()), false);
+  assert.equal(await mahjong.evaluate(() => Board.paused()), false, 'Escape in a game result does not pause the run');
+  assert.equal(await mahjong.locator('.apex-menu-root').evaluate((root) => root.hidden), true, 'Escape in a game result does not open the menu');
   await mahjong.locator('#mj-new').click();
   const freshPair = await mahjong.evaluate(() => availablePairs()[0].map((t) => t.id));
   for (const id of freshPair) await mahjong.locator(`.mj-tile[data-id="${id}"]`).click();
   assert.equal(await mahjong.evaluate(() => pairs), 1);
-  await page.getByRole('button', { name: 'Close Theater' }).click();
-  console.log('PASS Escape dismisses the game result without trapping theater pause');
+  console.log('PASS Escape dismisses the game result without trapping pause');
 
   for (const mobile of [false, true]) {
     const standalone = await browser.newContext({ viewport: mobile ? { width: 390, height: 844 } : { width: 1280, height: 800 }, hasTouch: mobile });
@@ -196,6 +232,9 @@ try {
       for (const folder of ['46-nuts-bolts', '47-colour-sort', '48-fruit-merge', '49-table-tennis', '50-mahjong']) {
         await game.goto(`${origin}${server.config.base}assets/games/${folder}/index.html`);
         await activate(game.locator('[data-menu-action="play"]'));
+        // Play gates the run behind the game's beginning animation; Esc during that
+        // animation only skips it, so wait for the run to be live before pausing.
+        await game.waitForFunction(() => window.ApexIntroRunning !== true, null, { timeout: 20000 });
         for (let cycle = 0; cycle < 2; cycle++) {
           await game.locator('body').press('Escape');
           assert.equal(await game.evaluate(() => Board.paused()), true, folder + ' pauses the native engine');

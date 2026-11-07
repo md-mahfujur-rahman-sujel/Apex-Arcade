@@ -11,6 +11,15 @@ for (const candidate of candidates) { try { await access(candidate); executableP
 const browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [];
+
+// The lobby's Play is the front door: it starts the run through the game's own
+// beginning animation, so a test waits for that hand-off instead of clicking
+// Play a second time inside the frame.
+async function waitUntilRunning(host, target) {
+  await host.locator('#playable-theater-modal [data-theater-loading]').waitFor({ state: 'detached', timeout: 20000 });
+  await target.locator('.apex-menu-root').waitFor({ state: 'hidden', timeout: 20000 });
+  await host.waitForFunction(() => document.querySelector('#playable-theater-modal iframe')?.contentWindow?.ApexIntroRunning !== true, null, { timeout: 20000 });
+}
 try {
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
@@ -19,21 +28,22 @@ try {
   await page.getByRole('button', { name: /play now/i }).click();
   await page.locator('#playable-theater-modal button[data-ui-open]').click();
   const tic = page.frameLocator('#playable-theater-modal iframe');
-  await tic.locator('[data-menu-action="play"], [data-menu-action="continue"]').first().click({ timeout: 5000 });
-  await tic.locator('.apex-menu-root').waitFor({ state: 'hidden' });
+  await waitUntilRunning(page, tic);
   await tic.locator('#bd .cl').first().waitFor({ state: 'visible' });
   await tic.locator('#bd .cl.free').first().click();
   const ticPage = page.frames().find((frame) => frame.url().includes('30-tic-tac-toe/index.html'));
   await ticPage.waitForFunction(() => document.querySelector('#st')?.textContent?.includes('your turn'), null, { timeout: 5000 });
   const ticBefore = await tic.locator('#bd .cl').evaluateAll((cells) => cells.map((cell) => `${cell.textContent}:${cell.className}`).join('|'));
+  const ticPause = tic.getByRole('dialog', { name: /pause menu$/ });
   await ticPage.locator('body').press('Escape');
-  await page.getByRole('dialog', { name: 'Game paused' }).waitFor();
+  await ticPause.waitFor();
+  assert.equal(await page.locator('#playable-theater-modal [data-pause-overlay]').count(), 0, 'the theater stacks no second pause screen over the page panel');
   await ticPage.waitForFunction(() => window.ApexGamePaused === true);
   await ticPage.waitForTimeout(200);
   const ticPaused = await tic.locator('#bd .cl').evaluateAll((cells) => cells.map((cell) => `${cell.textContent}:${cell.className}`).join('|'));
   assert.equal(ticPaused, ticBefore, 'Tic-Tac-Toe board stays frozen while the theater is paused');
-  await page.getByRole('dialog', { name: 'Game paused' }).getByRole('button', { name: 'Resume', exact: true }).click();
-  await page.getByRole('dialog', { name: 'Game paused' }).waitFor({ state: 'detached' });
+  await ticPause.getByRole('button', { name: 'Resume game', exact: true }).click();
+  await ticPause.waitFor({ state: 'hidden' });
   await ticPage.waitForFunction(() => window.ApexGamePaused === false);
   const ticAfter = await tic.locator('#bd .cl').evaluateAll((cells) => cells.map((cell) => `${cell.textContent}:${cell.className}`).join('|'));
   assert.equal(ticAfter, ticBefore, 'Tic-Tac-Toe resumes with the same board and turn state');
@@ -44,8 +54,7 @@ try {
   await page.getByRole('button', { name: /play now/i }).click();
   await page.locator('#playable-theater-modal button[data-ui-open]').click();
   const merge = page.frameLocator('#playable-theater-modal iframe');
-  await merge.locator('[data-menu-action="play"], [data-menu-action="continue"]').first().click({ timeout: 5000 });
-  await merge.locator('.apex-menu-root').waitFor({ state: 'hidden' });
+  await waitUntilRunning(page, merge);
   await merge.locator('#bd').waitFor({ state: 'visible' });
   const mergePage = page.frames().find((frame) => frame.url().includes('42-2048/index.html'));
   const intro = merge.locator('#bk-dlg');
@@ -55,13 +64,15 @@ try {
   const signature = async () => merge.locator('#bd .tl').evaluateAll((tiles) => tiles.map((tile) => `${tile.textContent}:${tile.style.left}:${tile.style.top}`).join('|'));
   const mergeBefore = await signature();
   assert.ok(mergeBefore, 'Merge 2048 begins with visible tiles');
+  const mergePause = merge.getByRole('dialog', { name: /pause menu$/ });
   await mergePage.locator('body').press('Escape');
-  await page.getByRole('dialog', { name: 'Game paused' }).waitFor();
+  await mergePause.waitFor();
+  assert.equal(await page.locator('#playable-theater-modal [data-pause-overlay]').count(), 0, 'Merge 2048 pauses with only its own page panel');
   await mergePage.waitForFunction(() => window.ApexGamePaused === true);
   await mergePage.waitForTimeout(220);
   assert.equal(await signature(), mergeBefore, 'Merge 2048 freezes tile positions and values while paused');
-  await page.getByRole('dialog', { name: 'Game paused' }).getByRole('button', { name: 'Resume', exact: true }).click();
-  await page.getByRole('dialog', { name: 'Game paused' }).waitFor({ state: 'detached' });
+  await mergePause.getByRole('button', { name: 'Resume game', exact: true }).click();
+  await mergePause.waitFor({ state: 'hidden' });
   await mergePage.waitForFunction(() => window.ApexGamePaused === false);
   assert.equal(await signature(), mergeBefore, 'Merge 2048 resumes with the same tile positions and values');
   assert.equal(await mergePage.evaluate(() => Boolean(document.querySelector('#bk-dlg')?.open)), false);
@@ -78,8 +89,7 @@ try {
   await mobilePage.waitForFunction(() => document.querySelector('#playable-theater-modal iframe')?.contentDocument?.readyState === 'complete');
   const mobileMerge = mobilePage.frames().find((frame) => frame.url().includes('42-2048/index.html'));
   assert.ok(mobileMerge, '2048 iframe loads in touch viewport');
-  await mobileMerge.locator('[data-menu-action="play"], [data-menu-action="continue"]').first().click({ timeout: 5000 });
-  await mobileMerge.locator('.apex-menu-root').waitFor({ state: 'hidden' });
+  await waitUntilRunning(mobilePage, mobileMerge);
   const mobileIntro = mobileMerge.locator('#bk-dlg');
   if (await mobileIntro.count() && await mobileIntro.evaluate((dialog) => dialog.open)) await mobileIntro.locator('button').first().click();
   assert.equal(await mobilePage.locator('#playable-theater-modal [data-touch-layout="2048"]').count(), 1, 'Shared controller is available alongside native swipe controls');

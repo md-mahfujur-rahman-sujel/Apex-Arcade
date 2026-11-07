@@ -22,6 +22,26 @@ async function openTheater(gameId) {
   return theater;
 }
 
+// The lobby's Play is the front door: it starts the run through the game's own
+// beginning animation, so a test waits for that animation to hand the screen to
+// the live game instead of clicking Play a second time inside the frame.
+async function waitUntilRunning() {
+  await page.locator('#playable-theater-modal [data-theater-loading]').waitFor({ state: 'detached', timeout: 20000 });
+  await page.waitForFunction(() => {
+    const frame = document.querySelector('#playable-theater-modal iframe');
+    const menu = frame?.contentDocument?.querySelector('.apex-menu-root');
+    return frame?.contentWindow?.ApexIntroRunning !== true && (!menu || menu.hidden);
+  }, null, { timeout: 20000 });
+}
+
+// The game page draws the pause panel and the lobby's second door reveals that
+// same page menu, so every pause assertion looks inside the frame and checks the
+// host never stacks a second screen over it.
+const theaterFrame = page.frameLocator('#playable-theater-modal iframe');
+const frameMenu = theaterFrame.locator('.apex-menu-root:not([hidden])');
+const framePause = theaterFrame.getByRole('dialog', { name: /pause menu$/ });
+const hostPauseCount = () => page.locator('#playable-theater-modal [data-pause-overlay]').count();
+
 try {
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
@@ -36,36 +56,48 @@ try {
   let theater = await openTheater('flappy-bird');
   assert.equal(await theater.getAttribute('data-theme'), 'dark');
   assert.equal(await theater.getAttribute('data-touch-mode'), 'virtual');
+  assert.equal(await page.locator('[data-theater-bar] button[title="Restart Game"]').count(), 0, 'the header no longer duplicates Restart game');
+  assert.equal(await page.locator('[data-theater-bar] button[aria-label="Theater settings"]').count(), 0, 'the header no longer carries a settings menu button');
+  assert.equal(await page.locator('[data-theater-bar]').getByRole('button', { name: 'easy', exact: true }).count(), 0, 'difficulty is only customizable from the menu options');
   assert.equal(await page.locator('#playable-theater-stage').evaluate((stage) => getComputedStyle(stage).backgroundColor), 'rgb(5, 6, 13)', 'the theater stage remains dark');
-  const flappyFrame = page.frameLocator('#playable-theater-modal iframe');
-  await flappyFrame.locator('[data-menu-action="play"], [data-menu-action="continue"]').first().click({ timeout: 5000 });
-  await flappyFrame.locator('.apex-menu-root').waitFor({ state: 'hidden' });
+  await waitUntilRunning();
   await page.waitForFunction(() => {
     const button = document.querySelector('#playable-theater-modal button[aria-label="Pause game"]');
     return button instanceof HTMLButtonElement && !button.disabled;
   });
   await page.locator('[data-touch-controller] [data-touch-pause="true"]').click();
-  await page.getByRole('dialog', { name: 'Game paused' }).waitFor();
-  await page.getByRole('button', { name: 'Resume', exact: true }).click();
-  await page.getByRole('dialog', { name: 'Game paused' }).waitFor({ state: 'detached' });
+  await framePause.waitFor();
+  assert.equal(await hostPauseCount(), 0, 'the touch pause button opens the game page panel, not a second host screen');
+  const livePad = page.getByRole('button', { name: 'Toggle Virtual Touch Controls' });
+  const liveBefore = await livePad.getAttribute('aria-pressed');
+  await livePad.click();
+  assert.notEqual(await livePad.getAttribute('aria-pressed'), liveBefore, 'the remaining header controls stay live while the page pause panel is up');
+  await livePad.click();
+  await framePause.getByRole('button', { name: 'Resume game', exact: true }).click();
+  await framePause.waitFor({ state: 'hidden' });
 
-  // Gamepad Start toggles the same single host pause screen.
+  // Gamepad Start funnels into that same single panel through the host.
   const pad = async (index, pressed) => {
     await page.evaluate(({ index, pressed }) => { window.__theaterPad.buttons[index].pressed = pressed; }, { index, pressed });
     await page.waitForTimeout(120);
   };
   await pad(9, true);
-  await page.getByRole('dialog', { name: 'Game paused' }).waitFor();
-  assert.equal(await page.locator('#playable-theater-modal [role="dialog"][aria-label="Game paused"]').count(), 1, 'gamepad Start opens exactly one pause screen');
+  await framePause.waitFor();
+  assert.equal(await framePause.count(), 1, 'gamepad Start opens exactly one pause screen');
+  assert.equal(await hostPauseCount(), 0, 'gamepad Start adds no host pause screen over the page panel');
   await pad(9, false);
   await pad(9, true);
-  await page.getByRole('dialog', { name: 'Game paused' }).waitFor({ state: 'detached' });
+  await framePause.waitFor({ state: 'hidden' });
   await pad(9, false);
   await page.waitForFunction(() => document.querySelector('#playable-theater-modal iframe')?.contentWindow?.ApexGamePaused === false);
   await page.waitForTimeout(250);
-  assert.equal(await page.locator('#playable-theater-modal [role="dialog"][aria-label="Game paused"]').count(), 0, 'gamepad Start resumes without immediately re-pausing');
+  assert.equal(await hostPauseCount(), 0, 'gamepad Start resumes without immediately re-pausing');
 
-  await page.getByRole('button', { name: 'Theater settings' }).click();
+  // The theater sheet lost its header button; the pause panel is its door now.
+  await page.keyboard.press('Escape');
+  await framePause.waitFor();
+  await framePause.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.locator('#theater-settings').waitFor();
   const theaterVolume = page.getByRole('slider', { name: 'Theater volume' });
   assert.equal(await theaterVolume.inputValue(), '0.8');
   await theaterVolume.press('ArrowLeft');
@@ -83,7 +115,12 @@ try {
   assert.notEqual(await page.locator('#playable-theater-stage').evaluate((stage) => getComputedStyle(stage).boxShadow), 'none', 'ambient glow renders live');
 
   // Verify touch controls emit the game's configured Space key.
-  await page.getByRole('button', { name: 'Close theater settings' }).click();
+  // Back returns the pause panel to its place instead of resuming the run.
+  await page.getByRole('button', { name: 'Back to pause', exact: true }).click();
+  await page.locator('#theater-settings').waitFor({ state: 'hidden' });
+  await framePause.waitFor({ state: 'visible' });
+  await framePause.getByRole('button', { name: 'Resume game', exact: true }).click();
+  await framePause.waitFor({ state: 'hidden' });
   await page.evaluate(() => {
     const frame = document.querySelector('#playable-theater-modal iframe');
     frame.contentWindow.__touchKeyboardEvents = [];
@@ -99,18 +136,18 @@ try {
   assert.ok(await page.locator('#playable-theater-modal iframe').evaluate((frame) => frame.contentWindow.__touchKeys.includes(' ')), 'touch key reaches the iframe game keyboard handler');
 
   // D-pad navigation changes theater focus and A activates a focused control.
-  const settingsButton = page.getByRole('button', { name: 'Theater settings' });
-  await settingsButton.focus();
+  const padToggle = page.getByRole('button', { name: 'Toggle Virtual Touch Controls' });
+  const padBefore = await padToggle.getAttribute('aria-pressed');
+  await padToggle.focus();
   await page.evaluate(() => { window.__theaterPad.buttons[13].pressed = true; });
-  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') !== 'Theater settings');
+  await page.waitForFunction(() => document.activeElement?.getAttribute('title') !== 'Toggle Virtual Touch Controls');
   await page.evaluate(() => { window.__theaterPad.buttons[13].pressed = false; });
-  await settingsButton.focus();
+  await padToggle.focus();
   await page.evaluate(() => { window.__theaterPad.buttons[0].pressed = true; });
-  await page.locator('#theater-settings').waitFor();
-  await page.waitForFunction(() => document.querySelector('#playable-theater-modal [aria-label="Theater settings"]')?.getAttribute('aria-expanded') === 'true');
-  await page.waitForTimeout(100);
+  await page.waitForFunction((before) => document.querySelector('#playable-theater-modal [title="Toggle Virtual Touch Controls"]')?.getAttribute('aria-pressed') !== before, padBefore);
   await page.evaluate(() => { window.__theaterPad.buttons[0].pressed = false; });
-  await page.getByRole('button', { name: 'Close theater settings' }).click();
+  await padToggle.click();
+  assert.equal(await padToggle.getAttribute('aria-pressed'), padBefore, 'A activates the focused header control and a second press restores it');
 
   // Fullscreen request state follows browser fullscreenchange, including exit.
   await page.evaluate(() => {
@@ -152,8 +189,7 @@ try {
     assert.equal(await gameTheater.getAttribute('data-touch-mode'), 'virtual', `${gameId} receives the shared touch controller`);
     await gameTheater.locator('[data-ui-open]').click();
     const gameFrame = gameTheater.frameLocator('iframe');
-    await gameFrame.locator('[data-menu-action="play"], [data-menu-action="continue"]').first().click({ timeout: 5000 });
-    await gameFrame.locator('.apex-menu-root').waitFor({ state: 'hidden' });
+    await waitUntilRunning();
     const controls = gameTheater.locator('[data-touch-layout] button');
     assert.equal(await gameTheater.locator('[data-touch-layout]').getAttribute('data-touch-layout'), gameId, `${gameId} uses its own controller profile`);
     const layout = await page.locator('#playable-theater-modal iframe, #playable-theater-stage canvas').first().evaluate((surface) => {
@@ -207,45 +243,61 @@ try {
     await page.getByRole('button', { name: 'Close Theater' }).click();
   }
 
-  // Escape owns pause for iframe games, and every overlay action routes correctly.
-  await page.evaluate(() => { location.hash = '#/game/flappy-bird'; });
+  // The lobby's second door reveals the waiting page's own menu, so modes and
+  // skins come from the renderer the game already ships.
+  await page.evaluate(() => { location.hash = '#/game/tetris'; });
   await page.getByRole('button', { name: 'Play now' }).click();
-  await page.locator('#playable-theater-modal [data-ui-open]').click();
-  const pausedFlappy = page.frameLocator('#playable-theater-modal iframe');
-  await pausedFlappy.locator('[data-menu-action="play"], [data-menu-action="continue"]').first().click({ timeout: 5000 });
-  await pausedFlappy.locator('.apex-menu-root').waitFor({ state: 'hidden' });
   await page.waitForFunction(() => {
-    const button = document.querySelector('#playable-theater-modal button[aria-label="Pause game"]');
-    return button instanceof HTMLButtonElement && !button.disabled;
-  });
+    const door = document.querySelector('#playable-theater-modal [data-theater-menu]');
+    return door instanceof HTMLButtonElement && !door.disabled;
+  }, null, { timeout: 20000 });
+  await page.locator('#playable-theater-modal [data-theater-menu]').click();
+  await page.locator('#playable-theater-modal [data-theater-loading]').waitFor({ state: 'detached' });
+  await frameMenu.waitFor({ state: 'visible' });
+  const revealed = await page.locator('#playable-theater-modal iframe').evaluate((element) => ({ opacity: getComputedStyle(element).opacity, inert: element.inert }));
+  assert.equal(revealed.opacity, '1', 'the menu door reveals the game page');
+  assert.equal(revealed.inert, false, 'the revealed page menu is interactive');
+  const doorActions = await theaterFrame.locator('[data-menu-action]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-menu-action')));
+  assert.ok(doorActions.includes('modes') && doorActions.includes('customize'), `the page menu keeps its modes and skins doors: ${doorActions}`);
+  await theaterFrame.locator('[data-menu-action="modes"]').click();
+  await theaterFrame.getByRole('heading', { name: 'Choose a mode' }).waitFor();
+  await theaterFrame.locator('[data-menu-back]').click();
+  await theaterFrame.locator('[data-menu-action="customize"]').click();
+  await theaterFrame.getByRole('heading', { name: 'Customize', exact: true }).waitFor();
+  await theaterFrame.locator('[data-menu-back]').click();
+  // Play from that menu still starts the run through its beginning animation.
+  await theaterFrame.locator('[data-menu-action="play"]').click();
+  await waitUntilRunning();
+
+  // Escape owns pause for iframe games, and every panel action routes correctly.
   await page.keyboard.press('Escape');
-  const actionDialog = page.getByRole('dialog', { name: 'Game paused' });
-  await actionDialog.waitFor();
-  await actionDialog.getByRole('button', { name: 'Settings', exact: true }).click();
-  await actionDialog.getByRole('heading', { name: 'Theater settings' }).waitFor();
-  await actionDialog.getByRole('button', { name: 'Back to pause' }).click();
-  await actionDialog.getByRole('button', { name: 'Restart', exact: true }).click();
-  await actionDialog.waitFor({ state: 'detached' });
-  await page.waitForFunction(() => {
-    const frame = document.querySelector('#playable-theater-modal iframe');
-    const menu = frame?.contentDocument?.querySelector('.apex-menu-root');
-    return frame?.contentWindow?.location.href.includes('r=') && frame.contentDocument?.readyState === 'complete' && menu && !menu.hidden;
-  });
-  await pausedFlappy.locator('.apex-menu-root').waitFor({ state: 'visible' });
-  await pausedFlappy.locator('[data-menu-action="play"], [data-menu-action="continue"]').first().click({ timeout: 5000 });
-  await pausedFlappy.locator('.apex-menu-root').waitFor({ state: 'hidden' });
-  await page.waitForFunction(() => {
-    const button = document.querySelector('#playable-theater-modal button[aria-label="Pause game"]');
-    return button instanceof HTMLButtonElement && !button.disabled;
-  });
+  await framePause.waitFor();
+  assert.equal(await hostPauseCount(), 0, 'Escape pauses with the game page panel alone');
+  for (const label of ['Resume game', 'Restart game', 'Options', 'Settings', 'How to play', 'Exit game']) {
+    assert.equal(await framePause.getByRole('button', { name: label, exact: true }).count(), 1, `the page pause panel offers ${label}`);
+  }
+  await framePause.getByRole('button', { name: 'Options', exact: true }).click();
+  await theaterFrame.getByRole('tab', { name: 'Accessibility' }).waitFor();
+  // Difficulty has no header switch anymore; the menu owns it and tells the host.
+  await theaterFrame.getByRole('tab', { name: 'Gameplay' }).click();
+  await theaterFrame.getByLabel('Difficulty', { exact: true }).selectOption('hard');
+  await page.getByText('Hard: 1.35x Speed · 1.25x Score!', { exact: true }).waitFor();
+  await theaterFrame.getByLabel('Difficulty', { exact: true }).selectOption('normal');
+  await page.getByText('Normal: 1.0x Speed', { exact: true }).waitFor();
+  await theaterFrame.locator('[data-menu-back]').click();
+  await framePause.getByRole('button', { name: 'Restart game', exact: true }).click();
+  await framePause.waitFor({ state: 'hidden' });
+  // Restart keeps the run live in place, so the next Escape pauses it again.
+  await page.waitForFunction(() => document.querySelector('#playable-theater-modal iframe')?.contentWindow?.ApexGamePaused === false, null, { timeout: 20000 });
   await page.keyboard.press('Escape');
-  await actionDialog.waitFor();
-  await actionDialog.getByRole('button', { name: 'Exit to Arcade' }).click();
+  await framePause.waitFor();
+  await framePause.getByRole('button', { name: 'Exit game', exact: true }).click();
   await page.locator('#playable-theater-modal').waitFor({ state: 'detached' });
-  assert.equal(await page.getByRole('button', { name: 'Play now' }).count(), 1, 'Exit to Arcade returns to the game page');
+  assert.equal(await page.getByRole('button', { name: 'Play now' }).count(), 1, 'Exit game returns to the game page');
 
   if (errors.length) throw new Error(`Browser errors: ${errors.join(' | ')}`);
-  console.log('PASS production theater pause overlay, per-game touch input, live persisted display modes, fullscreen synchronization, gamepad Start pause/resume, Escape pause, and all overlay actions');
+  console.log('PASS one game-owned pause panel for touch, gamepad and Escape, per-game touch input, live persisted display modes, fullscreen synchronization, and every panel action');
+  console.log('PASS the loading card Modes & skins door reveals the page menu and its Play starts the run');
   console.log('PASS all 50 game records select their configured native or virtual touch layout');
   console.log('PASS zero browser errors');
 } finally {

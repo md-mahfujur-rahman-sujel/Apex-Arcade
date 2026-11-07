@@ -393,7 +393,7 @@
         });
       }
       A.sfx('lose');
-      rep('session_end', { score: G.score });
+      rep('session_end', { score: G.score, result: { win: false, score: G.score, best: G.hi } });
     };
     G.win = (title, sub) => {
       if (G.state !== 'playing') return;
@@ -409,7 +409,7 @@
         });
       }
       A.sfx('win');
-      rep('session_end', { score: G.score });
+      rep('session_end', { score: G.score, result: { win: true, score: G.score, best: G.hi } });
     };
     G.burst = (x, y, n, o) => {
       o = o || {};
@@ -550,6 +550,7 @@
       } else if (G.state === 'paused') {
         if (!THEATER_EMBEDDED) panel('Paused', [['Press P or Esc to resume', 16, '#c8cde4']], '#fbbf24');
       } else if (G.state === 'over' || G.state === 'won') {
+        if (THEATER_EMBEDDED) return;
         const win = G.state === 'won';
         const lines = [];
         if (G.sub) lines.push([G.sub, 15, '#c8cde4']);

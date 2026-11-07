@@ -24,12 +24,37 @@
     try { return new URL('menu-kit.css', SCRIPT_URL).href; }
     catch (error) { return 'menu-kit.css'; }
   }());
+  var INTRO_JS_URL = (function () {
+    try { return new URL('intro-kit.js', SCRIPT_URL).href; }
+    catch (error) { return 'intro-kit.js'; }
+  }());
+  var introScriptState = 'idle';
+  /* The beginning animation is optional garnish: if the kit never arrives the
+     menu starts the game exactly as it did before. */
+  function loadIntroScript() {
+    if (introScriptState !== 'idle') return;
+    if (global.ApexIntro) {
+      introScriptState = 'ready';
+      return;
+    }
+    if (!global.document || !global.document.head) return;
+    introScriptState = 'loading';
+    var tag = global.document.createElement('script');
+    tag.src = INTRO_JS_URL;
+    tag.async = true;
+    tag.onload = function () { introScriptState = global.ApexIntro ? 'ready' : 'failed'; };
+    tag.onerror = function () { introScriptState = 'failed'; };
+    global.document.head.appendChild(tag);
+  }
+  function introScriptPending() {
+    return introScriptState === 'loading';
+  }
   var BUILD_INFO_URL = (function () {
     try { return new URL('../../build-info.json', SCRIPT_URL).href; }
     catch (error) { return 'build-info.json'; }
   }());
-  // Inside the theater the host owns the pause screen. Game pages keep their
-  // standalone menu behavior unless they were loaded through an embedded frame.
+  // The theater hosts this page in a frame. The page still renders its own menu
+  // and pause panel; embedding only adds the messages that keep the host in step.
   var THEATER_EMBEDDED = (function () {
     try {
       if (!global.document || !global.parent || global.parent === global) return false;
@@ -219,9 +244,106 @@
       } catch (e) { return false; }
     }
 
+    var introRunning = false;
+
+    function introOptions() {
+      var reduced = !!optionState.reduceMotion;
+      try {
+        if (global.matchMedia && global.matchMedia('(prefers-reduced-motion: reduce)').matches) reduced = true;
+      } catch (e) { /* matchMedia may be unavailable in embedded shells. */ }
+      var tier = (global.Perf && global.Perf.tier) || optionState.performanceTier || 'standard';
+      return {
+        key: String(config.introKey || config.gameId || ''),
+        title: config.title,
+        tagline: config.tagline,
+        accent: config.theme.palette.accent,
+        archetype: config.archetype,
+        reducedMotion: reduced,
+        tier: tier === 'auto' ? 'standard' : tier
+      };
+    }
+
+    /* The game clock starts the instant onPlay runs, so the beginning animation
+       gates it rather than covering a run already in progress. A run that cannot
+       show its animation still starts exactly as it did before. */
+    function beginRun(startGame) {
+      var started = false;
+      function launch() {
+        if (started) return;
+        started = true;
+        if (introRunning) {
+          introRunning = false;
+          root.inert = false;
+          postHostMessage('MENU_INTRO_DONE', { introKey: String(config.introKey || config.gameId || '') });
+        }
+        global.ApexIntroRunning = false;
+        startGame();
+      }
+
+      loadIntroScript();
+      var options = introOptions();
+      var introReady = function () {
+        var intro = global.ApexIntro;
+        return !options.reducedMotion && Boolean(intro && typeof intro.play === 'function' && intro.has(options.key));
+      };
+      if (options.reducedMotion || (!introReady() && !introScriptPending())) {
+        launch();
+        return;
+      }
+      // Publish the gate the moment Play is chosen, so anything watching for a
+      // live run (theater, tests, automation) waits for the animation to clear.
+      global.ApexIntroRunning = true;
+      var playIntro = function () {
+        if (started || destroyed) return;
+        if (!introReady()) {
+          launch();
+          return;
+        }
+        introRunning = true;
+        root.inert = true;
+        postHostMessage('MENU_INTRO_START', { introKey: options.key });
+        if (!destroyed) api.hide();
+        global.ApexIntro.play(Object.assign({}, options, {
+          onReveal: launch,
+          onError: launch,
+          onDone: launch
+        }));
+      };
+      if (introReady()) {
+        playIntro();
+        return;
+      }
+      // The kit is still downloading: give it a moment, then play or start plain.
+      var waited = 0;
+      (function poll() {
+        if (started || destroyed) return;
+        if (introReady() || waited >= 1200) { playIntro(); return; }
+        waited += 60;
+        global.setTimeout(poll, 60);
+      }());
+    }
+
+    /* One start path for every front door: the menu's own Play button and the
+       theater lobby's Play button both land here, so the beginning animation
+       gates the run whichever of the two the player chooses. */
+    function startRun(actionId) {
+      if (introRunning) return false;
+      if (sceneController) sceneController.pause();
+      if (global.Music && typeof global.Music.stop === 'function') global.Music.stop(0.35);
+      unlockMenuSound();
+      beginRun(function () {
+        // Clear the ready-screen pause before onPlay resets the game's own
+        // paused flag; otherwise adapters can leave the native clock frozen.
+        pauseNativeGame(false);
+        postHostMessage('MENU_PLAY');
+        if (typeof config.onPlay === 'function') config.onPlay({ action: actionId, config: config });
+        if (!destroyed) api.hide();
+      });
+      return true;
+    }
+
     var router, focus, sceneController = null, destroyed = false, currentViewData = {};
     var gamepadRaf = 0, previousGamepad = {};
-    var hostPaused = false;
     var soundUnlocked = false, suppressFocusSound = false, lastUiSoundAt = 0;
     var screens = config.screens || {};
     var optionState = readSettings(config.gameId, config.options || {});
@@ -447,18 +569,7 @@
           var action = typeof item === 'object' && item.action;
           var button = makeButton(label, 'apex-menu-action', function () {
             if (typeof action === 'function') { action({ go: api.go, back: api.back, config: config }); return; }
-            if (id === 'play' || id === 'continue') {
-              if (sceneController) sceneController.pause();
-              if (global.Music && typeof global.Music.stop === 'function') global.Music.stop(0.35);
-              hostPaused = false;
-              // Clear the ready-screen pause before onPlay resets the game's own
-              // paused flag; otherwise adapters can leave the native clock frozen.
-              pauseNativeGame(false);
-              postHostMessage('MENU_PLAY');
-              if (typeof config.onPlay === 'function') config.onPlay({ action: id, config: config });
-              if (!destroyed) api.hide();
-              return;
-            }
+            if (id === 'play' || id === 'continue') { startRun(id); return; }
             if (id === 'exit') {
               postHostMessage('MENU_EXIT');
               if (typeof config.onExit === 'function') config.onExit();
@@ -482,13 +593,25 @@
         var pauseActions = doc.createElement('nav');
         pauseActions.className = 'apex-menu-actions';
         pauseActions.setAttribute('aria-label', 'Pause menu');
-        [
+        var pauseItems = [
           { label: 'Resume game', run: function () { api.resume(); } },
           { label: 'Restart game', run: function () { pauseNativeGame(false); restartNativeGame(); api.hide(); postHostMessage('MENU_RESUME'); } },
-          { label: 'Options', run: function () { api.go('options'); } },
+          { label: 'Options', run: function () { api.go('options'); } }
+        ];
+        // The theater sheet (display, volume, perf) has no header button anymore;
+        // this panel is its only door while a run is live. The host shows its
+        // settings in place of this panel, so hide ours without resuming.
+        if (THEATER_EMBEDDED) pauseItems.push({ label: 'Settings', run: function () {
+          root.hidden = true;
+          root.setAttribute('aria-hidden', 'true');
+          global.ApexMenuActive = false;
+          postHostMessage('MENU_SETTINGS');
+        } });
+        pauseItems.push(
           { label: 'How to play', run: function () { api.go('about'); } },
           { label: 'Exit game', run: function () { postHostMessage('MENU_EXIT'); if (typeof config.onExit === 'function') config.onExit(); } }
-        ].forEach(function (item) { pauseActions.appendChild(makeButton(item.label, 'apex-menu-action', item.run)); });
+        );
+        pauseItems.forEach(function (item) { pauseActions.appendChild(makeButton(item.label, 'apex-menu-action', item.run)); });
         panel.appendChild(pauseActions);
       } else if (screen === 'options') {
         var backOptions = makeButton('Back', 'apex-menu-back', function () { api.back(); });
@@ -529,7 +652,6 @@
       },
       showPause: function () {
         if (destroyed) return;
-        if (THEATER_EMBEDDED) { requestHostPause(); return; }
         root.hidden = false;
         root.removeAttribute('aria-hidden');
         root.setAttribute('aria-modal', 'true');
@@ -541,7 +663,6 @@
       },
       resume: function () {
         if (destroyed) return;
-        if (THEATER_EMBEDDED) { postHostMessage('MENU_RESUME'); return; }
         pauseNativeGame(false);
         if (typeof config.onResume === 'function') config.onResume({ config: config });
         api.hide();
@@ -562,7 +683,7 @@
         gamepadRaf = 0;
         global.removeEventListener('keydown', onMenuKeyDownCapture, true);
         global.removeEventListener('keydown', onGamePauseKeyDown, true);
-        global.removeEventListener('message', onHostPauseMessage);
+        global.removeEventListener('message', onHostMessage);
         global.ApexMenuActive = false;
         if (pauseButton && pauseButton.parentNode) pauseButton.parentNode.removeChild(pauseButton);
         root.removeEventListener('pointerdown', onPointerDown);
@@ -658,13 +779,8 @@
       if (restartControl && typeof restartControl.click === 'function') restartControl.click();
     }
 
-    function requestHostPause() {
-      postHostMessage(hostPaused ? 'MENU_RESUME' : 'MENU_PAUSE');
-    }
-
     function openPauseMenu() {
       if (destroyed || !root.hidden) return;
-      if (THEATER_EMBEDDED) { requestHostPause(); return; }
       pauseNativeGame(true);
       api.showPause();
       postHostMessage('MENU_PAUSE');
@@ -672,26 +788,47 @@
 
     function onGamePauseKeyDown(event) {
       if (destroyed || !root.hidden || event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
+      // While a beginning animation is playing, Escape only skips the animation.
+      if (introRunning) return;
       if (doc.querySelector('dialog[open]')) return;
       if (event.code === 'KeyP' || event.key === 'Escape') {
         event.preventDefault();
         event.stopImmediatePropagation();
-        if (THEATER_EMBEDDED) { requestHostPause(); return; }
         openPauseMenu();
       }
     }
 
-    function onHostPauseMessage(event) {
+    function onHostMessage(event) {
       if (destroyed || !THEATER_EMBEDDED) return;
       var data = event.data;
-      if (!data || data.type !== 'SET_PAUSED') return;
+      if (!data || typeof data.type !== 'string') return;
       if (event.source !== global.parent) return;
       if (event.origin && global.location.origin && event.origin !== global.location.origin) return;
+      if (data.type === 'THEATER_PLAY') {
+        // The lobby's Play button is a real front door: start the run here so its
+        // beginning animation gates the game exactly as the menu's Play does.
+        if (root.hidden) return;
+        startRun('play');
+        return;
+      }
+      if (data.type === 'MENU_SETTINGS_CLOSED') {
+        // The host's settings panel stepped back; restore this pause panel in its place.
+        if (root.hidden && router.current() === 'pause') {
+          root.hidden = false;
+          root.removeAttribute('aria-hidden');
+          global.ApexMenuActive = true;
+          if (focus) { suppressFocusSound = true; focus.first(); suppressFocusSound = false; }
+        }
+        return;
+      }
+      if (data.type !== 'SET_PAUSED') return;
       var paused = !!data.paused;
       // The host can request a resume before Play was chosen while the ready
       // menu is still visible; never reveal or unpause a game behind it.
-      if (!paused && !root.hidden) return;
-      hostPaused = paused;
+      if (!paused && !root.hidden && router.current() !== 'pause') return;
+      // A pause the page opened for itself is already showing its own panel, so
+      // the host's echo has nothing left to render.
+      if (paused && !root.hidden && router.current() === 'pause') return;
       pauseNativeGame(paused);
       if (global.Music) {
         if (paused && typeof global.Music.pause === 'function') global.Music.pause();
@@ -701,10 +838,16 @@
         if (paused) sceneController.pause();
         else sceneController.resume();
       }
+      // The host's pause door opens this page's panel too, so one screen serves
+      // keyboard, gamepad, touch pad and header button. `silent` is the host's
+      // own dialog freezing the run without stacking a second menu on screen.
+      if (paused) {
+        if (!introRunning && data.silent !== true) api.showPause();
+      } else if (!root.hidden) api.hide();
       postHostMessage('PAUSE_STATE', { paused: paused });
     }
 
-    global.addEventListener('message', onHostPauseMessage);
+    global.addEventListener('message', onHostMessage);
 
     function gamepadButton(pad, index) { return !!(pad.buttons && pad.buttons[index] && pad.buttons[index].pressed); }
     function adjustGamepadControl(active, direction) {
@@ -767,6 +910,7 @@
     }
     global.addEventListener('keydown', onMenuKeyDownCapture, true);
     global.addEventListener('keydown', onGamePauseKeyDown, true);
+    loadIntroScript();
     postHostMessage('MENU_OPEN');
     render('main', {});
     // Treat the opening menu as a paused state too; ready Arcade games remain ready,

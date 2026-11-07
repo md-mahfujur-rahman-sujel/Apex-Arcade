@@ -92,16 +92,33 @@ try {
     const pauseDialog = page.getByRole('dialog', { name: 'Game paused' });
     await pauseDialog.waitFor();
     assert.equal(await page.locator('#playable-theater-modal [role="dialog"][aria-label="Game paused"]').count(), 1, `${gameId} exposes exactly one host pause screen`);
+    // The header difficulty switch is gone; the engine sheet owns it now.
+    await pauseDialog.getByRole('button', { name: 'Settings', exact: true }).click();
+    const engineDifficulty = page.getByLabel('Difficulty', { exact: true });
+    await engineDifficulty.waitFor();
+    await engineDifficulty.selectOption('hard');
+    assert.equal(await engineDifficulty.inputValue(), 'hard', `${gameId} difficulty is customizable from the settings sheet`);
+    await engineDifficulty.selectOption('normal');
+    // The engine overlay hosts the sheet inline; its own back button returns to pause.
+    await pauseDialog.getByRole('button', { name: 'Back to pause', exact: true }).click();
     const frozen = await signature();
     await page.waitForTimeout(400);
     assert.equal(await signature(), frozen, `${gameId} engine canvas is frozen while paused`);
 
     await page.keyboard.press('Escape');
     await pauseDialog.waitFor({ state: 'detached' });
-    await page.waitForTimeout(150);
+    // A difficulty change remounts the engine, and some engines reopen on a
+    // start gate, so press through any visible gate before expecting motion.
+    const startGate = page.locator('#playable-theater-stage button:visible').first();
+    if (await startGate.count()) await startGate.click();
     const resumed = await signature();
-    await page.waitForTimeout(300);
-    assert.notEqual(await signature(), resumed, `${gameId} engine resumes animation after Escape`);
+    // Remounted engines may show a READY countdown before motion starts.
+    let resumedAnimating = false;
+    for (let i = 0; i < 20; i++) {
+      await page.waitForTimeout(250);
+      if (await signature() !== resumed) { resumedAnimating = true; break; }
+    }
+    assert.ok(resumedAnimating, `${gameId} engine resumes animation after Escape`);
 
     await page.getByRole('button', { name: 'Close Theater' }).click();
     await page.locator('#playable-theater-modal').waitFor({ state: 'detached' });

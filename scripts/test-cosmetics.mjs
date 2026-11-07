@@ -47,6 +47,11 @@ console.log('PASS cosmetic ownership and equipment survive reinitializing both s
 
 const server = await preview({ preview: { host: '127.0.0.1', port: 0 } });
 const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
+/* The Customize panel lives in the game's own menu, which the theater no longer
+   shows: its Play starts the run. So cosmetics are bought on the game page. */
+const gamesSource = await readFile(new URL('../src/data/gamesData.ts', import.meta.url), 'utf8');
+const folder = /id: 'flappy-bird',[\s\S]*?htmlPath: '([^']+)',$/m.exec(gamesSource)?.[1]?.split('/')[3];
+assert.ok(folder, 'Glowmoth Gauntlet ships a standalone game page');
 const candidates = [process.env.CHROME_BIN, 'C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].filter(Boolean);
 let executablePath;
 for (const candidate of candidates) { try { await access(candidate); executablePath = candidate; break; } catch { /* Try another installed browser. */ } }
@@ -66,15 +71,15 @@ try {
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
   async function openGame() {
-    await page.goto(`${origin}/#/game/flappy-bird`);
-    await page.getByRole('button', { name: /play now/i }).click();
-    await page.locator('#playable-theater-modal').waitFor({ state: 'visible' });
-    await page.getByRole('button', { name: 'Play Glowmoth Gauntlet', exact: true }).click();
-    await page.frameLocator('#playable-theater-modal iframe').locator('canvas').first().waitFor({ state: 'visible' });
+    await page.goto(`${origin}${server.config.base}assets/games/${folder}/index.html`);
+    await page.locator('.apex-menu-root').waitFor({ state: 'visible' });
+    await page.waitForFunction(() => {
+      const link = document.getElementById('apex-menu-kit-styles');
+      return !!(link && link.sheet);
+    });
   }
   await openGame();
-  const frame = page.frameLocator('#playable-theater-modal iframe');
-  const menu = frame.locator('.apex-menu-root');
+  const menu = page.locator('.apex-menu-root');
   await menu.locator('[data-menu-action="customize"]').click();
   await menu.getByRole('button', { name: 'Ember · 100 Sparks' }).click();
   await page.waitForFunction(() => JSON.parse(localStorage.getItem('apex:meta') || '{}').sparks === 150);
@@ -84,10 +89,10 @@ try {
   await menu.getByRole('button', { name: 'Back', exact: true }).click();
   await page.reload();
   await openGame();
-  const restoredItems = await page.locator('#playable-theater-modal iframe').evaluate((iframe) => iframe.contentWindow.Meta.getCosmetics('glowmoth'));
+  const restoredItems = await page.evaluate(() => window.Meta.getCosmetics('glowmoth'));
   if (!restoredItems.find((item) => item.id === 'glowmoth:ember')?.equipped) throw new Error('Ember was not equipped after reloading the game page');
   if (errors.length) throw new Error(`Browser errors: ${errors.join(' | ')}`);
-  console.log('PASS Glowmoth launch-menu Customize buys Ember, equips it, and restores the equipped skin after a page reload with zero browser errors');
+  console.log('PASS Glowmoth Customize buys Ember, equips it, and restores the equipped skin after a page reload with zero browser errors');
 } finally {
   await browser.close();
   await new Promise((resolve) => server.httpServer.close(resolve));

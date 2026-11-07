@@ -427,18 +427,27 @@ async function testGame(game, viewport, browserContext) {
       d11 = await verifySpoofRejected(page, game);
     }
 
+    // The game page draws its own pause panel; the theater mirrors the state
+    // instead of stacking a second pause screen over it.
+    const pausePanel = frame.locator('.apex-menu-root:not([hidden])');
     const pauseWithHost = async () => {
       if (viewport.hasTouch) await page.locator('#playable-theater-modal button[aria-label="Pause game"]').click({ timeout: 1000 });
       else await frame.locator('body').press('Escape');
-      await page.getByRole('dialog', { name: 'Game paused' }).waitFor({ state: 'visible', timeout: 1000 });
+      await pausePanel.waitFor({ state: 'visible', timeout: 1000 });
     };
     const resumeWithHost = async () => {
-      await page.getByRole('dialog', { name: 'Game paused' }).getByRole('button', { name: 'Resume' }).click({ timeout: 1000 });
-      await page.getByRole('dialog', { name: 'Game paused' }).waitFor({ state: 'detached', timeout: 1000 });
+      await pausePanel.getByRole('button', { name: 'Resume game', exact: true }).click({ timeout: 1000 });
+      await pausePanel.waitFor({ state: 'hidden', timeout: 1000 });
     };
     try {
       await pauseWithHost();
-      const inputBlocked = await frame.evaluate(() => getComputedStyle(window.frameElement).pointerEvents === 'none');
+      const inputBlocked = await frame.evaluate(() => {
+        const menu = document.querySelector('.apex-menu-root');
+        if (!menu || menu.hidden || menu.getAttribute('aria-modal') !== 'true' || !window.ApexMenuActive) return false;
+        const rect = menu.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return Boolean(hit && menu.contains(hit));
+      });
       let frozen = false;
       if (isArcade) {
         await frame.waitForFunction(() => window.Arcade.test.G.state === 'paused', null, { timeout: 1000 });
@@ -462,28 +471,22 @@ async function testGame(game, viewport, browserContext) {
         frozen = held && inputBlocked && (snapshot === null || afterPause === snapshot);
       }
       result['pause/resume'] = frozen
-        ? ok('Unified theater pause froze the game clock and state, blocked input, and resumed cleanly')
-        : fail('Unified theater pause did not freeze the game or release input');
+        ? ok('The game page pause panel froze the clock and state, owned input, and resumed cleanly')
+        : fail('The game page pause panel did not freeze the game or release input');
     } catch {
-      result['pause/resume'] = fail('Unified theater pause overlay did not open or resume');
+      result['pause/resume'] = fail('The game page pause panel did not open or resume');
     }
 
-    await page.locator('#playable-theater-modal button[aria-label="Theater settings"]').click({ timeout: 1000 });
-    let arcadeTick = null;
-    if (isArcade) {
-      // The settings overlay pauses through postMessage; let it land before
-      // restarting so a late pause cannot stop the lite-tier check.
-      await frame.waitForFunction(() => ['paused', 'over'].includes(window.Arcade?.test?.G?.state), null, { timeout: 1000 }).catch(() => {});
-      arcadeTick = await frame.evaluate(() => {
-        const gameState = window.Arcade.test.G;
-        if (gameState.state !== 'playing') gameState.restart(true);
-        return gameState.t;
-      });
-    }
+    // The perf tier lives in the theater sheet, whose only door is the pause panel.
+    await pauseWithHost();
+    await pausePanel.getByRole('button', { name: 'Settings', exact: true }).click({ timeout: 1000 });
+    await page.locator('#theater-settings').waitFor({ state: 'visible', timeout: 1000 });
     await page.locator('#theater-settings select').selectOption('lite', { timeout: 1000 });
+    await page.getByRole('button', { name: 'Back to pause', exact: true }).click();
+    await resumeWithHost();
+    let arcadeTick = null;
+    if (isArcade) arcadeTick = await frame.evaluate(() => window.Arcade.test.G.t);
     try {
-      if (isArcade) await frame.evaluate(() => { const game = window.Arcade.test.G; if (game.state === 'paused') game.pauseToggle(); });
-      if (isArcade) arcadeTick = await frame.evaluate(() => window.Arcade.test.G.t);
       await frame.waitForFunction(({ requireGameLoop, tick }) => window.Perf?.tier === 'lite'
         && (!requireGameLoop || (window.Arcade?.test?.G?.state === 'playing' && window.Arcade.test.G.t > tick)),
       { requireGameLoop: isArcade, tick: arcadeTick }, { timeout: 1500 });

@@ -109,7 +109,7 @@
     item.scene = item.id === 'clockwork-dawn' && typeof global.ClockworkDawnMenuScene === 'function' ? global.ClockworkDawnMenuScene : function (ctx, frame) { drawMotif(ctx, frame, item.id, item.motif, item.accent); };
     var menu;
     menu = global.Menu.mount({
-      gameId: menuGameId, title: title, tagline: item.tagline, archetype: item.archetype,
+      gameId: menuGameId, introKey: item.id, title: title, tagline: item.tagline, archetype: item.archetype,
       items: gameUi ? ['play', 'modes', 'customize', 'options', 'more', 'exit'] : ['play', 'options', 'about', 'exit'],
       theme: {
         frame: item.motif + '-frame', button: item.motif + '-banner',
@@ -198,7 +198,12 @@
       } },
       onSettingChange: function (key, value) {
         if (gameUi && uiConfig.hooks && typeof uiConfig.hooks.applySetting === 'function') uiConfig.hooks.applySetting(key, value);
-        if (key === 'difficulty') global.postMessage({ type: 'SET_DIFFICULTY', difficulty: value }, global.location.origin);
+        if (key === 'difficulty') {
+          global.postMessage({ type: 'SET_DIFFICULTY', difficulty: value }, global.location.origin);
+          // The header no longer carries a difficulty switch, so the host footer
+          // learns the new value from the menu instead of echoing it back.
+          if (global.__apexTheaterEmbedded) global.parent.postMessage({ type: 'MENU_DIFFICULTY', difficulty: value, gameId: uiConfig.id }, global.location.origin);
+        }
         if (key === 'sfxVol' && global.Arcade) global.Arcade.sfxVolume = Math.max(0, Math.min(1, Number(value) || 0));
       },
       onPlay: function () {

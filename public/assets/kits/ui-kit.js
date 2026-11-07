@@ -222,6 +222,11 @@
     if (!layer) return null;
 
     var root = document.createElement('div');
+    if (!document.getElementById('apex-result-motion')) {
+      var motionStyle = document.createElement('style'); motionStyle.id = 'apex-result-motion';
+      motionStyle.textContent = '@keyframes apex-result-enter{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}';
+      document.head.appendChild(motionStyle);
+    }
     root.className = 'apex-game-menu'; root.setAttribute('aria-label', config.title + ' game controls');
     root.style.cssText = 'position:absolute;inset:0;z-index:8;display:flex;align-items:flex-end;justify-content:center;padding:12px;pointer-events:none;font:600 13px system-ui,sans-serif;color:#f8fafc;';
     var panelEl = document.createElement('div');
@@ -240,7 +245,7 @@
       selectedMode = firstAvailableMode ? firstAvailableMode.id : modes[0].id;
     }
     var mutators = Array.isArray(config.mutators) ? config.mutators : [], selectedMutator = mutators.some(function (item) { return item.id === currentSettings.mutator; }) ? currentSettings.mutator : 'none';
-    var settingsOpen = false, customizeOpen = false, tutorialOpen = false, tutorialInputLocked = null, achievementsOpen = false, tutorialIndex = 0, lastState = G.state, padPrev = {}, focusIndex = 0;
+    var settingsOpen = false, customizeOpen = false, tutorialOpen = false, tutorialInputLocked = null, achievementsOpen = false, tutorialIndex = 0, lastState = G.state, lastIntroGate = false, padPrev = {}, focusIndex = 0;
     var gameSettings = (config.settings || []).slice();
     if (!gameSettings.some(function (item) { return item.key === 'reduceMotion'; })) gameSettings.push({ key: 'reduceMotion', label: 'Reduced motion', type: 'toggle', default: false });
     gameSettings.forEach(function (item) {
@@ -426,12 +431,29 @@
     }
     function render() {
       // Keep the board unobstructed during play; menus return with the next state.
-      root.style.display = G.state === 'playing' ? 'none' : 'flex';
+      // A beginning animation counts as play too: it covers the board on its way in,
+      // and while the page's own menu or pause panel is up it is the only chrome.
+      var finished = G.state === 'over' || G.state === 'won';
+      root.style.display = G.state === 'playing' || window.ApexIntroRunning || window.ApexMenuActive || (window.__apexTheaterEmbedded && finished) ? 'none' : 'flex';
+      root.style.alignItems = finished ? 'center' : 'flex-end';
+      root.style.padding = finished ? 'clamp(14px, 4vw, 28px)' : '12px';
       panelEl.textContent = ''; panelEl.setAttribute('role', settingsOpen ? 'group' : 'toolbar');
       panelEl.setAttribute('aria-label', settingsOpen ? 'Game settings' : 'Game menu');
+      panelEl.style.flexDirection = finished ? 'column' : 'row';
+      panelEl.style.flexWrap = finished ? 'nowrap' : 'wrap';
+      panelEl.style.width = finished ? 'min(100%, 460px)' : '';
+      panelEl.style.maxWidth = '100%';
+      panelEl.style.padding = finished ? 'clamp(22px, 5vw, 34px)' : '9px 12px';
+      panelEl.style.borderColor = finished ? 'rgba(110,231,183,.48)' : 'rgba(148,163,184,.35)';
+      panelEl.style.borderRadius = finished ? '24px' : '14px';
+      panelEl.style.background = finished ? 'linear-gradient(155deg, rgba(19,48,48,.98), rgba(9,20,27,.98))' : 'rgba(7,12,25,.94)';
+      panelEl.style.boxShadow = finished ? '0 28px 90px rgba(0,0,0,.55), 0 0 50px rgba(52,211,153,.12)' : '0 8px 32px rgba(0,0,0,.35)';
+      panelEl.style.gap = finished ? '12px' : '8px';
+      panelEl.style.textAlign = finished ? 'center' : '';
+      panelEl.style.animation = finished && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'apex-result-enter 260ms cubic-bezier(.2,.8,.2,1) both' : 'none';
       var expanded = customizeOpen || tutorialOpen || achievementsOpen;
-      panelEl.style.maxHeight = expanded ? '72%' : '';
-      panelEl.style.overflowY = expanded ? 'auto' : '';
+      panelEl.style.maxHeight = finished ? '100%' : expanded ? '72%' : '';
+      panelEl.style.overflowY = finished || expanded ? 'auto' : '';
       if (G.state === 'ready') {
         if (tutorialOpen) {
           renderTutorial();
@@ -483,8 +505,15 @@
         }
       } else {
         var result = typeof hooks.getResult === 'function' ? hooks.getResult() : { score: G.score || 0, win: G.state === 'won' };
-        var score = document.createElement('span'); score.setAttribute('aria-live', 'polite'); var activeMutator = mutators.find(function (item) { return item.id === selectedMutator; }); score.textContent = 'Score ' + (result.score == null ? G.score || 0 : result.score) + (activeMutator ? ' · Mutator: ' + activeMutator.name + ' (×' + activeMutator.multiplier + ')' : ''); panelEl.appendChild(score);
-        button('Play again', play); var clipButton = button('Save result clip/card', function () { saveClip(clipButton); }); button('Back to menu', backToMenu);
+        var heading = document.createElement('div'); heading.style.cssText = 'color:#f8fafc;font:800 clamp(22px,5vw,30px)/1.1 system-ui,sans-serif;letter-spacing:-.03em;'; heading.textContent = result.win ? 'Run complete' : 'Run over'; panelEl.appendChild(heading);
+        var gameName = document.createElement('div'); gameName.style.cssText = 'color:#6ee7b7;font:700 10px ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase;'; gameName.textContent = config.title; panelEl.insertBefore(gameName, heading);
+        var activeMutator = mutators.find(function (item) { return item.id === selectedMutator; });
+        var score = document.createElement('div'); score.setAttribute('aria-live', 'polite'); score.style.cssText = 'width:100%;padding:14px;border:1px solid rgba(255,255,255,.1);border-radius:16px;background:rgba(0,0,0,.2);color:#fbbf24;font:800 24px ui-monospace,monospace;'; score.textContent = 'SCORE  ' + (result.score == null ? G.score || 0 : result.score); panelEl.appendChild(score);
+        var best = document.createElement('div'); best.style.cssText = 'color:#cbd5e1;font:700 12px ui-monospace,monospace;'; best.textContent = 'BEST  ' + (result.best == null ? G.hi || 0 : result.best) + (activeMutator ? '  ·  ' + activeMutator.name + ' ×' + activeMutator.multiplier : ''); panelEl.appendChild(best);
+        var actions = document.createElement('div'); actions.style.cssText = 'display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;width:100%;'; panelEl.appendChild(actions);
+        var playButton = button('Play again', play); playButton.style.cssText += 'grid-column:1/-1;background:#6ee7b7;color:#09201a;border-color:rgba(110,231,183,.7);'; actions.appendChild(playButton);
+        var clipButton = button('Save result clip/card', function () { saveClip(clipButton); }); actions.appendChild(clipButton);
+        var menuButton = button('Back to menu', backToMenu); actions.appendChild(menuButton);
       }
       controls().forEach(function (control, index) {
         control.addEventListener('keydown', function (event) {
@@ -499,7 +528,10 @@
       });
     }
     function stateFrame() {
-      if (G.state !== lastState) {
+      // The beginning animation is part of the run, so its gate redraws the
+      // toolbar even though the game state is still 'ready'.
+      var introGate = Boolean(window.ApexIntroRunning);
+      if (G.state !== lastState || introGate !== lastIntroGate) {
         if ((G.state === 'won' || G.state === 'over') && window.Meta && typeof Meta.recordSeasonScore === 'function') {
           var result = typeof hooks.getResult === 'function' ? hooks.getResult() : { score: G.score || 0 };
           var modeEntry = modes.find(function (entry) { return entry.id === (result.mode || selectedMode); });
@@ -507,7 +539,7 @@
         }
         if (G.state === 'paused' && typeof hooks.onPause === 'function') hooks.onPause();
         if (lastState === 'paused' && G.state === 'playing' && typeof hooks.onResume === 'function') hooks.onResume();
-        lastState = G.state; settingsOpen = false; render();
+        lastState = G.state; lastIntroGate = introGate; settingsOpen = false; render();
       }
       if (window.ApexMenuActive || (window.__apexTheaterEmbedded && window.ApexGamePaused) || document.querySelector('.apex-menu-root:not([hidden])')) { padPrev = {}; requestAnimationFrame(stateFrame); return; }
       var pads = [];

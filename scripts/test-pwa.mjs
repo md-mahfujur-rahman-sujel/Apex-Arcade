@@ -106,8 +106,10 @@ try {
   await chessFrame.locator('.sq').first().waitFor({ state: 'visible', timeout: 10000 });
   const chessMenu = chessFrame.locator('.apex-menu-root');
   if (await chessMenu.count()) {
-    await chessMenu.locator('[data-menu-action="play"]').click();
-    await chessMenu.waitFor({ state: 'hidden' });
+    // Offline the lobby still hands the run to the game: its Play opens the
+    // board, with or without the beginning animation kit in the cache.
+    await chessMenu.waitFor({ state: 'hidden', timeout: 20000 });
+    await chessFrame.waitForFunction(() => window.ApexIntroRunning !== true, null, { timeout: 20000 });
   }
   const offlineMove = await chessFrame.evaluate(() => {
     const move = legal(S)[0];

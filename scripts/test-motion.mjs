@@ -64,7 +64,21 @@ try {
   await page.evaluate(() => { location.hash = '#/game/flappy-bird'; });
   await page.getByRole('button', { name: 'Play now' }).click();
   await page.getByRole('button', { name: 'Play Glowmoth Gauntlet', exact: true }).click();
-  await page.getByRole('button', { name: 'Theater settings' }).click();
+  // The lobby's Play starts the run through the game's beginning animation; the
+  // settings checks below need the live frame behind them.
+  await page.locator('#playable-theater-modal [data-theater-loading]').waitFor({ state: 'detached', timeout: 20000 });
+  await page.waitForFunction(() => {
+    const frame = document.querySelector('#playable-theater-modal iframe');
+    const menu = frame?.contentDocument?.querySelector('.apex-menu-root');
+    return frame?.contentWindow?.ApexIntroRunning !== true && (!menu || menu.hidden);
+  }, null, { timeout: 20000 });
+  const gameFrame = page.frameLocator('#playable-theater-modal iframe');
+  const pausePanel = gameFrame.getByRole('dialog', { name: /pause menu$/ });
+  // The sheet has no header button anymore; the pause panel opens it.
+  await page.keyboard.press('Escape');
+  await pausePanel.waitFor({ state: 'visible' });
+  await pausePanel.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.locator('#theater-settings').waitFor();
   const reducedMotion = page.getByRole('checkbox', { name: 'Reduced motion' });
   await reducedMotion.check();
   await page.waitForFunction(() => {
@@ -86,29 +100,27 @@ try {
   });
   assert.equal(await page.evaluate(() => localStorage.getItem('apex:reduced-motion:flappy-bird')), 'false', 'turning reduced motion off persists for that game');
 
-  await page.getByRole('button', { name: 'Close theater settings' }).click();
-  const gameFrame = page.frameLocator('#playable-theater-modal iframe');
-  const launchMenu = gameFrame.locator('.apex-menu-root');
-  await launchMenu.locator('[data-menu-action="play"]').click();
-  await launchMenu.waitFor({ state: 'hidden' });
-  await page.keyboard.press('Escape');
-  const pauseOverlay = page.locator('[data-pause-overlay]');
-  await pauseOverlay.waitFor({ state: 'visible' });
-  await pauseOverlay.getByRole('button', { name: 'Settings', exact: true }).click();
-  const pauseReducedMotion = pauseOverlay.getByRole('checkbox', { name: 'Reduced motion' });
-  await pauseReducedMotion.check();
+  await page.getByRole('button', { name: 'Back to pause', exact: true }).click();
+  // Closing the sheet lands back on the pause panel that opened it.
+  await pausePanel.waitFor({ state: 'visible' });
+  assert.equal(await page.locator('[data-pause-overlay]').count(), 0, 'the theater stacks no second pause screen over the page panel');
+  await pausePanel.getByRole('button', { name: 'Options', exact: true }).click();
+  await gameFrame.getByRole('tab', { name: 'Accessibility' }).click();
+  const pauseReducedMotion = gameFrame.getByRole('switch', { name: 'Reduce motion' });
+  await pauseReducedMotion.click();
   await page.waitForFunction(() => localStorage.getItem('apex:reduced-motion:flappy-bird') === 'true'
     && document.querySelector('#playable-theater-modal')?.getAttribute('data-apex-reduced-motion') === 'true');
-  await pauseReducedMotion.uncheck();
+  await pauseReducedMotion.click();
   await page.waitForFunction(() => {
     const frame = document.querySelector('#playable-theater-modal iframe');
     return localStorage.getItem('apex:reduced-motion:flappy-bird') === 'false'
       && !document.querySelector('#playable-theater-modal')?.hasAttribute('data-apex-reduced-motion')
       && frame?.contentDocument?.documentElement.getAttribute('data-apex-reduced-motion') === null;
   });
-  assert.equal(await gameFrame.locator('html').getAttribute('data-apex-reduced-motion'), null, 'the pause setting turns reduced motion off in its frame');
-  await pauseOverlay.getByRole('button', { name: 'Back to pause' }).click();
-  await pauseOverlay.getByRole('button', { name: 'Resume' }).click();
+  assert.equal(await page.locator('#playable-theater-modal iframe').evaluate((element) => element.contentDocument.documentElement.getAttribute('data-apex-reduced-motion')), null, 'the pause setting turns reduced motion off in its frame');
+  await page.keyboard.press('Escape');
+  await pausePanel.getByRole('button', { name: 'Resume game', exact: true }).click();
+  await pausePanel.waitFor({ state: 'hidden' });
   await context.close();
 
   const reducedContext = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });

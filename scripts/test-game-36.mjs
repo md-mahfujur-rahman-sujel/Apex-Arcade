@@ -22,6 +22,9 @@ await page.waitForFunction(() => typeof MathsTest !== 'undefined' && !!document.
 try {
   await page.click('.apex-menu-root [data-menu-action="play"]');
   await page.waitForFunction(() => document.querySelector('.apex-menu-root').hidden === true);
+  // Play gates the run behind the beginning animation: read the live run only
+  // once that gate has released.
+  await page.waitForFunction(() => window.ApexIntroRunning !== true, null, { timeout: 20000 });
   const chrome = await page.evaluate(() => ({
     shell: Boolean(document.querySelector('.bar, .help')),
     menuToolbar: (() => { const el = document.querySelector('.apex-game-menu'); return el ? getComputedStyle(el).display : 'none'; })(),
