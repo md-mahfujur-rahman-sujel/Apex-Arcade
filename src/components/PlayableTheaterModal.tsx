@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { GameInfo, DifficultySetting } from '../types/game';
 import { TheaterPauseOverlay } from './TheaterPauseOverlay';
 import { TouchGamepad } from './TouchGamepad';
@@ -49,7 +49,6 @@ import {
   Plus,
   Minus,
   RotateCw,
-  Accessibility,
   ChevronLeft,
   Share2,
   RotateCcw,
@@ -95,6 +94,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
   const [launchRequested, setLaunchRequested] = useState(false);
   const [showFrameMenu, setShowFrameMenu] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [menuTheme, setMenuTheme] = useState<Record<string, string> | null>(null);
   const [gamepadConnected, setGamepadConnected] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(() => readReducedMotionPreference(game?.id || '', defaultPreferences.reducedMotion || window.matchMedia('(prefers-reduced-motion: reduce)').matches));
   const [colourBlindMode, setColourBlindMode] = useState(defaultPreferences.colourBlindPalette !== 'off');
@@ -353,17 +353,44 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     });
   }, [postFramePause, game]);
 
-  const toggleSettings = useCallback(() => {
-    if (showSettings) {
-      closeSettings();
-    } else {
-      setShowSettings(true);
-      // The settings sheet is its own dialog; a silent pause keeps the game's
-      // pause panel from appearing behind it.
-      if (pauseStateRef.current.canPause && !pauseStateRef.current.isPaused) postFramePause(true, true);
-    }
-    audio.playClick();
-  }, [showSettings, closeSettings, postFramePause]);
+  // The settings sheet wears the game's own menu palette so it reads as part of
+  // the cabinet, not a generic dialog. Engines have no iframe menu, so they fall
+  // back to a theme derived from the game's accent color.
+  const defaultMenuTheme = useMemo<Record<string, string>>(() => ({
+    '--ts-bg': '#0b1026',
+    '--ts-panel': '#111827',
+    '--ts-accent': game?.accentColor || '#67e8f9',
+    '--ts-button': game?.accentColor || '#67e8f9',
+    '--ts-button-text': '#0b1020',
+    '--ts-text': '#f4f0ff',
+    '--ts-divide': 'color-mix(in srgb, #f4f0ff 12%, transparent)',
+    '--ts-title-font': 'system-ui, sans-serif',
+    '--ts-body-font': 'system-ui, sans-serif',
+  }), [game?.accentColor]);
+
+  const readMenuTheme = useCallback(() => {
+    const theme = { ...defaultMenuTheme };
+    try {
+      const frame = iframeRef.current;
+      const root = frame?.contentDocument?.querySelector('.apex-menu-root');
+      if (frame?.contentWindow && root) {
+        const cs = frame.contentWindow.getComputedStyle(root);
+        const map: Record<string, string> = {
+          '--menu-bg': '--ts-bg', '--menu-panel': '--ts-panel', '--menu-accent': '--ts-accent',
+          '--menu-button': '--ts-button', '--menu-button-text': '--ts-button-text', '--menu-text': '--ts-text',
+          '--menu-title': '--ts-title-font', '--menu-body': '--ts-body-font',
+        };
+        for (const [from, to] of Object.entries(map)) {
+          const value = cs.getPropertyValue(from).trim();
+          if (value) theme[to] = value;
+        }
+        theme['--ts-divide'] = `color-mix(in srgb, ${theme['--ts-text']} 12%, transparent)`;
+      }
+    } catch { /* Not ready or cross-origin: keep the accent-derived theme. */ }
+    return theme;
+  }, [defaultMenuTheme]);
+
+  const settingsTheme = menuTheme ?? defaultMenuTheme;
 
   const pauseStateRef = useRef({ isPaused, canPause });
   pauseStateRef.current = { isPaused, canPause };
@@ -516,6 +543,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
         if (!activeMenuGameIdRef.current || e.data.gameId !== activeMenuGameIdRef.current) return;
         // The pause panel is the only door to the theater sheet now that the
         // header gear is gone; the run is already paused behind it.
+        setMenuTheme(readMenuTheme());
         setShowSettings(true);
         if (pauseStateRef.current.canPause && !pauseStateRef.current.isPaused) postFramePause(true, true);
         return;
@@ -577,7 +605,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     };
     window.addEventListener('message', handleMsg);
     return () => window.removeEventListener('message', handleMsg);
-  }, [onClose, game, onStatsUpdated, highScore, mirrorFramePause, revealRun, postFramePause]);
+  }, [onClose, game, onStatsUpdated, highScore, mirrorFramePause, revealRun, postFramePause, readMenuTheme]);
 
   useEffect(() => () => { window.dispatchEvent(new Event('apex:perf-clear')); }, []);
 
@@ -1090,18 +1118,20 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
   };
 
   const settingsControls = (
-    <div className="divide-y divide-emerald-100/10 text-sm text-slate-100">
+    <div style={settingsTheme} className="text-sm [color:var(--ts-text)] [font-family:var(--ts-body-font)]">
+      <div className="divide-y divide-[color:var(--ts-divide)]">
       {showingEngine && (
-        <label className="flex min-h-12 items-center justify-between gap-3 py-2.5 font-semibold"><span>Difficulty</span><select aria-label="Difficulty" value={difficulty} onChange={(event) => handleDifficultyChange(event.target.value as DifficultySetting)} className="min-h-10 rounded-lg border border-emerald-200/20 bg-[#102124] px-3 text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-emerald-300"><option value="easy">Easy</option><option value="normal">Normal</option><option value="hard">Hard</option></select></label>
+        <label className="flex min-h-12 items-center justify-between gap-3 py-2.5 font-semibold"><span>Difficulty</span><select aria-label="Difficulty" value={difficulty} onChange={(event) => handleDifficultyChange(event.target.value as DifficultySetting)} className="min-h-10 rounded-lg border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ts-accent)]" style={{ background: 'var(--ts-panel)', color: 'var(--ts-text)', borderColor: 'color-mix(in srgb, var(--ts-accent) 40%, transparent)' }}><option value="easy">Easy</option><option value="normal">Normal</option><option value="hard">Hard</option></select></label>
       )}
-      <label className="flex min-h-12 items-center justify-between gap-3 py-2.5 font-semibold"><span>Audio</span><button type="button" onClick={toggleSound} className={`min-h-10 min-w-14 rounded-lg px-3 font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 ${isMuted ? 'border border-white/15 bg-white/5 text-slate-200' : 'bg-emerald-300 text-[#102124] hover:bg-emerald-200'}`}>{isMuted ? 'Muted' : 'On'}</button></label>
-      <label className="block py-2.5 font-semibold"><span className="mb-1.5 flex justify-between"><span>Volume</span><span className="font-mono text-emerald-300">{Math.round(volume * 100)}%</span></span><input aria-label="Theater volume" type="range" min="0" max="1" step="0.05" value={volume} onChange={(event) => handleVolumeChange(Number(event.target.value))} className="w-full accent-emerald-300" /></label>
-      <label className="flex min-h-12 items-center justify-between gap-3 py-2.5 font-semibold"><span>Reduced motion</span><input className="h-4 w-4 accent-emerald-300" type="checkbox" checked={reducedMotion} onChange={(event) => { const next = event.target.checked; setReducedMotion(next); try { window.localStorage.setItem(reducedMotionPreferenceKey(game.id), String(next)); } catch { /* The preference still applies for this session. */ } iframeRef.current?.contentWindow?.postMessage({ type: 'SET_ACCESSIBILITY', reducedMotion: next, gameId: game.id, colourBlindMode, performanceTier }, window.location.origin); }} /></label>
-      <label className="flex min-h-12 items-center justify-between gap-3 py-2.5 font-semibold"><span>Colour-blind palette</span><input className="h-4 w-4 accent-emerald-300" type="checkbox" checked={colourBlindMode} onChange={(event) => { setColourBlindMode(event.target.checked); iframeRef.current?.contentWindow?.postMessage({ type: 'SET_ACCESSIBILITY', reducedMotion, colourBlindMode: event.target.checked, performanceTier }, window.location.origin); }} /></label>
-      <label className="flex min-h-12 items-center justify-between gap-3 py-2.5 font-semibold"><span>CRT filter</span><input className="h-4 w-4 accent-emerald-300" aria-label="CRT filter" type="checkbox" checked={displayPreferences.gameId === game.id && displayPreferences.crt} onChange={(event) => updateDisplayPreference('crt', event.target.checked)} /></label>
-      <label className="flex min-h-12 items-center justify-between gap-3 py-2.5 font-semibold"><span>Pixel-perfect scaling</span><input className="h-4 w-4 accent-emerald-300" aria-label="Pixel-perfect scaling" type="checkbox" checked={displayPreferences.gameId === game.id && displayPreferences.pixelPerfect} onChange={(event) => updateDisplayPreference('pixelPerfect', event.target.checked)} /></label>
-      <label className="flex min-h-12 items-center justify-between gap-3 py-2.5 font-semibold"><span>Ambient glow</span><input className="h-4 w-4 accent-emerald-300" aria-label="Ambient glow" type="checkbox" checked={displayPreferences.gameId === game.id && displayPreferences.ambientGlow} onChange={(event) => updateDisplayPreference('ambientGlow', event.target.checked)} /></label>
-      <label className="flex min-h-12 items-center justify-between gap-3 py-2.5 font-semibold"><span>Performance tier</span><select value={performanceTier} onChange={(event) => { const tier = event.target.value as typeof performanceTier; setPerformanceTier(tier); iframeRef.current?.contentWindow?.postMessage({ type: 'SET_PERF_TIER', tier: tier === 'auto' ? null : tier }, window.location.origin); }} className="min-h-10 rounded-lg border border-emerald-200/20 bg-[#102124] px-3 text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-emerald-300"><option value="auto">Auto</option><option value="ultra">Ultra</option><option value="standard">Standard</option><option value="lite">Lite</option></select></label>
+      <label className="flex min-h-12 items-center justify-between gap-3 py-2.5 font-semibold"><span>Audio</span><button type="button" onClick={toggleSound} className="min-h-10 min-w-14 rounded-lg border px-3 font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ts-accent)]" style={isMuted ? { background: 'transparent', color: 'var(--ts-text)', borderColor: 'color-mix(in srgb, var(--ts-text) 25%, transparent)' } : { background: 'var(--ts-accent)', color: 'var(--ts-button-text)', borderColor: 'var(--ts-accent)' }}>{isMuted ? 'Muted' : 'On'}</button></label>
+      <label className="block py-2.5 font-semibold"><span className="mb-1.5 flex justify-between"><span>Volume</span><span className="font-mono" style={{ color: 'var(--ts-accent)' }}>{Math.round(volume * 100)}%</span></span><input aria-label="Theater volume" type="range" min="0" max="1" step="0.05" value={volume} onChange={(event) => handleVolumeChange(Number(event.target.value))} className="w-full" style={{ accentColor: 'var(--ts-accent)' }} /></label>
+      <label className="flex min-h-12 items-center justify-between gap-3 py-2.5 font-semibold"><span>Reduced motion</span><input className="h-5 w-5" style={{ accentColor: 'var(--ts-accent)' }} type="checkbox" checked={reducedMotion} onChange={(event) => { const next = event.target.checked; setReducedMotion(next); try { window.localStorage.setItem(reducedMotionPreferenceKey(game.id), String(next)); } catch { /* The preference still applies for this session. */ } iframeRef.current?.contentWindow?.postMessage({ type: 'SET_ACCESSIBILITY', reducedMotion: next, gameId: game.id, colourBlindMode, performanceTier }, window.location.origin); }} /></label>
+      <label className="flex min-h-12 items-center justify-between gap-3 py-2.5 font-semibold"><span>Colour-blind palette</span><input className="h-5 w-5" style={{ accentColor: 'var(--ts-accent)' }} type="checkbox" checked={colourBlindMode} onChange={(event) => { setColourBlindMode(event.target.checked); iframeRef.current?.contentWindow?.postMessage({ type: 'SET_ACCESSIBILITY', reducedMotion, colourBlindMode: event.target.checked, performanceTier }, window.location.origin); }} /></label>
+      <label className="flex min-h-12 items-center justify-between gap-3 py-2.5 font-semibold"><span>CRT filter</span><input className="h-5 w-5" style={{ accentColor: 'var(--ts-accent)' }} aria-label="CRT filter" type="checkbox" checked={displayPreferences.gameId === game.id && displayPreferences.crt} onChange={(event) => updateDisplayPreference('crt', event.target.checked)} /></label>
+      <label className="flex min-h-12 items-center justify-between gap-3 py-2.5 font-semibold"><span>Pixel-perfect scaling</span><input className="h-5 w-5" style={{ accentColor: 'var(--ts-accent)' }} aria-label="Pixel-perfect scaling" type="checkbox" checked={displayPreferences.gameId === game.id && displayPreferences.pixelPerfect} onChange={(event) => updateDisplayPreference('pixelPerfect', event.target.checked)} /></label>
+      <label className="flex min-h-12 items-center justify-between gap-3 py-2.5 font-semibold"><span>Ambient glow</span><input className="h-5 w-5" style={{ accentColor: 'var(--ts-accent)' }} aria-label="Ambient glow" type="checkbox" checked={displayPreferences.gameId === game.id && displayPreferences.ambientGlow} onChange={(event) => updateDisplayPreference('ambientGlow', event.target.checked)} /></label>
+      <label className="flex min-h-12 items-center justify-between gap-3 py-2.5 font-semibold"><span>Performance tier</span><select value={performanceTier} onChange={(event) => { const tier = event.target.value as typeof performanceTier; setPerformanceTier(tier); iframeRef.current?.contentWindow?.postMessage({ type: 'SET_PERF_TIER', tier: tier === 'auto' ? null : tier }, window.location.origin); }} className="min-h-10 rounded-lg border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ts-accent)]" style={{ background: 'var(--ts-panel)', color: 'var(--ts-text)', borderColor: 'color-mix(in srgb, var(--ts-accent) 40%, transparent)' }}><option value="auto">Auto</option><option value="ultra">Ultra</option><option value="standard">Standard</option><option value="lite">Lite</option></select></label>
+      </div>
     </div>
   );
 
@@ -1249,11 +1279,12 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
         </div>
 
         {showSettings && (
-          <div className="absolute inset-0 z-40 grid place-items-center bg-[#020907]/80 p-4 backdrop-blur-sm" onClick={(event) => { if (event.target === event.currentTarget) closeSettings(); }}>
-            <aside id="theater-settings" aria-label="Theater settings" className="max-h-[85vh] w-[min(22rem,calc(100%-1.5rem))] overflow-y-auto rounded-2xl border border-[#91b88c]/75 bg-[#14292c] p-4 text-slate-100 shadow-[0_24px_80px_rgba(0,0,0,0.55)]" onClick={(event) => event.stopPropagation()}>
-              <div className="mb-3 flex items-center justify-between text-sm font-bold text-white"><span className="flex items-center gap-2">Theater settings <Accessibility className="h-4 w-4 text-emerald-300" /></span></div>
+          <div style={{ ...settingsTheme, background: 'color-mix(in srgb, var(--ts-bg) 72%, rgba(0,0,0,0.72))' }} className="absolute inset-0 z-40 grid place-items-center p-4 backdrop-blur-sm" onClick={(event) => { if (event.target === event.currentTarget) closeSettings(); }}>
+            <aside id="theater-settings" aria-label="Theater settings" className="max-h-[88vh] w-[min(26rem,calc(100%-1.5rem))] overflow-y-auto rounded-3xl border p-6 sm:p-8" style={{ background: 'var(--ts-panel)', color: 'var(--ts-text)', fontFamily: 'var(--ts-body-font)', borderColor: 'color-mix(in srgb, var(--ts-accent) 45%, transparent)', boxShadow: '0 24px 80px rgba(0,0,0,0.42), inset 0 1px rgba(255,255,255,0.08)' }} onClick={(event) => event.stopPropagation()}>
+              <p className="mb-2 font-mono text-[11px] font-bold uppercase" style={{ color: 'var(--ts-accent)', letterSpacing: '0.18em' }}>{game.title}</p>
+              <h2 className="mb-5 text-3xl font-extrabold sm:text-4xl" style={{ fontFamily: 'var(--ts-title-font)', letterSpacing: '-0.035em', lineHeight: 1.08 }}>Settings</h2>
               {settingsControls}
-              <button type="button" onClick={closeSettings} className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#91b88c]/40 bg-white/[0.04] px-3 text-xs font-bold text-white transition-colors hover:border-emerald-300/60 hover:bg-emerald-300/10 focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-emerald-300">
+              <button type="button" onClick={closeSettings} className="mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-extrabold transition-[filter,transform] hover:brightness-110 focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-[color:var(--ts-accent)]" style={{ background: 'var(--ts-accent)', color: 'var(--ts-button-text)' }}>
                 <ChevronLeft className="h-4 w-4" />
                 Back to pause
               </button>

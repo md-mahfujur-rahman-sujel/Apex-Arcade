@@ -77,7 +77,7 @@ try {
   await pad(9, true); await page.waitForFunction(() => window.Arcade.test.G.state === 'paused'); await pad(9, false);
   await page.evaluate(() => { window.Arcade.test.G.pauseToggle(); window.Arcade.test.G.over('Verification result', 'test'); });
   await page.waitForFunction(() => window.Arcade.test.G.state === 'over');
-  if (!(await menu.locator('[aria-live="polite"]').innerText()).startsWith('Score ')) throw new Error('Results shell did not expose the game score');
+  if (!/^SCORE\s+\d/.test(await menu.locator('[aria-live="polite"]').innerText())) throw new Error('Results shell did not expose the game score');
   await menu.getByRole('button', { name: 'Back to menu', exact: true }).tap();
   await page.waitForFunction(() => window.Arcade.test.G.state === 'ready');
   const play = menu.getByRole('button', { name: 'Play', exact: true });
