@@ -1,4 +1,4 @@
-const CACHE_NAME = 'apex-arcade-v27';
+const CACHE_NAME = 'apex-arcade-v28';
 const BASE_PATH = new URL('.', self.location.href).pathname;
 const GAME_FILES = [
   '01-flappy-bird/index.html', '02-pong/index.html', '03-snake/index.html', '04-space-invaders/index.html',
@@ -18,6 +18,7 @@ const GAME_FILES = [
 const GAME_KITS = [
   'meta-config.js', 'meta-kit.js', 'perf-kit.js', 'arcade-core.js', 'platform-kit.js', 'act-kit.js', 'board-kit.js', 'board-art.js', 'save-kit.js', 'score-bridge.js',
   'fx-kit.js', 'ui-kit.js', 'music-kit.js', 'card-scenes.js', 'menu-kit.js', 'menu-kit.css', 'menu-bootstrap.js',
+  'intro-kit.js',
 ].map((file) => `${BASE_PATH}assets/kits/${file}`);
 const APP_SHELL = [BASE_PATH, `${BASE_PATH}manifest.webmanifest`, `${BASE_PATH}apex-icon.svg`, `${BASE_PATH}apex-icon-180.png`, `${BASE_PATH}apex-icon-192.png`, `${BASE_PATH}apex-icon-512.png`];
 
@@ -34,7 +35,9 @@ self.addEventListener('install', (event) => {
         .filter((url) => url.origin === self.location.origin && url.pathname.startsWith(`${BASE_PATH}assets/`))
         .map((url) => `${url.pathname}${url.search}`);
       const precacheUrls = [...new Set([...APP_SHELL.slice(1), ...builtAssets, ...GAME_FILES, ...GAME_KITS])];
-      await cache.addAll(precacheUrls);
+      // One failed file must not abort the whole install; the fetch handler
+      // fills any gaps from the network on first use.
+      await Promise.all(precacheUrls.map((url) => cache.add(url).catch(() => {})));
       // Wait for the client to approve activation so the app can show an update prompt.
     })(),
   );
@@ -70,12 +73,21 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (url.pathname.startsWith(`${BASE_PATH}assets/`) || APP_SHELL.includes(url.pathname)) {
+    // Serve the cached copy immediately but refresh it in the background.
+    // Cache-first kept old kits on a device past a deploy; an old menu kit could
+    // not answer the lobby's play request, so games never started for that user.
     event.respondWith(
-      caches.match(request).then(async (cached) => {
-        if (cached) return cached;
-        const response = await fetch(request);
-        if (response.ok) caches.open(CACHE_NAME).then((cache) => cache.put(request, response.clone()));
-        return response;
+      caches.match(request).then((cached) => {
+        const network = fetch(request).then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        });
+        if (!cached) return network;
+        event.waitUntil(network.catch(() => {}));
+        return cached;
       }),
     );
   }

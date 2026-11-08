@@ -505,7 +505,11 @@
 
     var duration = Math.max(700, Number(scene.duration) || 1900);
     var mainMs = Math.max(320, duration - OUTRO_MS);
-    var elapsed = 0, last = 0, closed = false, raf = 0;
+    var elapsed = 0, closed = false, raf = 0, watchdog = 0;
+    var clock = global.performance && typeof global.performance.now === 'function'
+      ? function () { return global.performance.now(); }
+      : function () { return Date.now(); };
+    var startedAt = clock();
     var w = 0, h = 0;
     var f = {
       w: 0, h: 0, t: 0, p: 0, time: 0, op: 0,
@@ -530,6 +534,7 @@
       if (closed) return;
       closed = true;
       if (raf) cancelAnimationFrame(raf);
+      if (watchdog) global.clearTimeout(watchdog);
       global.removeEventListener('resize', resize);
       global.removeEventListener('pointerdown', skip, true);
       global.removeEventListener('keydown', skip, true);
@@ -541,13 +546,15 @@
       if (event && event.type === 'keydown' && event.repeat) return;
       if (closed) return;
       if (elapsed >= mainMs) { close(); return; }
+      startedAt = clock() - mainMs;
       elapsed = mainMs;
     }
 
-    function frame(now) {
-      if (!last) last = now;
-      elapsed += Math.min(64, now - last);
-      last = now;
+    function frame() {
+      // Wall-clock progress: a device dropping frames, or an embedded frame
+      // whose animation frames are throttled, still finishes on time.
+      var wall = clock() - startedAt;
+      if (wall > elapsed) elapsed = wall;
       var mainP = clamp(elapsed / mainMs, 0, 1);
       f.p = mainP;
       f.time = elapsed;
@@ -571,8 +578,11 @@
 
     global.addEventListener('pointerdown', skip, true);
     global.addEventListener('keydown', skip, true);
+    // Animation frames can stop entirely in a backgrounded tab or a wedged
+    // renderer. This deadline releases the run even if no frame ever arrives.
+    watchdog = global.setTimeout(close, duration + 1600);
     raf = requestAnimationFrame(frame);
-    return { active: true, skip: skip, root: root };
+    return { active: true, skip: skip, close: close, root: root };
   }
 
   global.ApexIntro = {

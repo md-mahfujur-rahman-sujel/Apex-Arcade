@@ -267,10 +267,11 @@
        gates it rather than covering a run already in progress. A run that cannot
        show its animation still starts exactly as it did before. */
     function beginRun(startGame) {
-      var started = false;
+      var started = false, introHandle = null, guard = 0;
       function launch() {
         if (started) return;
         started = true;
+        if (guard) { global.clearTimeout(guard); guard = 0; }
         if (introRunning) {
           introRunning = false;
           root.inert = false;
@@ -303,11 +304,23 @@
         root.inert = true;
         postHostMessage('MENU_INTRO_START', { introKey: options.key });
         if (!destroyed) api.hide();
-        global.ApexIntro.play(Object.assign({}, options, {
-          onReveal: launch,
-          onError: launch,
-          onDone: launch
-        }));
+        // The beginning animation is garnish, never a door: if the kit or its
+        // scene stalls, the run still starts on this deadline.
+        guard = global.setTimeout(function () {
+          guard = 0;
+          if (introHandle && introHandle.active && typeof introHandle.close === 'function') introHandle.close();
+          launch();
+        }, 6500);
+        try {
+          introHandle = global.ApexIntro.play(Object.assign({}, options, {
+            onReveal: launch,
+            onError: launch,
+            onDone: launch
+          }));
+        } catch (error) {
+          introHandle = null;
+          launch();
+        }
       };
       if (introReady()) {
         playIntro();
@@ -326,12 +339,17 @@
     /* One start path for every front door: the menu's own Play button and the
        theater lobby's Play button both land here, so the beginning animation
        gates the run whichever of the two the player chooses. */
+    var runLock = false;
     function startRun(actionId) {
-      if (introRunning) return false;
+      if (runLock || introRunning) return false;
+      // Armed before the animation kit is even consulted, so a second tap while
+      // the first start is pending cannot play the intro twice.
+      runLock = true;
       if (sceneController) sceneController.pause();
       if (global.Music && typeof global.Music.stop === 'function') global.Music.stop(0.35);
       unlockMenuSound();
       beginRun(function () {
+        runLock = false;
         // Clear the ready-screen pause before onPlay resets the game's own
         // paused flag; otherwise adapters can leave the native clock frozen.
         pauseNativeGame(false);
