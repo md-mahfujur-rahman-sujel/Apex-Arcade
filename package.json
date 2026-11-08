@@ -78,7 +78,7 @@
     "test:theater-engines": "npm run build && node scripts/test-theater-engines.mjs",
     "test:motion": "npm run build && node scripts/test-motion.mjs",
     "capture:ui-final": "node scripts/capture-ui-final.mjs",
-    "clean": "rm -rf dist",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "lint": "tsc --noEmit",
     "check:theme": "node scripts/check-theme.mjs",
     "check:contrast": "node scripts/contrast-check.mjs"

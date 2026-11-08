@@ -498,11 +498,11 @@
       if (G.inputLocked) return;
       if (PREVENT.has(e.code)) e.preventDefault();
       if (e.code === 'KeyM') {
+        // Mute is a session flag stored beside the saved mix; writing volume 0
+        // here used to overwrite whatever levels the player had chosen.
         A.muted = !A.muted;
-        if (window.Save && typeof window.Save.update === 'function') {
-          window.Save.update(cfg.id || cfg.title, { settings: { musicVol: A.muted ? 0 : 0.8, sfxVol: A.muted ? 0 : 0.8 } });
-        }
         try { localStorage.setItem('arcade-muted', A.muted ? '1' : '0'); } catch (x) {}
+        if (window.Music && typeof window.Music.setMuted === 'function') window.Music.setMuted(A.muted);
         return;
       }
       if (e.code === 'KeyP' || e.code === 'Escape') { if (!e.repeat) G.pauseToggle(); return; }

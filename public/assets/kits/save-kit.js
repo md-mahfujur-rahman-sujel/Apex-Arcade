@@ -158,12 +158,12 @@
       rawRemove(legacyHiKey);
     }
 
-    // 2. Check legacy mute status
-    var legacyMute = rawGet('apex:mute') || rawGet('arcade-muted');
-    if (legacyMute === '1' || legacyMute === 'true') {
-      state.settings.musicVol = 0;
-      state.settings.sfxVol = 0;
-      migrated = true;
+    // 2. Legacy mute status lives beside the saved mix instead of inside it.
+    // Zeroing musicVol/sfxVol here used to clobber the player's chosen levels
+    // on every load, so the mute flag is left to arcade-core's own key.
+    if (window.Music && typeof window.Music.setMuted === 'function') {
+      var legacyMute = rawGet('apex:mute') || rawGet('arcade-muted');
+      if (legacyMute === '1' || legacyMute === 'true') window.Music.setMuted(true);
     }
 
     return migrated;

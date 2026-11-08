@@ -415,7 +415,7 @@
           equip.setAttribute('aria-label', (item.equipped ? 'Equipped ' : 'Equip ') + item.name);
         } else {
           var cost = Number(item.cost) || 0;
-          var canBuy = !item.unlock || item.unlock.achievementUnlocked;
+          var canBuy = !item.unlock || item.achievementUnlocked;
           var purchase = button(canBuy ? 'Buy · ' + cost + ' Sparks' : 'Achievement required', function () {
             var result = Meta.purchaseCosmetic(config.id, item.id);
             if (result && result.ok) UI.toast(item.name + ' purchased', { color: '#34d399' });

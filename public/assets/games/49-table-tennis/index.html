@@ -1170,10 +1170,19 @@ window.addEventListener('message', (e) => {
   if ((e.source !== window.parent && e.source !== window) || e.origin !== window.location.origin || !e.data) return;
   if (e.data.type === 'SET_DIFFICULTY') {
     const d = e.data.difficulty;
-    diffOverride = d === 'easy' ? 0 : d === 'hard' ? 2 : 1;
+    const nextDifficulty = d === 'easy' ? 0 : d === 'hard' ? 2 : 1;
     const keepPaused = paused || window.ApexMenuActive;
-    newMatch();
-    if (keepPaused) { paused = true; syncPause(); }
+    // A difficulty change from the theater's pause panel must not abandon a
+    // match that is already underway; apply it to the live opponent instead.
+    const liveMatch = !over && (matchTime > 0 || sc[0] > 0 || sc[1] > 0);
+    diffOverride = nextDifficulty;
+    if (liveMatch) {
+      if (mode !== 3) mode = nextDifficulty;
+      syncModeLabel();
+    } else {
+      newMatch();
+      if (keepPaused) { paused = true; syncPause(); }
+    }
   } else if (e.data.type === 'KEY_EVENT') {
     const k = (e.data.key || '').toLowerCase();
     if (k) {
@@ -1199,7 +1208,7 @@ document.addEventListener('keydown', (e) => {
   if (e.repeat) return;
   if (k === ' ') act(0);
   else if (k === 'enter') act(mode === 3 ? 1 : 0);
-  else if (k === 'n') newMatch();
+  else if (k === 'n' && !paused) newMatch();
   else if (k === 'p' || k === 'escape') togglePause();
   else if (k === 'g') { guide = !guide; $('#guide').checked = guide; gd.bounce = null; gd.hit = null; }
 });

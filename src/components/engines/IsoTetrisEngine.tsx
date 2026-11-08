@@ -5,6 +5,7 @@ import { DifficultySetting } from '../../types/game';
 interface IsoTetrisEngineProps {
   onScoreUpdate: (score: number) => void;
   onGameOver: (finalScore: number) => void;
+  onRestart?: () => void;
   isPaused: boolean;
   difficulty?: DifficultySetting;
 }
@@ -87,6 +88,7 @@ function clockText(seconds: number): string {
 export const IsoTetrisEngine: React.FC<IsoTetrisEngineProps> = ({
   onScoreUpdate,
   onGameOver,
+  onRestart,
   isPaused,
   difficulty = 'normal',
 }) => {
@@ -102,8 +104,9 @@ export const IsoTetrisEngine: React.FC<IsoTetrisEngineProps> = ({
   pausedRef.current = isPaused;
   const difficultyRef = useRef(difficulty);
   difficultyRef.current = difficulty;
-  const callbacksRef = useRef({ onScoreUpdate, onGameOver });
-  callbacksRef.current = { onScoreUpdate, onGameOver };
+  const callbacksRef = useRef({ onScoreUpdate, onGameOver, restart: onRestart });
+  callbacksRef.current = { onScoreUpdate, onGameOver, restart: onRestart };
+  const endedRef = useRef(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -211,6 +214,7 @@ export const IsoTetrisEngine: React.FC<IsoTetrisEngineProps> = ({
       lockResets = 0;
       spinFlag = false;
       if (collides(current)) {
+        endedRef.current = true;
         setPlayState('GAMEOVER');
         audio.playHit();
         callbacksRef.current.onGameOver(score);
@@ -239,6 +243,7 @@ export const IsoTetrisEngine: React.FC<IsoTetrisEngineProps> = ({
         else board[y][x] = current.key;
       }
       if (aboveTop) {
+        endedRef.current = true;
         setPlayState('GAMEOVER');
         audio.playHit();
         callbacksRef.current.onGameOver(score);
@@ -299,14 +304,20 @@ export const IsoTetrisEngine: React.FC<IsoTetrisEngineProps> = ({
       setLevel(level);
       setCombo(0);
       if (lines >= MAX_LINES) {
+        endedRef.current = true;
         setPlayState('VICTORY');
         audio.playScore();
+        callbacksRef.current.onGameOver(score);
         return;
       }
       spawn();
     };
 
     const startGame = () => {
+      if (endedRef.current) {
+        endedRef.current = false;
+        callbacksRef.current.restart?.();
+      }
       for (let row = 0; row < ROWS; row++) board[row].fill(null);
       queue = [];
       bag = [];

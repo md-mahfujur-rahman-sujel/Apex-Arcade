@@ -5,6 +5,7 @@ import { DifficultySetting } from '../../types/game';
 interface PacMazeEngineProps {
   onScoreUpdate: (score: number) => void;
   onGameOver: (finalScore: number) => void;
+  onRestart?: () => void;
   isPaused: boolean;
   difficulty?: DifficultySetting;
   seed?: number;
@@ -139,6 +140,7 @@ const clockText = (millis: number) => {
 export const PacMazeEngine: React.FC<PacMazeEngineProps> = ({
   onScoreUpdate,
   onGameOver,
+  onRestart,
   isPaused,
   difficulty = 'normal',
   seed,
@@ -157,8 +159,9 @@ export const PacMazeEngine: React.FC<PacMazeEngineProps> = ({
   difficultyRef.current = difficulty;
   const seedRef = useRef(seed);
   seedRef.current = seed;
-  const callbacksRef = useRef({ onScoreUpdate, onGameOver });
-  callbacksRef.current = { onScoreUpdate, onGameOver };
+  const callbacksRef = useRef({ onScoreUpdate, onGameOver, restart: onRestart });
+  callbacksRef.current = { onScoreUpdate, onGameOver, restart: onRestart };
+  const endedRef = useRef(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -564,6 +567,7 @@ export const PacMazeEngine: React.FC<PacMazeEngineProps> = ({
     };
 
     const finish = (win: boolean) => {
+      endedRef.current = true;
       setPlayState(win ? 'VICTORY' : 'GAMEOVER');
       if (win) audio.playScore();
       callbacksRef.current.onGameOver(runScore);
@@ -701,6 +705,10 @@ export const PacMazeEngine: React.FC<PacMazeEngineProps> = ({
     };
 
     const startGame = () => {
+      if (endedRef.current) {
+        endedRef.current = false;
+        callbacksRef.current.restart?.();
+      }
       runScore = 0;
       runLives = 3;
       runLevel = 1;

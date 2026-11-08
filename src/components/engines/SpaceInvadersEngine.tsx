@@ -5,6 +5,7 @@ import { DifficultySetting } from '../../types/game';
 interface SpaceInvadersEngineProps {
   onScoreUpdate: (score: number) => void;
   onGameOver: (finalScore: number) => void;
+  onRestart?: () => void;
   isPaused: boolean;
   difficulty?: DifficultySetting;
 }
@@ -105,6 +106,7 @@ function damageBunker(bunkers: Bunker[], x: number, y: number, radius: number): 
 export const SpaceInvadersEngine: React.FC<SpaceInvadersEngineProps> = ({
   onScoreUpdate,
   onGameOver,
+  onRestart,
   isPaused,
   difficulty = 'normal',
 }) => {
@@ -142,6 +144,9 @@ export const SpaceInvadersEngine: React.FC<SpaceInvadersEngineProps> = ({
   const keysRef = useRef<Set<string>>(new Set());
   const difficultyRef = useRef<DifficultySetting>(difficulty);
   difficultyRef.current = difficulty;
+  const restartRef = useRef(onRestart);
+  restartRef.current = onRestart;
+  const endedRef = useRef(false);
 
   const initAliens = (waveNumber: number) => {
     const list: Alien[] = [];
@@ -161,6 +166,10 @@ export const SpaceInvadersEngine: React.FC<SpaceInvadersEngineProps> = ({
   };
 
   const startGame = useCallback(() => {
+    if (endedRef.current) {
+      endedRef.current = false;
+      restartRef.current?.();
+    }
     playerRef.current = { x: W / 2 };
     scoreRef.current = 0;
     livesRef.current = 3;
@@ -262,6 +271,7 @@ export const SpaceInvadersEngine: React.FC<SpaceInvadersEngineProps> = ({
 
     const endRun = (victory: boolean) => {
       if (stateRef.current !== 'PLAYING') return;
+      endedRef.current = true;
       if (victory) {
         addScore(1000);
         stateRef.current = 'VICTORY';

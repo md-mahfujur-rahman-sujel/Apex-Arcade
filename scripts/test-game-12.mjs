@@ -130,7 +130,9 @@ try {
     const attackDamage = beforeAttackHp - afterAttack.foes[0].hp;
 
     ClockworkDawnTest.closeBattle();
-    ClockworkDawnTest.startBattle(['moss'], false);
+    // Gloomwisp has 15 HP; even the lowest Slash Wave roll (17.5) clears it, so
+    // this check does not race the 0.92–1.12 damage variance.
+    ClockworkDawnTest.startBattle(['wisp'], false);
     const mpBefore = state().party[0].mp;
     tap('ArrowDown');
     tap('Space');
@@ -323,10 +325,10 @@ try {
 
   assert.equal(gameplay.storyRun.state, 'won', 'stepping through the portal wins the run');
   assert.equal(gameplay.storyRun.title, 'The Dawn Returns', 'Story Journey has its own victory title');
-  assert.match(gameplay.storyRun.sub, /^Party level 5 · 204 gold · Score 4420$/, 'the victory reports party level, gold, and score');
-  assert.equal(gameplay.storyRun.score, 4420, 'battle XP and the portal bonus add up');
+  assert.match(gameplay.storyRun.sub, /^Party level 5 · 205 gold · Score 4445$/, 'the victory reports party level, gold, and score');
+  assert.equal(gameplay.storyRun.score, 4445, 'battle XP and the portal bonus add up');
   assert.equal(gameplay.storyRun.stats.storyCompletions, 1, 'a Story clear is recorded');
-  assert.equal(gameplay.storyRun.stats.bestScore, 4420, 'the story score is persisted');
+  assert.equal(gameplay.storyRun.stats.bestScore, 4445, 'the story score is persisted');
   assert.equal(gameplay.storyRun.stats.newDawnLevel, 5, 'the party level is persisted for New Dawn+');
   assert.equal(gameplay.storyRun.stats.newDawnCompletions, 0, 'New Dawn+ clears are tracked separately');
   for (const id of ['first-run', 'steady-hand', 'quick-clear', 'personal-best', 'no-mistakes', 'perfect-round', 'mastery', 'season-ace']) {
@@ -474,7 +476,10 @@ try {
   assert.equal(theaterRun.finish.phase, 'VICTORY', 'clearing three waves wins the theater run');
   assert.ok(theaterRun.finish.score > 0, 'the theater run reports a score');
   assert.equal(theaterRun.finish.portal, 1, 'the theater wakes the dawn portal');
-  await theaterPage.getByRole('button', { name: 'RUN IT BACK' }).waitFor({ state: 'visible' });
+  // The host result card is the theater's single end screen; the engine's own
+  // victory panel stays behind it and out of the accessibility tree.
+  await theaterPage.locator('[data-game-result]').waitFor({ state: 'visible' });
+  await theaterPage.getByRole('button', { name: 'Play again' }).waitFor({ state: 'visible' });
   await theaterPage.screenshot({ path: path.join(tmpdir(), 'game-12-3d.png') });
   await theater.close();
 

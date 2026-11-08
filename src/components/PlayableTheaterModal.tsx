@@ -122,6 +122,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
   const activeMenuGameIdRef = useRef<string | null>(null);
   const pendingPlayRef = useRef(false);
   const playFallbackRef = useRef(0);
+  const playRetryRef = useRef(0);
   const hasLaunchedRef = useRef(false);
   hasLaunchedRef.current = hasLaunched;
   const frameStageRef = useRef(frameStage);
@@ -197,6 +198,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     activeMenuGameIdRef.current = null;
     window.clearTimeout(playFallbackRef.current);
     pendingPlayRef.current = false;
+    playRetryRef.current = 0;
     setLaunchRequested(false);
     setIsPaused(false);
     setCurrentScore(0);
@@ -511,11 +513,13 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
       }
       if (e.data?.type === 'MENU_INTRO_START') {
         if (!activeMenuGameIdRef.current || e.data.gameId !== activeMenuGameIdRef.current) return;
+        window.clearTimeout(playFallbackRef.current);
         revealRun();
         return;
       }
       if (e.data?.type === 'MENU_PLAY') {
         if (!activeMenuGameIdRef.current || e.data.gameId !== activeMenuGameIdRef.current) return;
+        window.clearTimeout(playFallbackRef.current);
         revealRun();
         setIframeStarted(true);
         return;
@@ -669,6 +673,17 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     onStatsUpdated();
   }, [difficulty, game?.id, game?.title, game?.category, onStatsUpdated]);
 
+  // Plain function on purpose: this sits after the early return above, so a hook
+  // here would change the hook order when the modal has no game.
+  const resetEngineSession = () => {
+    setGameResult(null);
+    sessionEndedRef.current = false;
+    sessionStartRef.current = Date.now();
+    sessionBestRef.current = highScore;
+    sessionNewBestRef.current = false;
+    setCurrentScore(0);
+  };
+
   const handleRestart = () => {
     setEngineKey((k) => k + 1);
     setCurrentScore(0);
@@ -686,6 +701,10 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
       // The reload boots into the page's own menu; the host presses Play so a
       // restart opens with its beginning animation instead of a second click.
       pendingPlayRef.current = true;
+      // If the reloaded page never reports its menu, stop waiting so later
+      // session_end messages are not swallowed for the rest of the session.
+      window.clearTimeout(playFallbackRef.current);
+      playFallbackRef.current = window.setTimeout(() => { pendingPlayRef.current = false; }, 6000);
       const frame = iframeRef.current;
       const nextSrc = frameSrc(true);
       try {
@@ -724,15 +743,29 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
     if (!usesFrame) { revealRun(); return; }
     if (launchRequested) return;
     setLaunchRequested(true);
-    if (frameStage === 'menu') { postFramePlay(); return; }
+    if (frameStage === 'menu') {
+      postFramePlay();
+      // A frame running an older cached kit ignores the handshake: show its own
+      // menu rather than hold the player on the lobby card forever.
+      window.clearTimeout(playFallbackRef.current);
+      playFallbackRef.current = window.setTimeout(() => {
+        if (!hasLaunchedRef.current) revealRun();
+      }, 4000);
+      return;
+    }
     pendingPlayRef.current = true;
+    playRetryRef.current = 0;
     const arm = () => {
       window.clearTimeout(playFallbackRef.current);
       playFallbackRef.current = window.setTimeout(() => {
         if (!pendingPlayRef.current) return;
-        // A page that still has not announced a menu is not going to: reveal it
-        // plainly rather than hold the player on the loading screen.
-        if (frameStageRef.current === 'booting') { arm(); return; }
+        // A slow page gets a few more seconds; a wedged one must not hold the
+        // lobby on the loading screen forever.
+        if (frameStageRef.current === 'booting' && playRetryRef.current < 3) {
+          playRetryRef.current += 1;
+          arm();
+          return;
+        }
         pendingPlayRef.current = false;
         revealRun();
       }, 3000);
@@ -923,7 +956,8 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
   const renderEngine = () => {
     const commonProps = {
       key: `${game.id}-${engineKey}`,
-      isPaused: isPaused || showSettings,
+      // The host result card owns the end screen, so freeze the engine behind it.
+      isPaused: isPaused || showSettings || Boolean(gameResult),
       onScoreUpdate: handleScoreUpdate,
       onGameOver: handleGameOver,
       difficulty,
@@ -988,7 +1022,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
           />
         );
       case 'space-invaders':
-        return <SpaceInvadersEngine {...commonProps} />;
+        return <SpaceInvadersEngine {...commonProps} onRestart={resetEngineSession} />;
       case 'asteroids-core':
         return (
           <AsteroidsCoreEngine
@@ -1009,9 +1043,9 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
           />
         );
       case 'iso-tetris':
-        return <IsoTetrisEngine {...commonProps} />;
+        return <IsoTetrisEngine {...commonProps} onRestart={resetEngineSession} />;
       case 'pac-maze':
-        return <PacMazeEngine {...commonProps} seed={startSeed} />;
+        return <PacMazeEngine {...commonProps} seed={startSeed} onRestart={resetEngineSession} />;
       case 'sonic-speedway':
         return (
           <SonicSpeedwayEngine
@@ -1310,7 +1344,7 @@ export const PlayableTheaterModal: React.FC<PlayableTheaterModalProps> = ({
 
         {/* Stage Container (Responsive height on mobile/tablet/desktop) */}
         <div id="playable-theater-stage" inert={showSettings || hostPauseOverlay} className="relative flex-1 p-0 sm:p-2 md:p-3 flex flex-col items-center justify-center bg-[#05060D] overflow-hidden">
-          <div inert={Boolean(gameResult)} className="relative z-0 flex min-h-0 w-full flex-1 flex-col items-center justify-center">
+          <div inert={Boolean(gameResult)} aria-hidden={gameResult ? true : undefined} className="relative z-0 flex min-h-0 w-full flex-1 flex-col items-center justify-center">
           {showingEngine || !game.htmlPath ? (
             hasLaunched ? renderEngine() : null
           ) : (

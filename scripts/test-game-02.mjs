@@ -236,17 +236,21 @@ try {
   const box = await canvas.boundingBox();
   if (box) await theaterPage.mouse.move(box.x + box.width / 2, box.y + box.height - 6);
 
-  const rematch = theaterPage.getByRole('button', { name: 'Rematch' });
+  const resultCard = theaterPage.locator('[data-game-result]');
+  const playAgain = theaterPage.getByRole('button', { name: 'Play again' });
   const readPlays = () =>
     theaterPage.evaluate(() => Number((JSON.parse(localStorage.getItem('apex_arcade_stats_v2') || '{}').totalPlayCount) || 0));
 
   const playsBefore = await readPlays();
-  await rematch.waitFor({ state: 'visible', timeout: 90000 });
+  await resultCard.waitFor({ state: 'visible', timeout: 90000 });
   const playsAfterFirst = await readPlays();
-  await rematch.click();
-  await rematch.waitFor({ state: 'detached' });
+  // The host result card is the theater's single end screen; Play again
+  // remounts the engine, so the circuit starts from its own start screen.
+  await playAgain.click();
+  await resultCard.waitFor({ state: 'detached' });
+  await startCircuit.click();
   if (box) await theaterPage.mouse.move(box.x + box.width / 2, box.y + box.height - 6);
-  await rematch.waitFor({ state: 'visible', timeout: 90000 });
+  await resultCard.waitFor({ state: 'visible', timeout: 90000 });
   const playsAfterSecond = await readPlays();
   await theater.close();
 

@@ -511,7 +511,10 @@ try {
   assert.equal(theaterMid.finish.phase, 'VICTORY', 'defeating the Warden wins the theater run');
   assert.ok(theaterMid.finish.score > 0, 'the theater run reports a score');
   assert.equal(theaterMid.finish.bossHp, null, 'the defeated Warden leaves the arena');
-  await theaterPage.getByRole('button', { name: 'RUN IT BACK' }).waitFor({ state: 'visible' });
+  // The host result card is the theater's single end screen; the engine's own
+  // victory panel stays behind it and out of the accessibility tree.
+  await theaterPage.locator('[data-game-result]').waitFor({ state: 'visible' });
+  await theaterPage.getByRole('button', { name: 'Play again' }).waitFor({ state: 'visible' });
   await theaterPage.screenshot({ path: path.join(tmpdir(), 'game-18-3d.png') });
   await theater.close();
 

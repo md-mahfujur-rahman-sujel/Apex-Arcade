@@ -19,10 +19,25 @@
   function now() { return ctx ? ctx.currentTime : 0; }
   function midi(n) { return 440 * Math.pow(2, (n - 69) / 12); }
   function enabled(name) { return !current || !current.layers || current.layers.indexOf(name) !== -1; }
+  var savedSettings = null, savedSettingsId = null;
+  function forgetSettings() { savedSettings = null; savedSettingsId = null; lastVolume = -1; }
   function settings() {
-    try { if (current && window.Save && Save.load) return Save.load(current.gameId || 'default').settings || {}; } catch (e) {}
+    try {
+      if (!current || !window.Save || !Save.load) return {};
+      var id = current.gameId || 'default';
+      if (savedSettings && savedSettingsId === id) return savedSettings;
+      // The mix is polled every 45 ms while playing, so parse it once and drop
+      // the cache whenever a save is written.
+      savedSettings = Save.load(id).settings || {};
+      savedSettingsId = id;
+      return savedSettings;
+    } catch (e) {}
     return {};
   }
+  window.addEventListener('apex:save', forgetSettings);
+  window.addEventListener('storage', function (event) {
+    if (!event.key || event.key.indexOf('apex:save:') === 0) forgetSettings();
+  });
   function volume() {
     var s = settings();
     if (muted || (window.Arcade && Arcade.muted)) return 0;

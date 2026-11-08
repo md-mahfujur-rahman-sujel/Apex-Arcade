@@ -17,19 +17,31 @@
   function lite() { return tier() === 'lite'; }
 
   /* ── reduced motion ─────────────────────────────────────────── */
+  var motionQuery = null, motionCache = Object.create(null);
+  try { motionQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null; } catch (e) {}
+  function forgetMotion() { motionCache = Object.create(null); }
   Fx.reducedMotion = function (gameId) {
     try {
-      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return true;
+      if (motionQuery && motionQuery.matches) return true;
     } catch (e) {}
     try {
       var id = gameId || (window.Arcade && Arcade.G && Arcade.G.cfg && Arcade.G.cfg.id);
-      if (id && window.Save && typeof Save.load === 'function') {
+      if (!id) return false;
+      // This is read on every draw call, so the saved preference is cached and
+      // refreshed when any save changes instead of parsed from storage per frame.
+      if (Object.prototype.hasOwnProperty.call(motionCache, id)) return motionCache[id];
+      if (window.Save && typeof Save.load === 'function') {
         var s = Save.load(id);
-        if (s && s.settings && s.settings.reduceMotion) return true;
+        motionCache[id] = !!(s && s.settings && s.settings.reduceMotion);
+        return motionCache[id];
       }
     } catch (e) {}
     return false;
   };
+  window.addEventListener('apex:save', forgetMotion);
+  window.addEventListener('storage', function (event) {
+    if (!event.key || event.key.indexOf('apex:save:') === 0) forgetMotion();
+  });
 
   /* ── sprite bake cache ──────────────────────────────────────── */
   var sprites = Object.create(null);

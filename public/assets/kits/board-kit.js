@@ -324,8 +324,13 @@ html[data-apex-paused="true"] *,html[data-apex-paused="true"] *::before,html[dat
       }
       return true;
     };
+    // Keep watching until the game's own difficulty control appears; some games
+    // mount a wrapper first, so "board is not empty" is not the same as "sync is
+    // possible". Stop after a bounded window so select-less games do not keep an
+    // observer alive for the whole session.
+    let difficultyWatchUntil = Date.now() + 15000;
     const difficultyObserver = new MutationObserver(() => {
-      if (syncDifficultyControl() || main.firstElementChild) difficultyObserver.disconnect();
+      if (syncDifficultyControl() || Date.now() > difficultyWatchUntil) difficultyObserver.disconnect();
     });
     difficultyObserver.observe(main, { childList: true, subtree: true });
     syncDifficultyControl();

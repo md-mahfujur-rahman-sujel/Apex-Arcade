@@ -272,17 +272,21 @@ try {
   await theaterPage.screenshot({ path: path.join(tmpdir(), 'game-03-3d.png') });
   await theaterPage.keyboard.press('ArrowUp');
 
-  const rematch = theaterPage.getByRole('button', { name: 'Rematch' });
+  const resultCard = theaterPage.locator('[data-game-result]');
+  const playAgain = theaterPage.getByRole('button', { name: 'Play again' });
   const readPlays = () =>
     theaterPage.evaluate(() => Number((JSON.parse(localStorage.getItem('apex_arcade_stats_v2') || '{}').totalPlayCount) || 0));
 
   const playsBefore = await readPlays();
-  await rematch.waitFor({ state: 'visible', timeout: 30000 });
+  await resultCard.waitFor({ state: 'visible', timeout: 30000 });
   const playsAfterFirst = await readPlays();
-  await rematch.click();
-  await rematch.waitFor({ state: 'detached' });
+  // The host result card is the theater's single end screen; Play again
+  // remounts the engine, so the run starts from its own start screen.
+  await playAgain.click();
+  await resultCard.waitFor({ state: 'detached' });
+  await startRun.click();
   await theaterPage.keyboard.press('ArrowUp');
-  await rematch.waitFor({ state: 'visible', timeout: 30000 });
+  await resultCard.waitFor({ state: 'visible', timeout: 30000 });
   const playsAfterSecond = await readPlays();
   await theater.close();
 
